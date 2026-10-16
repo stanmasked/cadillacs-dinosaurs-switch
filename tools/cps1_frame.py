@@ -9,6 +9,7 @@ mid-frame changes are NOT emulated. No ROM bundled.
 """
 import argparse
 import json
+import struct
 from pathlib import Path
 import sys
 import zipfile
@@ -29,6 +30,21 @@ except ModuleNotFoundError:
 VIEWPORT = (64, 16, 384, 224)
 TILE_SIZE = {'scroll1': 8, 'scroll2': 16, 'scroll3': 32}
 LAYER_CODES = ('sprites', 'scroll1', 'scroll2', 'scroll3')
+
+
+def _rotate_rgba_pixels_180(pixels):
+    """Reverse pixel positions while preserving the four RGBA channel bytes.
+
+    A native 32-bit word is used only as an opaque four-byte unit: converting
+    back to bytes preserves the original channel order on either endian host.
+    The fallback handles unusual targets where C unsigned int is not 32-bit.
+    """
+    if len(pixels) % 4:
+        raise ValueError('RGBA byte length must be a multiple of four')
+    if struct.calcsize('I') == 4:
+        return memoryview(pixels).cast('I')[::-1].tobytes()
+    return b''.join(pixels[i:i+4]
+                    for i in range(len(pixels)-4, -1, -4))
 
 
 def tile_ram_index(layer, col, row):
@@ -136,10 +152,7 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
         normal['video_control']=video_control & ~0x8000
         source_viewport=(512-vx-width,256-vy-height,width,height)
         source_pixels=render_frame(region,palette,normal,source_viewport)
-        rotated=bytearray(len(source_pixels))
-        for i in range(width*height):
-            rotated[i*4:i*4+4]=source_pixels[-4*(i+1):len(source_pixels)-i*4]
-        return bytes(rotated)
+        return _rotate_rgba_pixels_180(source_pixels)
     use_rowscroll = bool(video_control & 1)
     rowscroll = snapshot.get('rowscroll', None)
     rowscroll_offset = snapshot.get('rowscroll_offset', 0)
