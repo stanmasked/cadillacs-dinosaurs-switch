@@ -47,12 +47,14 @@ ARCHIVAL_PLD = {
     'rom1': (279, 0x41dc73b9),
 }
 # MAME src/devices/sound/qsoundhle.cpp, required separately for device HLE.
+# Another known ioc1.ic1 archive revision appears in older MAME romsets.
+KNOWN_ARCHIVAL_ALTERNATIVES = {'ioc1.ic1': [(279, 0x0d182081)]}
 QSOUND_HLE = {'dl-1425.bin': (8192, 0xd6cf5ef5)}
 MAX_ZIP_UNCOMPRESSED = 32 * 1024 * 1024
 MAX_ZIP_MEMBERS = 100
 
 
-def audit_zip(path, expected):
+def audit_zip(path, expected, *, known_alternatives=None):
     """Read and CRC-check all ZIP members without extracting or returning bytes."""
     members = {}
     total = 0
@@ -75,12 +77,20 @@ def audit_zip(path, expected):
                     pass
             members[name] = (info.file_size, info.CRC)
     matches, mismatches, absent = [], [], []
+    known_variants = []
+    known_alternatives = known_alternatives or {}
     for name, (size, crc) in sorted(expected.items()):
         actual = members.get(name)
         if actual is None:
             absent.append(name)
         elif actual == (size, crc):
             matches.append(name)
+        elif actual in known_alternatives.get(name, ()):
+            known_variants.append({
+                'name': name, 'bytes': actual[0],
+                'crc32': f'{actual[1]:08x}',
+                'note': 'Known alternate archival revision; compare your installed MAME listxml',
+            })
         else:
             mismatches.append({
                 'name': name,
@@ -91,6 +101,8 @@ def audit_zip(path, expected):
     return {
         'expected_count': len(expected),
         'matching_count': len(matches),
+        'known_variant_count': len(known_variants),
+        'known_variant_matches': known_variants,
         'missing_names': absent,
         'mismatches': mismatches,
         'archive_member_count': len(members),
@@ -101,12 +113,15 @@ def audit_zip(path, expected):
 def audit_game(path):
     """Distinguish required game ROMs from archived PLD differences."""
     core = audit_zip(path, CORE)
-    archival = audit_zip(path, ARCHIVAL_PLD)
+    archival = audit_zip(path, ARCHIVAL_PLD,
+                         known_alternatives=KNOWN_ARCHIVAL_ALTERNATIVES)
     return {
         'core_game_roms': core,
         'archival_logic_dumps': archival,
         'core_complete': core['matching_count'] == len(CORE),
         'all_archival_plds_match': archival['matching_count'] == len(ARCHIVAL_PLD),
+        'all_archival_plds_known': (archival['matching_count'] + archival['known_variant_count']
+                                    == len(ARCHIVAL_PLD)),
     }
 
 
@@ -162,9 +177,11 @@ def main(argv=None):
         print('Core game ROMs:',
               result['game_roms']['core_game_roms']['matching_count'],
               'of', len(CORE))
-        print('Archival PLDs:',
+        print('Archival PLDs matching chosen reference:',
               result['game_roms']['archival_logic_dumps']['matching_count'],
               'of', len(ARCHIVAL_PLD))
+        print('Known alternate PLDs:',
+              result['game_roms']['archival_logic_dumps']['known_variant_count'])
         print('QSound HLE:', result['qsound_hle']['status'])
         print('Actual MAME boot: NOT VERIFIED')
         return 0 if result['modern_mame_rom_prerequisites_verified'] else 1
