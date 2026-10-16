@@ -149,3 +149,54 @@ class Render(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class RasterAndPriority(unittest.TestCase):
+    def test_scroll2_rowscroll_moves_one_tile_on_selected_line(self):
+        region=fill_tile(1)+fill_tile(15)
+        ram=[0]*8192
+        ram[2*tile_ram_index('scroll2',1,0)]=1
+        snap={'layer_control':control('scroll2','scroll1','scroll3','sprites'),
+              'scroll2':{'words':ram,'scrollx':0},'video_control':1,
+              'rowscroll':[0]*1024, 'rowscroll_offset':4}
+        frame=render_frame(region,palette(),snap,(0,0,16,16))
+        self.assertEqual(pixel(frame,16,0,0),bytes((0,255,0,255)))
+        snap['rowscroll'][4]=16
+        moved=render_frame(region,palette(),snap,(0,0,16,16))
+        self.assertEqual(pixel(moved,16,0,0),bytes((5,6,7,255)))
+        self.assertEqual(pixel(moved,16,0,1),bytes((0,255,0,255)))
+
+    def test_scroll2_rowscroll_missing_ram_rejected(self):
+        snap={'layer_control':0,'video_control':1,
+              'scroll2':{'words':[0]*8192}}
+        with self.assertRaises(ValueError):
+            render_frame(fill_tile(),palette(),snap,(0,0,16,16))
+
+    def test_priority_mask_blocks_sprite_over_scroll2(self):
+        region=fill_tile(1)
+        snap={'layer_control':control('scroll1','scroll3','scroll2','sprites'),
+              'scroll2':{'words':[0]*8192},
+              'buffered_obj_words':[0,0,0,0],
+              'priority_masks':[1<<1,0,0,0]}
+        blocked=render_frame(region,palette(),snap,(0,0,16,16))
+        self.assertEqual(pixel(blocked,16,0,0),bytes((0,255,0,255)))
+        snap['priority_masks']=[0]*4
+        allowed=render_frame(region,palette(),snap,(0,0,16,16))
+        self.assertEqual(pixel(allowed,16,0,0),bytes((255,0,0,255)))
+
+    def test_priority_mask_uses_tile_attribute_group(self):
+        region=fill_tile(1)
+        words=[0]*8192
+        words[1]=0x100
+        snap={'layer_control':control('scroll1','scroll3','scroll2','sprites'),
+              'scroll2':{'words':words},'buffered_obj_words':[0,0,0,0],
+              'priority_masks':[0,0,2,0]}
+        frame=render_frame(region,palette(),snap,(0,0,16,16))
+        self.assertEqual(pixel(frame,16,0,0),bytes((0,255,0,255)))
+        words[1]=0
+        allowed=render_frame(region,palette(),snap,(0,0,16,16))
+        self.assertEqual(pixel(allowed,16,0,0),bytes((255,0,0,255)))
+
+    def test_invalid_priority_registers_rejected(self):
+        with self.assertRaises(ValueError):
+            render_frame(fill_tile(),palette(),{'layer_control':0, 'priority_masks':[0]},(0,0,8,8))
