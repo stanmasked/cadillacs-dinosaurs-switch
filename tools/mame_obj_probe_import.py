@@ -7,6 +7,7 @@ pixel_parity_eligible=False so incomplete captures cannot silently be
 exported as authoritative Nintendo Switch scenes.
 """
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -45,6 +46,7 @@ def attach_probe(snapshot, probe_name, data):
     result['buffered_obj_words'] = words
     result['buffered_obj_source'] = 'MAME_0289_CPP_OBJ_PROBE_UNSYNCED'
     result['obj_probe_frame'] = frame
+    result['obj_probe_sha256'] = hashlib.sha256(data).hexdigest()
     result['obj_probe_first_end_marker_slot'] = marker
     result['obj_probe_frame_alignment'] = 'NOT_INDEPENDENTLY_VERIFIED'
     result['pixel_parity_eligible'] = False
