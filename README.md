@@ -259,3 +259,64 @@ missing/device handling and reporting. See the
 
 Core ROM verification is **not** an emulator boot, a game scene,
 an authentic first-level capture, or a Switch hardware test.
+
+## Stage 26 — local instrumented MAME capture runner
+
+The optional `tools/mame_local_capture_run.py` ties together the
+verified local `dino.zip`, a separate local `qsound_hle.zip`,
+a locally installed **instrumented** MAME and the same-render-pass
+CPS-1 frame contract.
+
+It checks all known essential ROM CRCs, calls MAME `-version` and
+`-verifyroms`, then runs for bounded time with an explicit
+frame-number window. Any resulting six-stream dumps are checked for
+full 384x224 RGB, 2048-byte VBlank OBJ, registers, palette, GFX RAM
+and matching manifest before being called format-valid.
+It records SHA-256 without copying actual game content into its report.
+
+Use `--probe-only` to test the installed executable and ROM/device
+search path **without launching gameplay**. Read the
+[local MAME capture runner instructions](docs/mame-local-capture-run.md).
+
+Twelve ROM-free automated regression cases use a synthetic stand-in
+program; they do not constitute a live MAME run. Real first-level
+data, MAME pixel parity and hardware Switch execution remain pending.
+The runner is based on this feature's parent PR #12 (ROM audit),
+and actual capture requires independent PR #8 instrumentation.
+
+### MAME recorded input for first-level capture attempts
+
+The local capture runner now supports `--playback-inp /private/first-stage.inp`
+so MAME can reproduce a recorded coin/start/first-level input sequence
+instead of saving only attract-mode frames. An opt-in companion,
+`tools/mame_playback_plan.py`, validates a regular .inp file
+(1..64 MiB), records its SHA-256 without exposing user data and
+refuses captures when the recording changes during MAME execution.
+Eight ROM-free playback-plan tests have passed locally; three more
+runner integration tests cover the MAME subprocess command, refusal
+of missing .inp and detecting a modified recording.
+
+**Important:** a valid .inp is not proof of deterministic replay or
+successful first-level entry. MAME playback can desynchronize if the
+configuration or NVRAM differs. The report always marks the replay
+authenticity unverified until actual frames have been inspected.
+See [local MAME runner and input replay](docs/mame-local-capture-run.md).
+
+### Stage 28: reject invalid or wrong-game MAME input recordings
+
+Previously an arbitrary nonempty file named `.inp` could pass our
+preflight. The input planner now validates the actual MAME 3.x
+`inp_header`: 64-byte `MAMEINP` magic/version fields and the system
+name `dino`. Missing/short, wrong-game, unsupported-major and
+modified recordings are refused before their capture is considered
+valid. The minor version is recorded without pretending that gameplay
+replay synchronization has been proven.
+
+With `--playback-inp` the emulator also receives
+`-exit_after_playback` to stop at the end of the recorded session
+rather than continuing into attract mode. The capture still requires
+complete same-render-pass inputs and **does not assert that any
+particular frame is first-level gameplay**.
+
+The expanded header parser passed 14 ROM-free tests locally; additional
+runner subprocess tests are committed but await a working CI runner.
