@@ -68,6 +68,9 @@ def confirm_playback_unchanged(input_path, original_metadata):
     """Fail if replay data changed during MAME invocation."""
     if not original_metadata.get('enabled'):
         return True
-    _, current = playback_plan(input_path)
+    try:
+        _, current = playback_plan(input_path)
+    except (ValueError, OSError):
+        return False
     return (current['bytes'] == original_metadata['bytes'] and
             current['sha256'] == original_metadata['sha256'])
