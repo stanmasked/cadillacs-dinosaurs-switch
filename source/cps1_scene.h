@@ -40,8 +40,9 @@ bool cps1_scene_decode(const uint8_t *blob, size_t length, Cps1Scene *out);
 
 /* Assemble partial CPS-1 scene with 8x8, 16x16, 32x32 tilemaps, line
  * scrolling, sprite blocks and QS2 priority masks into opaque RGBA bytes.
- * Requires interleaved 4 MiB CPS-1 gfx region. No global flip, stars,
- * raster events, or exact priority-mask edge-case guarantees yet.
+ * Requires interleaved 4 MiB CPS-1 gfx region. Supports global 180-degree
+ * flip (VIDEO_CONTROL bit15) of the visible window. No stars, raster events,
+ * or exact priority-mask edge-case guarantees yet.
  */
 bool cps1_scene_render(const uint8_t *gfx, size_t gfx_bytes,
                        const Cps1Scene *scene, uint8_t *rgba, size_t rgba_bytes);
