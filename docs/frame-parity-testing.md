@@ -8,6 +8,11 @@ ROM-free image comparator for this specific verification gap.
 
 - Reads 8-bit noninterlaced **RGBA PNG** images with all standard scanline
   filters (0, 1, 2, 3, 4); validates chunk CRC and image dimensions.
+- Strictly validates PNG chunk structure: `IHDR` first, optional `PLTE`
+  only before `IDAT`, consecutive `IDAT` data, empty `IEND` and no
+  trailing data. Rejects invalid chunk type names or unknown *critical*
+  chunks instead of silently comparing potentially ambiguous inputs.
+  Valid ancillary chunks and split consecutive `IDAT` segments remain allowed.
 - Compares pixels in raster order with an optional `--ignore-alpha` switch.
 - Reports integer differing pixel count, fraction of differing pixels,
   mean absolute channel error, peak channel error and first mismatched (x, y).
@@ -56,3 +61,25 @@ not a MAME authenticity verdict.
 This stage complements the previously developed partial CPS-1 video
 renderer. Remaining requirements: actual synchronized MAME capture, complete
 priority/raster implementation, frame parity, and real Switch runtime.
+
+
+## Stage 37 — strict PNG evidence handling
+
+The structural checks above prevent a false sense of verified reference
+integrity: a CRC-valid but malformed PNG must not be accepted as a valid
+MAME or native-renderer comparison input. New ROM-free coverage in
+`tests/test_frame_compare_png_structure.py` includes nine methods for
+trailing bytes, out-of-order and nonconsecutive chunks, invalid PNG
+type names, unknown critical payloads, malformed `IEND`, misplaced
+palette chunks, and preservation of legitimate ancillary and adjacent
+`IDAT` chunks.
+
+The safety limit on dimensions (8192×8192) and the existing filtered
+RGBA decode and pixel metrics are unchanged. This is format validation,
+**not proof of gameplay-frame provenance**, and does not turn synthetic
+frames into authentic MAME reference captures.
+
+A separately reproduced local chunk-state checker exercised malformed and
+valid synthetic fixtures. The exact newly committed GitHub test suite
+has not yet run successfully in Actions because its runner allocation is
+failing before job steps (issue #20); this PR remains a draft pending CI.
