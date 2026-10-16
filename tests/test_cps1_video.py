@@ -133,6 +133,19 @@ class AtlasTests(unittest.TestCase):
         self.assertEqual(scan[1:5], bytes((0,0,0,0)))
         self.assertEqual(scan[5:9], bytes((12,23,34,255)))
 
+
+    def test_scroll1_half_selection(self):
+        palette=[(0,0,0)]*TOTAL_COLORS
+        palette[513]=(255,0,0)
+        # Scroll1 left-half plane sets one red pixel, right-half stays clear.
+        region=bytearray(64)
+        region[3]=0x80
+        left=render_atlas(region,palette,layer='scroll1',count=1,scale=1,scroll1_half='left')
+        right=render_atlas(region,palette,layer='scroll1',count=1,scale=1,scroll1_half='right')
+        self.assertNotEqual(left,right)
+        with self.assertRaises(ValueError):
+            render_atlas(region,palette,layer='scroll1',scroll1_half='top')
+
     def test_invalid_atlas_range(self):
         with self.assertRaises(ValueError): render_atlas(bytes(128),[(0,0,0)]*TOTAL_COLORS,count=0)
         with self.assertRaises(ValueError): render_atlas(bytes(128),[(0,0,0)]*TOTAL_COLORS,layer='stars1')
