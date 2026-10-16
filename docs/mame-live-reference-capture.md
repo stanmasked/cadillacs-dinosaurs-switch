@@ -101,3 +101,64 @@ It checks that six expected files are written and that byte lengths,
 big-endian words, manifest and honesty/provenance fields are correct.
 If liblua5.4 is not available, the smoke test is skipped and reported as
 such. **This is not a real MAME capture.**
+
+## Pixel-format correctness — verified against MAME core C++
+
+MAME's Lua documentation describes two *underlying* screen formats:
+palette-indexed and direct RGB. However, the authoritative implementation
+of `screen_device::pixels(u32 *)` in MAME
+[`src/emu/screen.cpp`](https://github.com/mamedev/mame/blob/master/src/emu/screen.cpp)
+**resolves indexed pixels through the current effective palette before
+returning the buffer**. For direct RGB bitmaps, it returns the RGB value.
+
+Consequently, the output of `screen:pixels()` is packed **RGB32 in both
+cases**. Previous double palette lookup was a serious bug: it could reject
+valid pixels or corrupt colors, especially for RGB values exceeding the
+number of palette entries.
+
+The capture now uses the documented bulk `screen:pixels()` method and
+Lua `string.unpack('=I4')` (host byte order) and ALWAYS extracts
+RGB channels directly. It records:
+
+- `reference_pixel_encoding: "rgb32_resolved"` — the **output** format
+  after MAME's screen conversion;
+- `reference_source_format: "indexed_bitmap" | "rgb_bitmap"` — the
+  **underlying** screen format, inferred from `screen.palette`.
+
+The Python importer requires both fields and checks the exact 384×224
+visible-area dimensions and frame stem. Lua 5.4 synthetic smoke tests
+exercise both native framebuffer types and ensure effective RGB values
+are not converted through the palette twice. Still not a confirmed
+runtime capture from real MAME.
+
+Source references:
+- [MAME screen.cpp native pixel and pixels conversion](https://github.com/mamedev/mame/blob/master/src/emu/screen.cpp)
+- [MAME Lua screen device API](https://docs.mamedev.org/luascript/ref-devices.html)
+- [MAME Lua memory shares](https://docs.mamedev.org/luascript/ref-mem.html)
+
+## Repeatable audit of multiple captured frames
+
+Added `tools/mame_capture_audit.py`, a **ROM-free local audit** for actual
+MAME reference dumps. It accepts at most 120 `frame-XXXXXXXX` records.
+
+```sh
+python3 tools/mame_capture_audit.py cps1-captures \
+  --output local_outputs/mame-capture-audit.json
+```
+
+Each capture is checked against the full six-file contract: lengths,
+`dino` ID/frame number, MAME effective palette provenance, original
+384×224 dimensions, big-endian RAM, **RGB32-resolved screen pixels**
+and the explicit absence of the VBlank-latched OBJ buffer. The report
+contains SHA-256 hashes of each binary and the number of distinct RGB
+colors; it flags all-uniform frames, which may signify loading/blank video.
+For consecutive frames it computes exact changed-pixel counts, changed
+palette entries, changed RAM/register flags and frame-number gaps.
+
+No claim of actual MAME execution or pixel-exact re-rendering is made
+by these diagnostics. A frame can change while sprites remain inaccessible,
+and even a fully verified dump is not equivalent to full arcade gameplay.
+The auditor intentionally refuses manifests that falsely claim a complete
+sprite buffer or one-frame pixel parity. Nine new deterministic synthetic
+tests exercise this contract, temporal deltas, malformed stems and safe
+file creation. Raw captures, generated reports and original art remain local.

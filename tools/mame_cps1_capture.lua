@@ -67,17 +67,25 @@ local function active_palette()
     return table.concat(result)
 end
 
+-- MAME's screen_device::pixels(u32*) ALWAYS produces RGB32 even when
+-- the underlying screen bitmap is indexed: see src/emu/screen.cpp.
+-- Do not look up a second palette entry. Lua screen:pixels() yields a binary
+-- host-endian u32 buffer, which '=I4' reads correctly. screen.palette is
+-- recorded only as the SOURCE bitmap format, not output encoding.
 local function reference_rgb()
+    local blob,width,height=screen:pixels()
+    assert(width==384 and height==224,
+           string.format('Unexpected MAME visible area %sx%s',
+                         tostring(width),tostring(height)))
+    assert(type(blob)=='string' and #blob==width*height*4,
+           'screen:pixels returned malformed 32-bit buffer')
+    local indexed=(screen.palette~=nil)
     local result={}
-    for y=0,223 do
-        for x=0,383 do
-            local pen=screen:pixel(x,y)
-            assert(type(pen)=='number' and pen>=0 and pen<palette.entries,
-                   'screen:pixel did not return indexed CPS-1 palette pen')
-            result[#result+1]=color_bytes(palette:pen_color(pen))
-        end
+    for i=0,width*height-1 do
+        local value=string.unpack('=I4',blob,i*4+1)
+        result[#result+1]=color_bytes(value)
     end
-    return table.concat(result)
+    return table.concat(result),indexed and 'indexed_bitmap' or 'rgb_bitmap'
 end
 
 local function capture(frame)
@@ -86,18 +94,22 @@ local function capture(frame)
     write_file(stem..'.cps-a-be.bin',serialize_words(cps_a,0x40))
     write_file(stem..'.cps-b-be.bin',serialize_words(cps_b,0x40))
     write_file(stem..'.palette-rgb24.bin',active_palette())
-    write_file(stem..'.reference-rgb24.bin',reference_rgb())
+    local reference,pixel_mode=reference_rgb()
+    write_file(stem..'.reference-rgb24.bin',reference)
     write_file(stem..'.manifest.json',string.format([=[{
   "game":"dino","frame":%d,"capture_hook":"frame_done",
   "gfxram_bytes":196608,"cps_a_bytes":64,"cps_b_bytes":64,
   "palette_bytes":9216,"reference_width":384,"reference_height":224,
   "reference_rgb_bytes":258048,"raw_word_endianness":"big",
   "palette_source":"MAME_effective_pen_color",
+  "reference_pixel_encoding":"rgb32_resolved",
+  "reference_source_format":"%s",
   "obj_latch":"NOT_CAPTURED","pixel_parity_eligible":false,
   "warning":"Authentic MAME RGB only; internal buffered OBJ unavailable"
 }
-]=],frame))
-    print('[cps1 capture] collected private MAME frame '..tostring(frame))
+]=],frame,pixel_mode))
+    print('[cps1 capture] collected private MAME frame '..tostring(frame)..
+          ' ('..pixel_mode..')')
 end
 
 -- MAME docs: called after video update. Run from -autoboot_script.

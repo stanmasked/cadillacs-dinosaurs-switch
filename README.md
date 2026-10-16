@@ -235,3 +235,17 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+### MAME resolved-RGB correctness update
+
+Core [MAME screen.cpp](https://github.com/mamedev/mame/blob/master/src/emu/screen.cpp)
+confirms that `screen:pixels()` **already returns RGB32** for both indexed
+and direct-color screen buffers. The Lua capture now avoids erroneous
+second palette lookup. `reference_pixel_encoding` is
+`rgb32_resolved`, with separate `reference_source_format` identifying
+the underlying bitmap (`indexed_bitmap` / `rgb_bitmap`). The importer
+requires the matching provenance and 384×224 visible dimensions.
+
+Local Lua 5.4 smoke/integration checks confirmed both source formats
+convert to expected RGB24 and can be imported as an explicitly partial
+reference PNG/JSON capture. This is not a verified live MAME run.

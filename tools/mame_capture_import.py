@@ -6,6 +6,7 @@ native 384x224 MAME RGB24 framebuffer to a PNG with no resize or filtering.
 """
 import argparse
 import json
+import re
 from pathlib import Path
 import struct
 import sys
@@ -35,6 +36,8 @@ def decode_reference_rgb24(data):
     return _png_rgba(REF_W,REF_H,rgba,'MAME native CPS-1 RGB reference frame')
 
 def import_capture(directory,frame_stem):
+    if not isinstance(frame_stem, str) or not re.fullmatch(r'frame-[0-9]{8}', frame_stem):
+        raise ValueError('frame_stem must match frame-XXXXXXXX (eight digits)')
     directory=Path(directory)
     stem=directory/frame_stem
     manifest=json.loads((directory/(frame_stem+'.manifest.json')).read_text())
@@ -42,7 +45,11 @@ def import_capture(directory,frame_stem):
         manifest.get('palette_source')!='MAME_effective_pen_color' or
         manifest.get('obj_latch')!='NOT_CAPTURED' or
         manifest.get('pixel_parity_eligible') is not False or
-        manifest.get('raw_word_endianness')!='big'):
+        manifest.get('raw_word_endianness')!='big' or
+        manifest.get('reference_width')!=REF_W or
+        manifest.get('reference_height')!=REF_H or
+        manifest.get('reference_pixel_encoding')!='rgb32_resolved' or
+        manifest.get('reference_source_format') not in ('indexed_bitmap','rgb_bitmap')):
         raise ValueError('Unsupported or misleading MAME capture provenance')
     gfx=unpack_be_words(Path(str(stem)+'.gfxram-be.bin').read_bytes(),
                         GFX_BYTES,'CPS-1 QSound gfx RAM')
@@ -71,6 +78,8 @@ def import_capture(directory,frame_stem):
     scene['reference_frame']=frame_stem
     scene['pixel_parity_eligible']=False
     scene['capture_method']='mame_lua_frame_done'
+    scene['reference_pixel_encoding']=manifest['reference_pixel_encoding']
+    scene['reference_source_format']=manifest['reference_source_format']
     scene['gfxram_mapped_bytes']=GFX_BYTES
     scene['note']=('Authentic reference pixels; reconstructed RAM snapshot lacks '
                    'VBlank-latched sprite buffer and is NOT parity eligible')
