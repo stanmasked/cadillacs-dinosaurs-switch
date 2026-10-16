@@ -73,8 +73,7 @@ class MameReferenceCaptureTests(unittest.TestCase):
                           ('reference_width',512),
                           ('reference_rgb_bytes',0)):
             with self.subTest(key=key):
-                bad=dict(original,key_placeholder=0)
-                bad.pop('key_placeholder')
+                bad=dict(original)
                 bad[key]=value
                 path.write_text(json.dumps(bad))
                 with self.assertRaisesRegex(ValueError,'manifest field'):
