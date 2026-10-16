@@ -244,13 +244,16 @@ Added a self-contained, **no-ROM** MAME readiness audit:
 
 The available private archive passes **all 16 of 16 essential program,
 graphics and sound ROM CRCs**. Archival programmable-logic data matches
-**11 of 12** public reference dumps, with only `ioc1.ic1` differing.
-This PLD discrepancy is distinct from the verified actual game code
+**11 of 12** reference checksums; the twelfth, `ioc1.ic1`,
+is a **known alternative archival revision** with a different checksum.
+All 12 archival PLD dumps are recognized as known variants, but the
+installed MAME version's `-verifyroms` result remains decisive.
+This revision difference is distinct from the verified game code
 and graphics. The separate QSound HLE device is **not present or checked
 in this environment**; MAME references its 8192-byte `dl-1425.bin`
 image and may require a `qsound_hle.zip` device set.
 
-Ten deterministic ROM-free regressions exercise CRC and ZIP safety,
+Eleven deterministic ROM-free regressions exercise CRC and ZIP safety,
 missing/device handling and reporting. See the
 [MAME ROM readiness guide](docs/mame-rom-readiness.md).
 
