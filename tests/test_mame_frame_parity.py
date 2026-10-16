@@ -61,6 +61,8 @@ class FrameParityPipelineTests(unittest.TestCase):
         self.make_exact_capture()
         report,ref,candidate,heatmap=run_parity(self.root,STEM,GFX)
         self.assertEqual(report['comparison']['different_pixels'],0)
+        self.assertEqual(report['spatial_error_profile']['different_rgb_pixels'],0)
+        self.assertIsNone(report['spatial_error_profile']['bounding_box_xyxy_inclusive'])
         self.assertTrue(report['pixel_parity_verified_for_this_frame'])
         self.assertFalse(report['game_wide_parity_verified'])
         self.assertFalse(report['native_switch_runtime_tested'])
@@ -76,6 +78,9 @@ class FrameParityPipelineTests(unittest.TestCase):
         report,_,_,heatmap=run_parity(self.root,STEM,GFX)
         stats=report['comparison']
         self.assertEqual(stats['different_pixels'],1)
+        self.assertEqual(report['spatial_error_profile']['different_rgb_pixels'],1)
+        self.assertEqual(report['spatial_error_profile']['bounding_box_xyxy_inclusive'],[0,0,0,0])
+        self.assertEqual(report['spatial_error_profile']['rows_with_errors'],1)
         self.assertFalse(report['pixel_parity_verified_for_this_frame'])
         self.assertEqual(stats['first_difference_xy'],[0,0])
         self.assertEqual(load_rgba_png(heatmap)[2][:4],
