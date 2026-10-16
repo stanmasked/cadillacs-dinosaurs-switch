@@ -51,6 +51,58 @@ To let the emulator itself decide when a device ZIP is unavailable,
 use `--allow-unverified-device`. This relaxes only our own
 early device precheck; **MAME `-verifyroms` must still succeed**.
 
+## Record and replay input to reach the FIRST level
+
+An unattended MAME session may remain on attract-mode screens. To
+capture the real first level, first record a **private controller input**
+session using the *same* emulator version, ROM revision and settings
+as the capture run. On a host where you can launch MAME interactively:
+
+```sh
+/path/to/mame dino -rompath /private/mame-roms \
+  -record /private/first-stage.inp
+```
+
+Play through startup, insert a virtual coin and start the game, then
+move into the first level before stopping the recording. Treat the
+recorded `.inp` as a user-private input timeline; do not check it
+into GitHub. This recording is **not provided** by the project.
+
+Pass it to the instrumented capture runner:
+
+```sh
+python3 tools/mame_local_capture_run.py \
+  --mame /path/to/instrumented/mame \
+  --rom-dir /private/mame-roms \
+  --capture-dir /private/first-stage-render \
+  --start 900 --count 6 \
+  --seconds-to-run 40 \
+  --playback-inp /private/first-stage.inp \
+  --report /private/first-stage-run-report.json
+```
+
+The `--start` frame must be determined for **that particular recording**
+and the input recording must last long enough to reach it. The runner
+does not claim that frame 900 is actually first-level gameplay.
+
+The runner checks that the recorded input is a nonempty, regular
+`.inp` file no larger than 64 MiB and passes the file to MAME using
+the **`-playback` option without invoking a command shell**. It records
+only the file length and SHA-256 in the JSON report. It rehashes the
+recording after the emulator exits and **rejects a capture if those
+bytes changed during execution**.
+
+Reproducibility is conditional. MAME warns that playback can
+desynchronize if its configuration, NVRAM or memory-card data differ.
+Use a matching emulator version and identical configuration; do not
+assume a syntactically valid .inp produces the same game state.
+The provenance report therefore always marks
+`input_replay_verified: false`. Only inspecting actual captured
+render frames can establish that the first level was entered.
+
+Official MAME documentation:
+https://docs.mamedev.org/commandline/commandline-all.html
+
 ## Capture complete frames
 
 ```sh
@@ -110,8 +162,8 @@ ROMs or private sequences to GitHub.
 python3 -m unittest discover -s tests -p 'test_mame_local_capture_run.py' -v
 ```
 
-The 12 new regression cases run a tiny Python **test stand-in**, not
-real MAME. They cover success, readiness-only mode, missing QSound,
+The 15 runner regression cases run a tiny Python **test stand-in**, not
+real MAME. They cover private INP playback, unexpected INP changes, success, readiness-only mode, missing QSound,
 invalid core ROM, missing binary, false same-pass manifest,
 truncated VBlank OBJ, invalid ranges, failed `-verifyroms`,
 no-overwrite safety and CLI status.
