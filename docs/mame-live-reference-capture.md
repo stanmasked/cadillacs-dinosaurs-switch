@@ -148,3 +148,63 @@ This does **not** cryptographically bind binary content to the manifest.
 Mixing same-size binaries between capture sets cannot be detected by
 these metadata checks alone; checksums and synchronized VBlank-latched
 sprite memory are future capture-integrity milestones.
+
+
+## Stage 40 — five-file CRC32 frame integrity
+
+Every **new** Lua `frame-XXXXXXXX.manifest.json` includes `file_crc32`,
+a JSON object keyed by the five raw binary suffixes:
+
+```json
+{
+  "file_crc32": {
+    "gfxram-be.bin": "00000000",
+    "cps-a-be.bin": "00000000",
+    "cps-b-be.bin": "00000000",
+    "palette-rgb24.bin": "00000000",
+    "reference-rgb24.bin": "00000000"
+  }
+}
+```
+
+The zero values above are **illustrative placeholders**, not an example
+of a real captured frame. Actual values are eight-digit lowercase hexadecimal
+CRC32/ISO-HDLC computed from each individual binary's exact bytes,
+compatible with Python's `zlib.crc32`.
+
+The MAME Lua recorder serializes all five binary buffers, computes their
+checksums and writes the manifest **last**, after the five data files.
+The importer reads the same five files once, verifies *every* checksum
+against the manifest **before** RAM/register/palette conversion, and
+retains verified hashes in `capture_file_crc32` of the local partial
+snapshot. This detects accidental corruption and mixing same-sized files
+from different captures (e.g. CPS-A and CPS-B both occupy 64 bytes).
+
+**Compatibility:** Older captures without `file_crc32` are rejected by
+the updated importer instead of silently bypassing validation. Record
+a fresh authorized local capture to obtain a new manifest. Do not
+fabricate hashes or mark unlatched OBJ memory as present.
+
+**Limitations:** CRC32 detects accidental corruption, not malicious edits,
+hash collisions or mismatched emulator timing; it is not a digital signature.
+A manifest and binaries altered together can still satisfy CRC32. The
+internal VBlank-latched OBJ buffer is *still missing*. A verified capture
+is **not automatically pixel-parity eligible**.
+
+### Local verification
+
+- CRC helper `tools/mame_capture_crc.py` and its nine committed,
+  ROM-free tests matched their GitHub blob hashes and passed **9/9** locally.
+- A local Lua 5.4 run of the exact GitHub-committed capture script produced
+  all six files, and **Python `zlib.crc32` matched all five Lua-generated
+  checksums**; overwriting a pre-existing frame remained blocked (2/2).
+- Local importer wiring/provenance tests used source files with verified
+  GitHub blob hashes and stubbed unrelated native capture/PNG dependencies;
+  **5/5 passed**.
+- Existing manifest helper tests **8/8 passed**. In total, the focused
+  local set reported **24/24** passed. These checks are synthetic and are
+  **not** a clean full-repository CI run or actual MAME capture.
+- The updated repository-wide test suite and new import/Lua tests remain
+  pending due to Actions runner failure before job execution (issue #20).
+
+No captured game bytes or private media assets are included in this PR.
