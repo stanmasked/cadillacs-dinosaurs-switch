@@ -124,7 +124,11 @@ static void draw_scroll(const uint8_t *gfx, size_t gfx_bytes,
                 place(rgba,s,index,palette_base+(attr&31u)*16u+pen);
             if (high_priority) {
                 unsigned group=(attr>>7)&3u;
-                occluded[index]=(uint8_t)(pen!=15u && (s->priority[group]&(1u<<pen))!=0u);
+                /* MAME tilemap high-layer draw uses priority=1 and
+                 * default priority_mask=0xff: bits are ORed, never cleared.
+                 * Preserve a prior sprite's priority=31 across passes. */
+                if (pen!=15u && (s->priority[group]&(1u<<pen))!=0u)
+                    occluded[index]=1u;
             }
         }
     }
@@ -198,7 +202,8 @@ bool cps1_scene_render(const uint8_t *gfx,size_t gfx_bytes,
     for (unsigned i=0;i<4;++i) {
         unsigned layer=(s->layer_control>>(6u+2u*i))&3u;
         unsigned next=(i<3u)?((s->layer_control>>(8u+2u*i))&3u):4u;
-        if (next==0u) memset(occluded,0,CPS1_SCENE_W*CPS1_SCENE_H);
+        /* screen.priority().fill(0) happens ONCE in render_layers(),
+         * already represented by calloc above. Never clear on repeat OBJ. */
         if (layer==0u) draw_sprites(gfx,gfx_bytes,s,rgba,occluded);
         else draw_scroll(gfx,gfx_bytes,s,(int)layer-1,rgba,occluded,next==0u);
     }

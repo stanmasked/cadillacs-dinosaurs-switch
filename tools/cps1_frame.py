@@ -145,8 +145,8 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
         # MAME draws the *previous* tilemap's high-priority pens into a
         # priority bitmap immediately before sprites are rendered.
         high_before_sprites = (order_index < 3 and order[order_index + 1] == 'sprites')
-        if high_before_sprites:
-            sprite_occlusion = bytearray(width * height)
+        # MAME clears priority once at the start of render_layers(),
+        # not before every OBJ pass. Preserve earlier sprite stamps.
         if lname == 'sprites':
             # MAME draws OBJ entries first-to-last. Each nontransparent
             # sprite pen stamps the priority map to 31, even if a foreground
@@ -220,7 +220,8 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
                     set_pixel(vx+px,vy+py,palette[base+pen])
                     if high_before_sprites:
                         group = (attr & 0x0180) >> 7
-                        sprite_occlusion[py * width + px] = int(pen_blocks_sprite(pen,group,priority_registers))
+                        if pen_blocks_sprite(pen,group,priority_registers):
+                            sprite_occlusion[py * width + px] = 1
     return bytes(rgba)
 
 

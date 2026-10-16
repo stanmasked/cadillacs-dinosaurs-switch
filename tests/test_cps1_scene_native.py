@@ -298,6 +298,46 @@ class NativeSceneTests(unittest.TestCase):
                     0,0,0,0xff00]
                 self.parity(scene)
 
+    def test_repeated_obj_pass_keeps_first_priority_stamps(self):
+        snap=blank_scene()
+        snap['layer_control']=(2<<6)|(0<<8)|(1<<10)|(0<<12)
+        snap['palette_rgb'][513]=[15,25,220]
+        snap['scroll1']={'words':[0]*8192,'enabled':True,
+                         'scrollx':0,'scrolly':0}
+        snap['buffered_obj_words']=[64,16,0,0,0,0,0,0xff00]
+        # First OBJ draws red, Scroll1 then covers it with blue.
+        # Second OBJ pass must NOT repaint red over the foreground.
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],
+                         bytes((15,25,220,255)))
+
+    def test_transparent_later_high_pass_preserves_masked_sprite_stamp(self):
+        snap=blank_scene()
+        snap['layer_control']=(1<<6)|(0<<8)|(2<<10)|(0<<12)
+        snap['palette_rgb'][513]=[15,25,220]
+        snap['scroll1']={'words':[0]*8192,'enabled':True,
+                         'scrollx':0,'scrolly':0}
+        snap['scroll2']={'words':[2,0]*4096,'enabled':True,
+                         'scrollx':0,'scrolly':0}
+        snap['priority_masks']=[2,0,0,0]
+        snap['buffered_obj_words']=[64,16,0,0,0,0,0,0xff00]
+        # Scroll1 high pens block first OBJ. Transparent Scroll2
+        # cannot clear priority before the second OBJ pass.
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],
+                         bytes((15,25,220,255)))
+
+    def test_single_obj_pass_unchanged_after_priority_bitmap_fix(self):
+        snap=blank_scene()
+        snap['layer_control']=(1<<6)|(2<<8)|(0<<10)|(3<<12)
+        snap['palette_rgb'][513]=[15,25,220]
+        snap['scroll1']={'words':[0]*8192,'enabled':True,
+                         'scrollx':0,'scrolly':0}
+        snap['buffered_obj_words']=[64,16,0,0,0,0,0,0xff00]
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],
+                         bytes((255,0,0,255)))
+
     def test_first_opaque_sprite_owns_overlap_in_native_and_python(self):
         snap=blank_scene()
         snap['palette_rgb'][17]=[0,230,60]
