@@ -277,3 +277,20 @@ Details: [composite sprite ROM bank wrapping](docs/cps1-composite-sprite-wrap.md
 This PR depends on PR #15. Existing Switch NRO v0.5 does not contain
 these source changes; actual MAME game-frame parity and hardware
 validation remain pending.
+
+## Stage 32 — full-frame composite sprite and scroll-mask C parity
+
+Expanded native C-versus-Python scene regression coverage for
+overlapping CPS-1 sprites under Scroll2 priority front masks,
+transparent background tiles, priority-group switching, pen0, and
+16 deterministic mixed scroll/flip cases. Five new native test
+methods were committed on top of the Stage 31 branch.
+
+A separate local host C stand, reconstructed from the current PR
+source and built using gcc with UBSan and `-Werror`, passed **25/25
+ROM-free tests** with zero whole-frame pixel differences versus
+Python. It is not a byte-identical GitHub checkout or a verified
+Nintendo Switch build; GitHub CI still needs to run the committed
+integration suite.
+
+See [CPS-1 composite foreground-mask parity](docs/cps1-native-priority-composites.md).

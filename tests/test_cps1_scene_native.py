@@ -207,6 +207,97 @@ class NativeSceneTests(unittest.TestCase):
         self.parity(snap)
         self.assertEqual(self.native_frame(snap)[:4],bytes((5,6,7,255)))
 
+    def test_priority_scroll2_masks_entire_two_row_sprite(self):
+        scene=blank_scene()
+        # Scroll2 immediately before OBJ in CPS-B draw order.
+        scene['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+        scene['scroll2']={'words':[0]*8192,'enabled':True,
+                          'scrollx':0,'scrolly':0}
+        scene['priority_masks']=[2,0,0,0]  # pen1 in priority group0
+        scene['buffered_obj_words']=[
+            64,16,0,0x1000,  # two vertically stacked 16x16 cells
+            64,16,0,1,       # another OBJ would otherwise overwrite
+            0,0,0,0xff00]
+        scene['palette_rgb'][1025]=[15,25,220]
+        scene['palette_rgb'][17]=[30,220,70]
+        self.parity(scene)
+        native=self.native_frame(scene)
+        self.assertEqual(native[:4],bytes((15,25,220,255)))
+        self.assertEqual(native[16*W*4:16*W*4+4],bytes((15,25,220,255)))
+
+    def test_priority_mask_disabled_first_sprite_wins_both_rows(self):
+        scene=blank_scene()
+        scene['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+        scene['scroll2']={'words':[0]*8192,'enabled':True,
+                          'scrollx':0,'scrolly':0}
+        scene['priority_masks']=[0,0,0,0]
+        scene['buffered_obj_words']=[
+            64,16,0,0x1000, 64,16,0,1, 0,0,0,0xff00]
+        scene['palette_rgb'][1025]=[15,25,220]
+        scene['palette_rgb'][17]=[30,220,70]
+        self.parity(scene)
+        native=self.native_frame(scene)
+        self.assertEqual(native[:4],bytes((255,0,0,255)))
+        # Code16 is synthetic pen0 and remains opaque, not transparent.
+        self.assertEqual(native[16*W*4:16*W*4+4],bytes((0,0,0,255)))
+
+    def test_priority_group_one_mask_applies_only_group_one(self):
+        scene=blank_scene()
+        scene['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+        words=[0]*8192
+        for i in range(4096): words[2*i+1]=0x80 # priority group1
+        scene['scroll2']={'words':words,'enabled':True,
+                          'scrollx':0,'scrolly':0}
+        scene['priority_masks']=[2,0,0,0]
+        scene['buffered_obj_words']=[64,16,0,0x1000,0,0,0,0xff00]
+        scene['palette_rgb'][1025]=[15,25,220]
+        self.parity(scene)
+        self.assertEqual(self.native_frame(scene)[:4],bytes((255,0,0,255)))
+        scene['priority_masks']=[0,2,0,0]
+        self.parity(scene)
+        self.assertEqual(self.native_frame(scene)[:4],bytes((15,25,220,255)))
+
+    def test_transparent_foreground_tile_unmasks_sprite_only_there(self):
+        scene=blank_scene()
+        scene['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+        words=[0]*8192
+        # Synthetic code2 has all pen15: transparent at (X64,Y16).
+        idx=tile_ram_index('scroll2',4,1)
+        words[2*idx]=2
+        scene['scroll2']={'words':words,'enabled':True,
+                          'scrollx':0,'scrolly':0}
+        scene['priority_masks']=[2,0,0,0]
+        scene['buffered_obj_words']=[64,16,0,0x1000,0,0,0,0xff00]
+        scene['palette_rgb'][1025]=[15,25,220]
+        self.parity(scene)
+        native=self.native_frame(scene)
+        self.assertEqual(native[:4],bytes((255,0,0,255)))
+        self.assertEqual(native[16*W*4:16*W*4+4],bytes((15,25,220,255)))
+
+    def test_native_priority_masks_16_deterministic_full_frames(self):
+        import random
+        rng=random.Random(31032)
+        for scenario in range(16):
+            with self.subTest(scenario=scenario):
+                scene=blank_scene()
+                scene['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+                words=[0]*8192
+                for i in range(4096):
+                    words[2*i+1]=(((scenario+i)%4)<<7)
+                scene['scroll2']={
+                    'words':words,'enabled':True,
+                    'scrollx':rng.randrange(0,16),
+                    'scrolly':rng.randrange(0,16)}
+                scene['priority_masks']=[
+                    rng.choice((0,2,0x8000)) for _ in range(4)]
+                attr=0x1000 | (0x20 if scenario&1 else 0) | (
+                    0x40 if scenario&2 else 0)
+                scene['buffered_obj_words']=[
+                    64+(scenario*4),16+(scenario*2),0,attr,
+                    64+(scenario*4),16+(scenario*2),0,1,
+                    0,0,0,0xff00]
+                self.parity(scene)
+
     def test_first_opaque_sprite_owns_overlap_in_native_and_python(self):
         snap=blank_scene()
         snap['palette_rgb'][17]=[0,230,60]
