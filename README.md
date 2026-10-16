@@ -322,3 +322,22 @@ positions and empty frames. See
 These checks do not require a game ROM and establish no real MAME frame
 parity. Real original-frame capture and Switch console execution remain
 unverified.
+
+## Stage 24 — real MAME render-capture series to Switch CPS1SEQ1
+
+New `tools/mame_capture_sequence.py` validates a numbered series of
+**same-render-pass** CPS-1 MAME captures, checks that every frame has
+its **VBlank-latched OBJ** buffer, then converts them to a bounded
+`CPS1SEQ1` timeline for the existing native Switch v0.5 viewer.
+
+The tool refuses missing frames, bad source flags, partial raster
+captures and incorrect buffers. It emits a second JSON provenance report
+with source frame numbers and SHA-256s of every input stream and
+packed scene, without including original game RAM or artwork in the
+report. Counts 1–120, playback FPS 1–60 and explicit optional stride.
+
+See [MAME capture-to-Switch timeline workflow](docs/mame-captures-to-switch-sequence.md).
+This feature depends on the **separately reviewed render-capture PR #8**.
+Its 11 ROM-free end-to-end regressions exercise the binary contract only.
+The real first level cannot be claimed: MAME execution, original camera
+state, full gameplay logic and console hardware tests are still pending.
