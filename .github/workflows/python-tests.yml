@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'tools/**'
+      - 'source/cps1_tile.c'
+      - 'source/cps1_tile.h'
       - 'tests/**'
       - '.github/workflows/python-tests.yml'
   pull_request:
@@ -29,3 +31,8 @@ jobs:
           python-version: '3.13'
       - name: Run synthetic ROM mapping and tile decoder tests
         run: python -m unittest discover -s tests -v
+      - name: Compile and run portable C tile decoder tests
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Isource \
+            tests/cps1_tile_native_test.c source/cps1_tile.c -o /tmp/cps1_tile_tests
+          /tmp/cps1_tile_tests
