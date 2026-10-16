@@ -85,12 +85,19 @@ The `--start` frame must be determined for **that particular recording**
 and the input recording must last long enough to reach it. The runner
 does not claim that frame 900 is actually first-level gameplay.
 
-The runner checks that the recorded input is a nonempty, regular
-`.inp` file no larger than 64 MiB and passes the file to MAME using
+The runner requires a regular `.inp` file larger than the 64-byte
+MAME header and no larger than 64 MiB. It now checks MAME's documented
+`MAMEINP\\0` magic, INP major version **3** and the header's
+system name **dino** before spawning MAME. This avoids accepting random
+or wrong-game data merely because of the filename extension.
+
+The same recorded input is passed to MAME using
 the **`-playback` option without invoking a command shell**. It records
 only the file length and SHA-256 in the JSON report. It rehashes the
 recording after the emulator exits and **rejects a capture if those
-bytes changed during execution**.
+bytes changed during execution** (including replacement with an invalid
+header). MAME is also invoked with `-exit_after_playback`: frames
+after the recording ends cannot silently be captured from attract mode.
 
 Reproducibility is conditional. MAME warns that playback can
 desynchronize if its configuration, NVRAM or memory-card data differ.
@@ -173,3 +180,16 @@ boots and produces authentic complete render-pass data.
 
 MAME documentation:
 https://docs.mamedev.org/commandline/commandline-all.html
+
+## Stage 28: INP header verification
+
+The source-level reference is MAME `src/emu/ioport.cpp` `inp_header`,
+which defines the 64-byte header offsets: magic 0x00..0x07, major/minor
+versions at 0x10/0x11, and 12-byte machine name at 0x14..0x1f.
+These checks are deliberately version-scoped, and an INP accepted by
+the Python validator can still desynchronize in actual MAME.
+
+The enhanced standalone header test suite has 14 locally passing tests.
+The integrated runner tests use synthetic headers and require the
+`-exit_after_playback` argument. They are NOT real input recordings or
+a claim that the original level has been played.
