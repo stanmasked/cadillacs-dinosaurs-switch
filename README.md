@@ -257,3 +257,29 @@ render phases; resulting dumps remain **not pixel-parity eligible** until
 their frame synchronization is independently established.
 
 No original ROM, MAME source or captured sprite data is committed.
+
+## Preferred experimental capture: same render callback
+
+The new [render-pass capture guide](docs/mame-render-pass-capture.md)
+describes a stronger successor to the separate VBlank OBJ dump:
+`tools/mame_render_instrument.py` creates an opt-in patch that captures
+the original CPS-1 RGB image, effective palette, 192 KiB GFX RAM,
+CPS-A/B registers and the actual `m_buffered_obj` **inside one
+screen_update_cps1 invocation, immediately after render_layers**.
+
+`tools/mame_render_import.py` checks the complete 7-file contract
+and produces a private reference PNG plus an OBJ-populated scene JSON
+ready to **attempt** a pixel comparison with the Switch-oriented Python
+renderer. The importer always records
+`pixel_parity_verified: false`: it does not claim that reconstructed
+pixels already match MAME.
+
+The source anchor was checked against upstream MAME CPS-1 video blob
+`c1b5e3867824d0d1877b981142db7741346d2c55`.
+If MAME draws using partial update rectangles rather than the whole
+384x224 view, the experimental collector **does not save a frame**;
+it refuses to combine separate render phases into a misleading snapshot.
+
+The host C++-compilation test and Python data-contract tests are
+synthetic only; full MAME instrumented execution is still pending.
+No original ROMs, captured memory, frames or assets are committed.
