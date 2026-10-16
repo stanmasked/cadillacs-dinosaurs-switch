@@ -255,3 +255,25 @@ See [sprite pixel-priority audit](docs/cps1-sprite-priority.md).
 This is a source-code correction, not a new Switch NRO and not
 evidence of pixel-perfect game footage. Live MAME capture, PR/CI
 review and hardware tests are still required.
+
+## Stage 31 — CPS-1 composite sprite tile-bank wrapping
+
+Confirmed another direct rendering discrepancy with MAME:
+`gfxrom_bank_mapper` validates an **original OBJ base code**, but
+`gfx_element::prio_transpen` wraps **each generated composite part**
+modulo the 16x16 graphics-element count. A valid 2-row sprite starting
+at `0x7ff0` therefore wraps its second row to tile `0x0000`.
+
+Previously both our Python and C renderers could incorrectly omit that
+second row. Both implementations now make the correct distinction:
+reject an invalid original base code, yet wrap parts of valid
+large sprite blocks after computing their constituent tile codes.
+
+**14/14 local ROM-free Python tests passed** across this new wrapping
+behavior and prior sprite-priority regression suite. Three native C/Python
+integration cases are committed but await compilation/execution.
+Details: [composite sprite ROM bank wrapping](docs/cps1-composite-sprite-wrap.md).
+
+This PR depends on PR #15. Existing Switch NRO v0.5 does not contain
+these source changes; actual MAME game-frame parity and hardware
+validation remain pending.
