@@ -17,4 +17,21 @@
 bool cps1_decode_tile16(const uint8_t *gfx, size_t gfx_size,
                         size_t code, uint8_t out[CPS1_TILE16_PIXELS]);
 
+
+#define CPS1_TILE8_PIXELS 64u
+#define CPS1_TILE32_PIXELS 1024u
+
+/* CPS-1 ROM: 8x8 left/right (64 bytes shared by the two alternatives),
+ * 16x16 (128 bytes) or 32x32 (512 bytes). Never returns RGB or uses
+ * runtime RAM/palette. Output unchanged when validation fails.
+ */
+bool cps1_read_tile_pen(const uint8_t *gfx, size_t gfx_size,
+                        unsigned side, size_t code, bool right_half,
+                        unsigned x, unsigned y, uint8_t *pen_out);
+bool cps1_decode_tile8(const uint8_t *gfx, size_t gfx_size,
+                       size_t code, bool right_half,
+                       uint8_t out[CPS1_TILE8_PIXELS]);
+bool cps1_decode_tile32(const uint8_t *gfx, size_t gfx_size,
+                        size_t code, uint8_t out[CPS1_TILE32_PIXELS]);
+
 #endif
