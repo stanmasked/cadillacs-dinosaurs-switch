@@ -238,7 +238,8 @@ class NativeSceneTests(unittest.TestCase):
         self.parity(scene)
         native=self.native_frame(scene)
         self.assertEqual(native[:4],bytes((255,0,0,255)))
-        self.assertEqual(native[16*W*4:16*W*4+4],bytes((255,0,0,255)))
+        # Code16 is synthetic pen0 and remains opaque, not transparent.
+        self.assertEqual(native[16*W*4:16*W*4+4],bytes((0,0,0,255)))
 
     def test_priority_group_one_mask_applies_only_group_one(self):
         scene=blank_scene()
