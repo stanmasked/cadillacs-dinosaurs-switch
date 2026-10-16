@@ -145,7 +145,9 @@ static void viewer_frame(uint32_t *frame, unsigned pitch, unsigned page,
     label(frame,pitch,40,696,"X SCENE  IF CAPTURE AVAILABLE",1,rgb(150,182,192));
 }
 
-static uint8_t *load_scene_image(const uint8_t *gfx) {
+static uint8_t *load_scene_image(const uint8_t *gfx, Cps1Scene **scene_out) {
+    if (!scene_out) return NULL;
+    *scene_out = NULL;
     FILE *file = fopen(SCENE_PATH,"rb");
     if (!file) return NULL;
     uint8_t *packed=malloc(CPS1_SCENE_FILE_BYTES);
@@ -164,8 +166,8 @@ static uint8_t *load_scene_image(const uint8_t *gfx) {
                   cps1_scene_render(gfx,CPS1_GFX_BYTES,scene,
                                     rgba,CPS1_SCENE_RGBA_BYTES));
     free(packed);
-    free(scene);
-    if (!valid) { free(rgba); return NULL; }
+    if (!valid) { free(scene); free(rgba); return NULL; }
+    *scene_out = scene; /* keep decoded mutable scene for camera pan */
     return rgba;
 }
 
@@ -181,8 +183,8 @@ static void scene_frame(uint32_t *frame,unsigned pitch,const uint8_t *rgba) {
                     frame[(dy+sy)*pitch+dx+sx]=color;
         }
     }
-    label(frame,pitch,64,4,"CAPTURED CPS1 FRAME   X TILES   PLUS EXIT",1,rgb(215,226,231));
-    label(frame,pitch,64,704,"STATIC SCENE REPLAY   NOT GAMEPLAY",1,rgb(180,198,206));
+    label(frame,pitch,64,4,"NATIVE CPS1 SCENE   DPAD PAN   ZR FAST   A RESET",1,rgb(215,226,231));
+    label(frame,pitch,64,704,"X TILES   PLUS EXIT   DIAGNOSTIC NOT GAMEPLAY",1,rgb(180,198,206));
 }
 
 static void fallback_text(PadState *pad) {
@@ -232,23 +234,50 @@ int main(int argc, char **argv) {
 
     unsigned page=0;
     bool invert=false,grid=true,transparent=true;
-    uint8_t *scene_rgba=load_scene_image(gfx);
+    Cps1Scene *scene=NULL;
+    uint8_t *scene_rgba=load_scene_image(gfx,&scene);
+    uint16_t initial_scrollx[3]={0}, initial_scrolly[3]={0};
+    if (scene) {
+        memcpy(initial_scrollx,scene->scrollx,sizeof(initial_scrollx));
+        memcpy(initial_scrolly,scene->scrolly,sizeof(initial_scrolly));
+    }
     bool show_scene=false;
     cache_page(gfx,page);
     while (appletMainLoop()) {
         padUpdate(&pad);
         const u64 down=padGetButtonsDown(&pad);
+        const u64 held=padGetButtons(&pad);
         if (down & HidNpadButton_Plus) break;
+        if (show_scene && scene_rgba && scene) {
+            /* Free navigation: does not advance the game's CPU or AI.
+             * Sprites remain at their captured screen coordinates.
+             */
+            const int speed=(held & HidNpadButton_ZR) ? 12 : 3;
+            int dx=0,dy=0;
+            if (held & HidNpadButton_Left) dx-=speed;
+            if (held & HidNpadButton_Right) dx+=speed;
+            if (held & HidNpadButton_Up) dy-=speed;
+            if (held & HidNpadButton_Down) dy+=speed;
+            bool dirty=cps1_scene_pan(scene,dx,dy);
+            if (down & HidNpadButton_A) {
+                memcpy(scene->scrollx,initial_scrollx,sizeof(initial_scrollx));
+                memcpy(scene->scrolly,initial_scrolly,sizeof(initial_scrolly));
+                dirty=true;
+            }
+            if (dirty)
+                cps1_scene_render(gfx,CPS1_GFX_BYTES,scene,
+                                  scene_rgba,CPS1_SCENE_RGBA_BYTES);
+        }
         unsigned next=page;
-        if ((down & HidNpadButton_Left) && next>0) --next;
-        if ((down & HidNpadButton_Right) && next+1<PAGE_COUNT) ++next;
-        if (down & HidNpadButton_Up) next=next>=16?next-16:0;
-        if (down & HidNpadButton_Down) next=next+16<PAGE_COUNT?next+16:PAGE_COUNT-1;
-        if (down & HidNpadButton_L) next=next>=8?next-8:0;
-        if (down & HidNpadButton_R) next=next+8<PAGE_COUNT?next+8:PAGE_COUNT-1;
-        if (down & HidNpadButton_A) invert=!invert;
-        if (down & HidNpadButton_B) transparent=!transparent;
-        if (down & HidNpadButton_Y) grid=!grid;
+        if (!show_scene && (down & HidNpadButton_Left) && next>0) --next;
+        if (!show_scene && (down & HidNpadButton_Right) && next+1<PAGE_COUNT) ++next;
+        if (!show_scene && (down & HidNpadButton_Up)) next=next>=16?next-16:0;
+        if (!show_scene && (down & HidNpadButton_Down)) next=next+16<PAGE_COUNT?next+16:PAGE_COUNT-1;
+        if (!show_scene && (down & HidNpadButton_L)) next=next>=8?next-8:0;
+        if (!show_scene && (down & HidNpadButton_R)) next=next+8<PAGE_COUNT?next+8:PAGE_COUNT-1;
+        if (!show_scene && (down & HidNpadButton_A)) invert=!invert;
+        if (!show_scene && (down & HidNpadButton_B)) transparent=!transparent;
+        if (!show_scene && (down & HidNpadButton_Y)) grid=!grid;
         if ((down & HidNpadButton_X) && scene_rgba) show_scene=!show_scene;
         if (next != page && cache_page(gfx,next)) page=next;
         u32 stride=0;
@@ -262,6 +291,7 @@ int main(int argc, char **argv) {
     }
     framebufferClose(&fb);
     free(scene_rgba);
+    free(scene);
     free(gfx);
     return 0;
 }
