@@ -35,6 +35,18 @@ CODE = r'''
 				const int n = std::snprintf(stem, sizeof(stem), "%s/frame-%08llu", dir, frame);
 				if (n > 0 && static_cast<size_t>(n) + 40 < sizeof(stem))
 				{
+					// The completed manifest is the commit marker. Never overwrite
+					// an already captured frame during duplicate raster updates.
+					char manifest_path[1024];
+					std::snprintf(manifest_path, sizeof(manifest_path), "%s.manifest.json", stem);
+					bool previously_committed = false;
+					if (std::FILE *existing = std::fopen(manifest_path, "rb"))
+					{
+						previously_committed = true;
+						std::fclose(existing);
+					}
+					if (!previously_committed)
+					{
 					auto dump_words = [&](const char *suffix, const uint16_t *words, size_t length) {
 						char path[1024];
 						std::snprintf(path, sizeof(path), "%s.%s", stem, suffix);
@@ -80,6 +92,24 @@ CODE = r'''
 						}
 						std::fclose(f);
 					}
+					// Commit only after all six binary files have the expected
+					// lengths. Disk write/close failures must NOT produce a manifest.
+					auto complete_file = [&](const char *suffix, long expected) -> bool {
+						char path[1024];
+						std::snprintf(path, sizeof(path), "%s.%s", stem, suffix);
+						std::FILE *check = std::fopen(path, "rb");
+						if (!check) return false;
+						const bool seek_ok = std::fseek(check, 0, SEEK_END) == 0;
+						const long length = seek_ok ? std::ftell(check) : -1;
+						std::fclose(check);
+						return length == expected;
+					};
+					if (complete_file("gfxram-be.bin", 196608) &&
+						complete_file("cps-a-be.bin", 64) &&
+						complete_file("cps-b-be.bin", 64) &&
+						complete_file("buffered-obj-be.bin", 2048) &&
+						complete_file("palette-rgb24.bin", 9216) &&
+						complete_file("reference-rgb24.bin", 258048))
 					if (std::FILE *f = open_suffix("manifest.json"))
 					{
 						std::fprintf(f, "{\"game\":\"dino\",\"frame\":%llu,"
@@ -95,6 +125,7 @@ CODE = r'''
 								"\"pixel_parity_verified\":false}\n", frame);
 						std::fclose(f);
 					}
+					} // no previously committed frame
 				}
 			}
 		}
