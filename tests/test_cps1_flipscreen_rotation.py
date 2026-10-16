@@ -1,5 +1,6 @@
 """ROM-free regression tests for fast CPS-1 RGBA flipscreen rotation."""
 import unittest
+from unittest.mock import patch
 
 from tools.cps1_frame import _rotate_rgba_pixels_180, render_frame
 from tools.cps1_video import TOTAL_COLORS
@@ -55,6 +56,12 @@ class RotateRgbaPixels(unittest.TestCase):
         self.assertEqual(_rotate_rgba_pixels_180(original),
                          _slow_oracle(expected))
         self.assertEqual(original, bytearray(expected))
+
+    def test_nonstandard_native_unsigned_int_uses_safe_fallback(self):
+        pixels = bytes((3, 17, 31, 255, 12, 28, 44, 200, 61, 72, 83, 94))
+        with patch('tools.cps1_frame.struct.calcsize', return_value=8):
+            self.assertEqual(_rotate_rgba_pixels_180(pixels),
+                             _slow_oracle(pixels))
 
     def test_incomplete_pixel_rejected(self):
         for bad in (b'\x01', b'\x01\x02\x03', b'\x01\x02\x03\x04\x05'):
