@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from zipfile import ZipFile, ZIP_DEFLATED
 
-from tools.mame_rom_readiness import CORE, ARCHIVAL_PLD, QSOUND_HLE, audit_zip, audit, main
+from tools.mame_rom_readiness import (CORE, ARCHIVAL_PLD, QSOUND_HLE,
+                                      KNOWN_ARCHIVAL_ALTERNATIVES, audit_zip, audit, main)
 
 
 def makezip(path, files):
@@ -27,6 +28,8 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(len(ARCHIVAL_PLD), 12)
         self.assertEqual(QSOUND_HLE['dl-1425.bin'], (8192, 0xd6cf5ef5))
         self.assertEqual(CORE['cd-1m.3a'], (524288, 0x8da4f917))
+        self.assertEqual(KNOWN_ARCHIVAL_ALTERNATIVES['ioc1.ic1'],
+                         [(279, 0x0d182081)])
 
     def test_crc_and_size_matching_with_synthetic_fixture(self):
         expected = {'program.bin': (3, 0x352441c2), 'gfx.bin': (3, 0xeb8eba67)}
@@ -42,6 +45,16 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(report['matching_count'], 0)
         self.assertEqual(len(report['mismatches']), 2)
         self.assertEqual(report['missing_names'], ['absent.bin'])
+
+    def test_known_alternate_archival_version_is_not_bad_payload(self):
+        makezip(self.game, {'ioc1.ic1': b'ABC'})
+        with ZipFile(self.game) as zip:
+            actual_crc = zip.getinfo('ioc1.ic1').CRC
+        report = audit_zip(self.game, {'ioc1.ic1': (3, 0)},
+                           known_alternatives={'ioc1.ic1': [(3, actual_crc)]})
+        self.assertEqual(report['known_variant_count'], 1)
+        self.assertEqual(report['mismatches'], [])
+        self.assertEqual(report['matching_count'], 0)
 
     def test_missing_device_is_not_mislabeled_game_corruption(self):
         report = audit(self.game, None)
