@@ -46,51 +46,61 @@ CODE = r'''
 					}
 					if (!previously_committed)
 					{
-					auto dump_words = [&](const char *suffix, const uint16_t *words, size_t length) {
-						char path[1024];
-						std::snprintf(path, sizeof(path), "%s.%s", stem, suffix);
-						if (std::FILE *f = std::fopen(path, "wb"))
-						{
-							for (size_t i = 0; i < length; ++i)
-							{
-								const uint16_t v = words[i];
-								const unsigned char be[2] = {static_cast<unsigned char>(v >> 8),
-									static_cast<unsigned char>(v & 255)};
-								if (std::fwrite(be, 1, 2, f) != 2) break;
-							}
-							std::fclose(f);
-						}
-					};
 					auto open_suffix = [&](const char *suffix) -> std::FILE * {
 						char path[1024];
 						std::snprintf(path, sizeof(path), "%s.%s", stem, suffix);
 						return std::fopen(path, "wb");
 					};
-					dump_words("gfxram-be.bin", &m_gfxram[0], 0x30000 / 2);
-					dump_words("cps-a-be.bin", &m_cps_a_regs[0], 0x40 / 2);
-					dump_words("cps-b-be.bin", &m_cps_b_regs[0], 0x40 / 2);
-					dump_words("buffered-obj-be.bin", m_buffered_obj.get(), m_obj_size / 2);
+					auto dump_words = [&](const char *suffix, const uint16_t *words, size_t length) -> bool {
+						std::FILE *f = open_suffix(suffix);
+						if (!f) return false;
+						size_t written = 0;
+						for (; written < length; ++written)
+						{
+							const uint16_t v = words[written];
+							const unsigned char be[2] = {static_cast<unsigned char>(v >> 8),
+								static_cast<unsigned char>(v & 255)};
+							if (std::fwrite(be, 1, 2, f) != 2) break;
+						}
+						const bool closed = std::fclose(f) == 0;
+						return written == length && closed;
+					};
+					bool captured_ok = true;
+					captured_ok = dump_words("gfxram-be.bin", &m_gfxram[0], 0x30000 / 2) && captured_ok;
+					captured_ok = dump_words("cps-a-be.bin", &m_cps_a_regs[0], 0x40 / 2) && captured_ok;
+					captured_ok = dump_words("cps-b-be.bin", &m_cps_b_regs[0], 0x40 / 2) && captured_ok;
+					captured_ok = dump_words("buffered-obj-be.bin", m_buffered_obj.get(), m_obj_size / 2) && captured_ok;
+					bool palette_ok = false;
 					if (std::FILE *f = open_suffix("palette-rgb24.bin"))
 					{
-						for (unsigned i = 0; i < 0xc00; ++i)
+						unsigned written = 0;
+						for (; written < 0xc00; ++written)
 						{
-							const rgb_t c = m_palette->pen_color(i);
+							const rgb_t c = m_palette->pen_color(written);
 							const unsigned char rgb[3] = {c.r(), c.g(), c.b()};
 							if (std::fwrite(rgb, 1, 3, f) != 3) break;
 						}
-						std::fclose(f);
+						const bool closed = std::fclose(f) == 0;
+						palette_ok = written == 0xc00 && closed;
 					}
+					captured_ok = captured_ok && palette_ok;
+					bool reference_ok = false;
 					if (std::FILE *f = open_suffix("reference-rgb24.bin"))
 					{
-						for (int y = 16; y <= 239; ++y)
-						for (int x = 64; x <= 447; ++x)
-						{
-							const rgb_t c = m_palette->pen_color(bitmap.pix(y, x));
-							const unsigned char rgb[3] = {c.r(), c.g(), c.b()};
-							if (std::fwrite(rgb, 1, 3, f) != 3) break;
-						}
-						std::fclose(f);
+						unsigned written = 0;
+						bool failed = false;
+						for (int y = 16; y <= 239 && !failed; ++y)
+							for (int x = 64; x <= 447; ++x)
+							{
+								const rgb_t c = m_palette->pen_color(bitmap.pix(y, x));
+								const unsigned char rgb[3] = {c.r(), c.g(), c.b()};
+								if (std::fwrite(rgb, 1, 3, f) != 3) { failed = true; break; }
+								++written;
+							}
+						const bool closed = std::fclose(f) == 0;
+						reference_ok = written == 384u * 224u && closed;
 					}
+					captured_ok = captured_ok && reference_ok;
 					// Commit only after all six binary files have the expected
 					// lengths. Disk write/close failures must NOT produce a manifest.
 					auto complete_file = [&](const char *suffix, long expected) -> bool {
@@ -103,7 +113,7 @@ CODE = r'''
 						std::fclose(check);
 						return length == expected;
 					};
-					if (complete_file("gfxram-be.bin", 196608) &&
+					if (captured_ok && complete_file("gfxram-be.bin", 196608) &&
 						complete_file("cps-a-be.bin", 64) &&
 						complete_file("cps-b-be.bin", 64) &&
 						complete_file("buffered-obj-be.bin", 2048) &&
