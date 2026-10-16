@@ -50,3 +50,27 @@ python3 tools/cps1_color_atlas.py /private/dino.zip /private/palette_snapshot.js
 
 **Verified locally:** 34/34 Python tests on Python 3.13; graphics mapping and color atlas export also exercised with the user-provided parent ROM and deliberately artificial palette. **Not yet verified:** GitHub Actions run, playable native Switch build, authentic RAM-derived palette, gameplay rendering.
 
+
+## Frame composition from captured CPS-1 video RAM
+
+`tools/cps1_frame.py` is now a **partial offline compositor** for `dino`:
+three 64×64 tilemap RAM scanners, CPS-B layer order, palette/color groups,
+already-buffered OBJ sprite RAM, block-sprite flips, and the hardware
+384×224 visible viewport. It does not capture memory from an emulator
+itself and is **not pixel-perfect** (priority masks, line scrolling,
+flipscreen and several other effects remain unimplemented).
+
+To replay an actual game frame you must supply a **local runtime RAM
+snapshot** along with your own ROM. There are no real game-state
+snapshots in the repository. See [snapshot schema and known limitations](docs/cps1-frame-compositor.md).
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 tools/cps1_frame.py /private/dino.zip /private/frame_snapshot.json \
+  --out local_outputs/partial_frame.png
+```
+
+Validation: **50/50 Python tests passed locally**. The renderer also
+produced a 384×224 PNG using real ROM pixel data with **synthetic test
+VRAM and synthetic palette**, which is *not a game screenshot*.
+Nintendo Switch compilation and GitHub Actions execution remain unverified.
