@@ -338,6 +338,78 @@ class NativeSceneTests(unittest.TestCase):
         self.assertEqual(self.native_frame(snap)[:4],
                          bytes((255,0,0,255)))
 
+    @staticmethod
+    def _rotate_180_pixels(pixels):
+        return b''.join(pixels[i:i+4]
+                        for i in range(len(pixels)-4,-1,-4))
+
+    def test_global_flipscreen_mirrors_composite_sprite_full_frame(self):
+        snap=blank_scene()
+        snap['buffered_obj_words']=[
+            83,47,0,0x1000, 122,73,0,1, 0,0,0,0xff00]
+        original=self.native_frame(snap)
+        snap['video_control']=0x8000
+        self.parity(snap)
+        mirrored=self.native_frame(snap)
+        self.assertNotEqual(mirrored,original)
+        self.assertEqual(mirrored,self._rotate_180_pixels(original))
+
+    def test_global_flipscreen_matches_priority_masked_scroll2(self):
+        snap=blank_scene()
+        snap['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+        snap['scroll2']={'words':[0]*8192,'enabled':True,
+                         'scrollx':13,'scrolly':9}
+        snap['priority_masks']=[2,0,0,0]
+        snap['palette_rgb'][1025]=[15,25,220]
+        snap['buffered_obj_words']=[
+            93,37,0,0x1060, 144,94,0,1, 0,0,0,0xff00]
+        original=self.native_frame(snap)
+        snap['video_control']=0x8000
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap),
+                         self._rotate_180_pixels(original))
+
+    def test_global_flip_rowscroll_and_composite_has_native_python_parity(self):
+        snap=blank_scene()
+        snap['layer_control']=(2<<6)|(0<<8)|(1<<10)|(3<<12)
+        snap['scroll2']={'words':[0]*8192,'enabled':True,
+                         'scrollx':21,'scrolly':14}
+        snap['rowscroll']=[(i*7)&15 for i in range(1024)]
+        snap['rowscroll_offset']=40
+        snap['buffered_obj_words']=[121,113,0,0x1000,0,0,0,0xff00]
+        snap['video_control']=1
+        base=self.native_frame(snap)
+        snap['video_control']=0x8001
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap),
+                         self._rotate_180_pixels(base))
+
+    def test_global_flip_preserves_repeated_obj_priority_results(self):
+        snap=blank_scene()
+        snap['layer_control']=(2<<6)|(0<<8)|(1<<10)|(0<<12)
+        snap['scroll1']={'words':[0]*8192,'enabled':True,
+                         'scrollx':3,'scrolly':7}
+        snap['buffered_obj_words']=[98,40,0,0,0,0,0,0xff00]
+        base=self.native_frame(snap)
+        snap['video_control']=0x8000
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap),
+                         self._rotate_180_pixels(base))
+
+    def test_global_flip_custom_viewport_uses_hardware_mirror_coordinates(self):
+        snap=blank_scene()
+        snap['buffered_obj_words']=[80,45,0,0,0,0,0,0xff00]
+        snap['video_control']=0x8000
+        full=render_frame(self.gfx,snap['palette_rgb'],snap)
+        cropped=render_frame(self.gfx,snap['palette_rgb'],snap,
+                             (420,206,24,18))
+        extracted=b''.join(full[4*((206-16+y)*W+(420-64)):
+                                  4*((206-16+y)*W+(420-64)+24)]
+                           for y in range(18))
+        self.assertEqual(cropped,extracted)
+        with self.assertRaisesRegex(ValueError,'512x256'):
+            render_frame(self.gfx,snap['palette_rgb'],snap,(500,16,20,40))
+
     def test_first_opaque_sprite_owns_overlap_in_native_and_python(self):
         snap=blank_scene()
         snap['palette_rgb'][17]=[0,230,60]

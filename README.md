@@ -319,3 +319,25 @@ remote CI/checkout verification.
 See [MAME priority bitmap lifetime and regression](docs/cps1-repeated-obj-priority.md).
 This edge case has not yet been observed in real dino stage footage.
 The PR stacks above #17 / #16 / #15, and NRO v0.5 predates the fix.
+
+## Stage 34 — CPS-1 global screen flip (VIDEO_CONTROL bit15)
+
+Implemented previously missing **global CPS-1 flipscreen** in
+`source/cps1_scene.c` and `tools/cps1_frame.py`. MAME uses
+`flip_screen_set` to flip background tilemaps in both axes and mirrors
+OBJ coordinates; for the visible X64..447/Y16..239 window, that
+corresponds to a 180-degree frame transformation.
+
+The C implementation mirrors completed 384×224 RGBA pixels in place.
+The Python diagnostic renderer correctly mirrors coordinates across
+the full 512×256 physical raster even when rendering **cropped**
+viewport regions. Existing sprite priority/ROM wrap rules and Scroll2
+rowscroll continue to apply before mirroring.
+
+A ROM-free local host C stand passed **53/53** Python/native tests,
+including seven new flip-focused checks. Five corresponding native
+integration tests are committed here but still require independent
+GitHub CI verification. This does not establish real MAME frame
+parity, produce a new NRO, or make the arcade game playable.
+
+See [global CPS-1 flip semantics and verification](docs/cps1-global-flipscreen.md).

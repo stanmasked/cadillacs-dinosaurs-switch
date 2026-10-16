@@ -4,7 +4,7 @@
 Implements CD63B tile codes, 64x64 tilemaps, normal sprite lists,
 blocked sprites, color groups, palette and hardware visible area.
 Includes CPS-B priority pens and Scroll2 raster rowscroll from coherent snapshots.
-Limitations: stars, flipscreen, accurate raster interrupts, sprite latency and
+Limitations: stars, accurate raster interrupts, sprite latency and
 mid-frame changes are NOT emulated. No ROM bundled.
 """
 import argparse
@@ -109,6 +109,11 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
     vx, vy, width, height = viewport
     if not 1 <= width <= 512 or not 1 <= height <= 256 or not 0 <= vx <= 511 or not 0 <= vy <= 255:
         raise ValueError('Invalid viewport')
+    # Crop coordinates are physical CPS-1 raster coordinates. Validate the
+    # *whole* rectangle before rendering, even with global flip disabled.
+    # Otherwise a normal crop could silently contain impossible overscan.
+    if vx + width > 512 or vy + height > 256:
+        raise ValueError('Viewport must fit 512x256 CPS-1 raster')
     if not isinstance(snapshot, dict):
         raise ValueError('Snapshot must be an object')
     layers = {}
@@ -123,6 +128,18 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
     video_control = snapshot.get('video_control', 0)
     if type(video_control) is not int or not 0 <= video_control <= 0xffff:
         raise ValueError('video_control must be an unsigned 16-bit value')
+    if video_control & 0x8000:
+        # VIDEO_CONTROL bit15 mirrors the whole CPS-1 hardware raster.
+        # Mirror from physical source viewport, NOT the same crop:
+        # x->511-x and y->255-y; visible [64..447,16..239] is symmetric.
+        normal=dict(snapshot)
+        normal['video_control']=video_control & ~0x8000
+        source_viewport=(512-vx-width,256-vy-height,width,height)
+        source_pixels=render_frame(region,palette,normal,source_viewport)
+        rotated=bytearray(len(source_pixels))
+        for i in range(width*height):
+            rotated[i*4:i*4+4]=source_pixels[-4*(i+1):len(source_pixels)-i*4]
+        return bytes(rotated)
     use_rowscroll = bool(video_control & 1)
     rowscroll = snapshot.get('rowscroll', None)
     rowscroll_offset = snapshot.get('rowscroll_offset', 0)
