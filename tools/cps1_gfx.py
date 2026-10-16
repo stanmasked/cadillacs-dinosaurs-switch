@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Assemble dino CPS-1 graphics ROM region locally; never writes game assets."""
+"""Assemble dino CPS-1 graphics ROM region locally; no assets are bundled or uploaded."""
 import argparse
 import hashlib
 import json
 import zipfile
+from pathlib import Path
 
 ROM_SIZE = 0x80000
 BANK_SIZE = 0x200000
@@ -29,13 +30,22 @@ def metadata(region):
     return {'region_bytes': len(region), 'sha256': hashlib.sha256(region).hexdigest(),
             'first_32_bytes_hex': region[:32].hex()}
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('rom_zip')
-    args = parser.parse_args()
+    parser.add_argument('rom_zip', type=Path)
+    parser.add_argument('--out-local', type=Path,
+                        help='Write assembled 4 MiB graphics region to local disk only; '
+                             'never commit or redistribute game contents')
+    args = parser.parse_args(argv)
     with zipfile.ZipFile(args.rom_zip) as z:
         region = assemble_gfx(z.read)
     print(json.dumps(metadata(region), indent=2))
+    if args.out_local is not None:
+        # Exclusive create avoids unintentional overwriting of personal dumps.
+        with args.out_local.open('xb') as out:
+            out.write(region)
+        print(f'Created local graphics region: {args.out_local}')
+    return 0
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
