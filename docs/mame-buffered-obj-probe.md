@@ -73,8 +73,10 @@ python3 tools/mame_obj_probe_import.py \
 
 The adapter requires **exactly 2048 bytes**, checks its canonical
 filename against `reference_frame`, decodes 1024 big-endian words,
-preserves the first 0xFFxx OBJ end-marker position (if present), and
-returns a new diagnostic snapshot without touching original files.
+preserves the first 0xFFxx OBJ end-marker position (if present),
+records the raw probe's SHA-256 (integrity metadata, **not** proof of
+provenance), and returns a new diagnostic snapshot without touching
+original files.
 Every output is labeled:
 
 - `buffered_obj_source: MAME_0289_CPP_OBJ_PROBE_UNSYNCED`
@@ -114,6 +116,11 @@ single-process presence checks, not atomic multi-process file locking.
   output writes.
 - The upstream MAME 0.289 `cps1_v.cpp` **blob and source anchors were
   inspected directly**: expected blob SHA and both unique anchors match.
+- A standalone C++17 `-Wall -Wextra -Werror` compilation with
+  synthetic MAME-like stubs exercised the **probe-writing code pattern**:
+  frames 900/902 yielded two 2048-byte big-endian files, re-running
+  frame 900 left it untouched, and frame 901 created no file.
+  This was **not a build of the real MAME driver**.
 - **Not yet validated:** compiling the generated C++ in MAME, running a
   genuine `dino` gameplay session, or full GitHub CI (issue #20).
 
