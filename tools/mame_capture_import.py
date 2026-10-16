@@ -48,7 +48,8 @@ def import_capture(directory,frame_stem):
         manifest.get('raw_word_endianness')!='big' or
         manifest.get('reference_width')!=REF_W or
         manifest.get('reference_height')!=REF_H or
-        manifest.get('reference_pixel_encoding') not in ('indexed','direct_rgb')):
+        manifest.get('reference_pixel_encoding')!='rgb32_resolved' or
+        manifest.get('reference_source_format') not in ('indexed_bitmap','rgb_bitmap')):
         raise ValueError('Unsupported or misleading MAME capture provenance')
     gfx=unpack_be_words(Path(str(stem)+'.gfxram-be.bin').read_bytes(),
                         GFX_BYTES,'CPS-1 QSound gfx RAM')
