@@ -105,6 +105,32 @@ class MameReferenceCaptureTests(unittest.TestCase):
         path.write_text(json.dumps(data))
         with self.assertRaises(ValueError):import_capture(self.directory,STEM)
 
+    def test_reject_same_size_reference_pixel_mutation(self):
+        path=self.directory/(STEM+'.reference-rgb24.bin')
+        data=bytearray(path.read_bytes())
+        data[987]^=1
+        path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError,'reference-rgb24.bin: CRC32 mismatch'):
+            import_capture(self.directory,STEM)
+
+    def test_reject_swap_of_cps_a_and_cps_b_equal_size_files(self):
+        a=self.directory/(STEM+'.cps-a-be.bin')
+        b=self.directory/(STEM+'.cps-b-be.bin')
+        before_a,before_b=a.read_bytes(),b.read_bytes()
+        self.assertEqual(len(before_a),len(before_b))
+        a.write_bytes(before_b)
+        b.write_bytes(before_a)
+        with self.assertRaisesRegex(ValueError,'CRC32 mismatch'):
+            import_capture(self.directory,STEM)
+
+    def test_missing_crc32_manifest_is_rejected_before_import(self):
+        path=self.directory/(STEM+'.manifest.json')
+        metadata=json.loads(path.read_text())
+        del metadata['file_crc32']
+        path.write_text(json.dumps(metadata))
+        with self.assertRaisesRegex(ValueError,'five file_crc32'):
+            import_capture(self.directory,STEM)
+
     def test_reject_wrong_gfx_size(self):
         (self.directory/(STEM+'.gfxram-be.bin')).write_bytes(bytes(GFX_BYTES-2))
         with self.assertRaises(ValueError):import_capture(self.directory,STEM)
