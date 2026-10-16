@@ -59,7 +59,7 @@ class Cps1SequenceTests(unittest.TestCase):
         cls.tmp.cleanup()
 
     def opened(self,data):
-        storage=ctypes.create_string_buffer(data)
+        storage=ctypes.create_string_buffer(bytes(data))
         info=SeqInfo()
         ok=self.dll.cps1_sequence_decode(storage,len(data),ctypes.byref(info))
         return ok,storage,info
