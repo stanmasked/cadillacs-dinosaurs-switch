@@ -136,3 +136,28 @@ gcc -std=c11 -O2 -Wall -Wextra -Werror -Isource \
 Detailed installation, navigation and limitations: [Switch tile inspector](docs/switch-tile-inspector.md).
 
 **Never commit gfx.bin, game ROMs or derived copyrighted assets.**
+
+## Nintendo Switch v0.3 — native partial scene replay
+
+Switch now has a **native C frame compositor** (not just a tile-sheet viewer).
+It optionally reads a local `scene.bin` snapshot alongside the owner's
+`gfx.bin`, reconstructs three CPS-1 background layers, sprites, effective
+palette RGB, QS2 priority pens and Scroll2 scanline scrolling into a
+**384×224** static scene, and presents it at **3× nearest-neighbor scale**
+on the Switch framebuffer. Press **X** to toggle the scene; existing
+tile browsing still works without a snapshot.
+
+The compact binary scene format uses magic `CPS1SCN1`, a strict size
+and CRC32; its exporter requires **effective runtime palette RAM**, not
+a guessed ROM palette. Details: [installation and capture format](docs/switch-native-scene-v03.md).
+
+```sh
+python3 tools/cps1_scene_export.py /private/frame_snapshot.json --out scene.bin
+# SD: switch/cadillacs-dinosaurs-switch/gfx.bin
+# SD: switch/cadillacs-dinosaurs-switch/scene.bin
+```
+
+No ROM or private RAM capture is uploaded to GitHub. Synthetic automated
+tests compare native C-composed pixels to the Python reference. This is
+**static frame replay, not interactive gameplay, HD-restored graphics, or
+confirmed pixel parity with a real MAME frame**.
