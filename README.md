@@ -294,3 +294,28 @@ Nintendo Switch build; GitHub CI still needs to run the committed
 integration suite.
 
 See [CPS-1 composite foreground-mask parity](docs/cps1-native-priority-composites.md).
+
+## Stage 33 — persist CPS-1 sprite priorities across repeated OBJ passes
+
+Fixed a hardware-level C/Python compositing discrepancy: the previous
+renderers incorrectly reset their sprite priority bitmap before
+**every** OBJ draw slot. MAME's `render_layers()` clears the bitmap
+only once at the frame start, while high tilemap pens OR in priority
+bits, preserving all earlier sprite occlusion marks.
+
+A CPS-B layer sequence like `Scroll2 → OBJ → Scroll1 → OBJ`
+previously could redraw an earlier sprite **over** the foreground
+drawn between the two OBJ passes. Both `source/cps1_scene.c` and
+`tools/cps1_frame.py` now retain the priority map and OR high-layer
+flags instead of clearing or replacing them.
+
+A standalone, synthesized C/Python host stand passed **35/35
+ROM-free tests**, including 12 deterministic frame variations, and
+produced zero byte differences on the full 384×224 frames tested.
+Five new standalone Python tests and three new native parity tests are
+committed to GitHub; those exact integration tests still require
+remote CI/checkout verification.
+
+See [MAME priority bitmap lifetime and regression](docs/cps1-repeated-obj-priority.md).
+This edge case has not yet been observed in real dino stage footage.
+The PR stacks above #17 / #16 / #15, and NRO v0.5 predates the fix.
