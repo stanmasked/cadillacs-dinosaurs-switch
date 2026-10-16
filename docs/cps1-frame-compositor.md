@@ -58,17 +58,17 @@ To capture a real frame, instrument an authorized local MAME runtime near `scree
 
 ## Explicit missing behavior — NOT pixel-perfect MAME yet
 
-- Tile transparency masks and high-priority overlay groups, including sprites occluded by some background pens.
-- Scroll2 per-scanline rowscroll and raster effects.
+- Partially addressed: QS2 priority-register high pens can occlude sprites immediately above a scroll layer. Complex reference edge cases still require replay validation.
+- Partially addressed: per-line Scroll2 rowscroll is supported with static 1024-word RAM, but mid-frame raster events remain unsupported.
 - Flipscreen, starfields and dynamic changes during a frame.
-- Full CPS-A/CPS-B register decoding and automatic enabled-layer flags; input snapshots supply enable flags explicitly.
+- Partial CPS-A/CPS-B decode and enabled-layer flags are supplied by tools/cps1_capture.py from raw binary memory dumps; the renderer still accepts manually supplied snapshot state.
 - MAME-specific sprite clipping edge cases and video capture synchronization.
 
 Therefore the tool is a **partial diagnostic renderer, not an emulator and not a runnable HD-remake**.
 
 ## Validation (2026-10-16)
 
-- All **50 / 50** local synthetic Python tests pass: 34 earlier graphics/palette tests and 16 new tilemap, sprite RAM and frame composition tests.
+- All **68 / 68** local Python tests now pass: the original 50, 13 raw capture/raster helper tests and 5 render priority/rowscroll tests.
 - A local integration run with the user's `dino.zip` produced a 384 x 224 diagnostic PNG using **synthetic RAM and synthetic palette**. The graphics ROM SHA-256 remains `68786de27105ccc64f28f66ad1025f2e6f521aa60ab35c489fb0baaaa8679de1`.
 - Neither ROM data, extracted assets, captured RAM nor the local diagnostic image is committed to this repository.
-- Native Switch boot and official GitHub Actions completion are **not verified**.
+- Native Switch boot and GitHub Actions completion remain **unverified**; a separate NRO build workflow is now configured.
