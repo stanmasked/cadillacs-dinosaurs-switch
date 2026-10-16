@@ -102,35 +102,36 @@ big-endian words, manifest and honesty/provenance fields are correct.
 If liblua5.4 is not available, the smoke test is skipped and reported as
 such. **This is not a real MAME capture.**
 
-## Pixel-format correctness (MAME Lua API audit)
+## Pixel-format correctness — verified against MAME core C++
 
-A critical video capture issue was corrected: official MAME screen APIs
-allow **two different pixel representations**. `screen:pixel(x,y)` or
-`screen:pixels()` may return **indexed palette pens** OR **packed direct
-RGB values**. Assuming all pixels are indexed can abort an otherwise
-valid capture or corrupt its color values.
+MAME's Lua documentation describes two *underlying* screen formats:
+palette-indexed and direct RGB. However, the authoritative implementation
+of `screen_device::pixels(u32 *)` in MAME
+[`src/emu/screen.cpp`](https://github.com/mamedev/mame/blob/master/src/emu/screen.cpp)
+**resolves indexed pixels through the current effective palette before
+returning the buffer**. For direct RGB bitmaps, it returns the RGB value.
 
-The capture code now uses the documented `screen:pixels()` bulk method,
-which returns a binary array of native-endian 32-bit values plus visible
-width and height. Lua `string.unpack('=I4')` decodes each sample with
-the host's byte order. The documented `screen.palette` attribute
-distinguishes indexed screens (non-nil) from direct-RGB screens (nil):
+Consequently, the output of `screen:pixels()` is packed **RGB32 in both
+cases**. Previous double palette lookup was a serious bug: it could reject
+valid pixels or corrupt colors, especially for RGB values exceeding the
+number of palette entries.
 
-- indexed: validate the palette index and read effective `pen_color`;
-- direct RGB: take the lower three packed RGB channels directly, **without
-  applying a second palette lookup**.
+The capture now uses the documented bulk `screen:pixels()` method and
+Lua `string.unpack('=I4')` (host byte order) and ALWAYS extracts
+RGB channels directly. It records:
 
-The capture rejects unexpected visible-area dimensions and records the
-conversion mode in `reference_pixel_encoding` (`indexed` or
-`direct_rgb`). The Python importer requires and validates this field,
-the exact 384 × 224 dimensions, and a safe capture filename stem.
+- `reference_pixel_encoding: "rgb32_resolved"` — the **output** format
+  after MAME's screen conversion;
+- `reference_source_format: "indexed_bitmap" | "rgb_bitmap"` — the
+  **underlying** screen format, inferred from `screen.palette`.
 
-Additional Lua 5.4 smoke tests execute the capture script under **both
-pixel formats** and reject incorrect visible-area metadata. These tests
-are still synthetic API simulations and **do not mean that a real MAME
-frame has been captured**.
+The Python importer requires both fields and checks the exact 384×224
+visible-area dimensions and frame stem. Lua 5.4 synthetic smoke tests
+exercise both native framebuffer types and ensure effective RGB values
+are not converted through the palette twice. Still not a confirmed
+runtime capture from real MAME.
 
-Authoritative sources:
-
-- [MAME screen pixel formats, bulk pixels and palette property](https://docs.mamedev.org/luascript/ref-devices.html)
-- [MAME memory shares and address-space reads](https://docs.mamedev.org/luascript/ref-mem.html)
+Source references:
+- [MAME screen.cpp native pixel and pixels conversion](https://github.com/mamedev/mame/blob/master/src/emu/screen.cpp)
+- [MAME Lua screen device API](https://docs.mamedev.org/luascript/ref-devices.html)
+- [MAME Lua memory shares](https://docs.mamedev.org/luascript/ref-mem.html)
