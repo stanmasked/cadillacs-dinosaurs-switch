@@ -155,3 +155,33 @@ exact match, a deliberate single-pixel difference and heatmap location,
 and rejection of incomplete or invalid inputs. These exercises test
 **the measurement pipeline**; they are NOT evidence that any real
 Cadillacs and Dinosaurs game frame has reached pixel parity.
+
+## New safeguards for complete, immutable captures
+
+The experimental renderer can be called repeatedly for the **same MAME
+frame number**, including raster/partial screen refresh events. Previously
+a repeated render could overwrite already saved binary data. The capture
+hook now uses `frame-XXXXXXXX.manifest.json` as a completion marker.
+Once present, the hook **does not write that frame again**, even if the
+emulator is restarted and the same frame number occurs.
+
+Before writing the marker it reopens **all six binary streams** and
+confirms their exact contract sizes: 196608, 64, 64, 2048, 9216 and
+258048 bytes. A missing, truncated or inaccessible stream prevents the
+manifest. The Python importer requires the manifest and independently
+validates all six streams.
+
+This is a **fail-closed completion gate**, not an atomic transaction across
+the whole operating system. If a write fails, partial uncommitted binary
+files can remain in the private capture directory. Remove those incomplete
+files before retrying. Do not copy a partially written set into a
+different directory or mix files between runs.
+
+Additional compiled C++ regression checks deliberately change GFX RAM and
+buffered OBJ between two callbacks for the same frame and verify the first
+snapshot is preserved. Another check blocks a required output path and
+confirms **no manifest is committed**.
+
+Manifest filenames are built using `std::string`, avoiding truncation
+warnings under GCC `-Werror` for long output paths. This check has
+been run on the synthetic C++ stand-in, not a complete MAME build.
