@@ -103,14 +103,48 @@ local function reference_rgb()
     return table.concat(result)
 end
 
+-- CRC32/ISO-HDLC, using a lookup table so the 258 KiB image and
+-- 192 KiB graphics RAM can be checked on each captured frame.
+-- Detects accidental corruption and mixed frames, not malicious tampering.
+local crc_table={}
+for n=0,255 do
+    local value=n
+    for _=1,8 do
+        if (value & 1)==1 then
+            value=(value >> 1) ~ 0xedb88320
+        else
+            value=value >> 1
+        end
+    end
+    crc_table[n]=value
+end
+
+local function crc32_bytes(data)
+    local crc=0xffffffff
+    for i=1,#data do
+        local byte=data:byte(i)
+        crc=(crc >> 8) ~ crc_table[(crc ~ byte) & 255]
+    end
+    return (~crc) & 0xffffffff
+end
+
 local function capture(frame)
     local stem=string.format('frame-%08d',frame)
     assert_available(stem)
-    write_file(stem..'.gfxram-be.bin',serialize_words(gfx,0x30000))
-    write_file(stem..'.cps-a-be.bin',serialize_words(cps_a,0x40))
-    write_file(stem..'.cps-b-be.bin',serialize_words(cps_b,0x40))
-    write_file(stem..'.palette-rgb24.bin',active_palette())
-    write_file(stem..'.reference-rgb24.bin',reference_rgb())
+    -- Serialize and hash all raw data *before* publishing the manifest.
+    -- A frame with fewer than five components must not look complete.
+    local data={
+        serialize_words(gfx,0x30000),
+        serialize_words(cps_a,0x40),
+        serialize_words(cps_b,0x40),
+        active_palette(),
+        reference_rgb()
+    }
+    local digests={}
+    for i=1,#data do
+        digests[i]=string.format('%08x',crc32_bytes(data[i]))
+        write_file(stem..suffixes[i],data[i])
+    end
     write_file(stem..'.manifest.json',string.format([=[{
   "game":"dino","frame":%d,"capture_hook":"frame_done",
   "gfxram_bytes":196608,"cps_a_bytes":64,"cps_b_bytes":64,
@@ -118,9 +152,14 @@ local function capture(frame)
   "reference_rgb_bytes":258048,"raw_word_endianness":"big",
   "palette_source":"MAME_effective_pen_color",
   "obj_latch":"NOT_CAPTURED","pixel_parity_eligible":false,
+  "file_crc32":{
+    "gfxram-be.bin":"%s","cps-a-be.bin":"%s",
+    "cps-b-be.bin":"%s","palette-rgb24.bin":"%s",
+    "reference-rgb24.bin":"%s"
+  },
   "warning":"Authentic MAME RGB only; internal buffered OBJ unavailable"
 }
-]=],frame))
+]=],frame,table.unpack(digests)))
     print('[cps1 capture] collected private MAME frame '..tostring(frame))
 end
 
