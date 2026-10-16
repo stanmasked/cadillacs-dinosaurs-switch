@@ -283,3 +283,25 @@ it refuses to combine separate render phases into a misleading snapshot.
 The host C++-compilation test and Python data-contract tests are
 synthetic only; full MAME instrumented execution is still pending.
 No original ROMs, captured memory, frames or assets are committed.
+
+## Quantitative pixel matching against a genuine MAME frame
+
+Added `tools/mame_frame_parity.py` to link **same-render callback**
+MAME dumps, the existing independent CPS-1 Python renderer and
+pixel-exact RGBA comparison in one locally runnable command:
+
+```sh
+python3 tools/mame_frame_parity.py /private/dino.zip \
+    /private/cps1-render frame-00000900 \
+    --out-dir /private/cps1-parity --require-exact
+```
+
+It produces both 384x224 PNGs, an absolute-error heatmap and
+a machine-readable parity report with number/percentage of mismatches,
+color errors and SHA-256. A strict flag distinguishes *identical* from
+*not identical* and malformed input without suppressing the report.
+All reports say game-wide accuracy and physical Switch testing are
+**not verified**. No real MAME gameplay frame has yet been captured or
+compared in this environment. Five new ROM-free end-to-end tests exercise
+exact matches and deliberate single-pixel defects.
+See [render-pass capture instructions](docs/mame-render-pass-capture.md).
