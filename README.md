@@ -235,3 +235,25 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+## Native CPS-1 tile formats: ROM-backed 8×8 / 16×16 / 32×32 audit
+
+The portable C decoder and Switch scene compositor now use the **same
+planar-pixel extraction implementation** for Scroll1, Scroll2, Scroll3,
+and 16×16 sprites. Dedicated APIs also expose both Scroll1 8×8 tile
+halves and complete 32×32 tiles.
+
+- `tests/test_cps1_native_layouts.py`: deterministic full-fixture
+  parity for all four tile variants, matching the Python reference.
+- `tools/cps1_native_gfx_audit.py`: audit private local graphics data
+  without publishing the original ROM.
+
+Independent local comparison against the user-provided dino graphics
+region sampled 1,024 tile codes for each of four layouts:
+**1,441,792 original tile pixels tested; zero mismatches**.
+
+Details: [native graphics layout and ROM parity](docs/native-graphics-layout-parity.md).
+
+This confirms sampled **tile indices**, not original game-frame accuracy:
+MAME runtime capture, effective palette timing, arcade CPU execution and
+Nintendo Switch hardware validation are still separate tasks.
