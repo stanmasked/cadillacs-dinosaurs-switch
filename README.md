@@ -235,3 +235,90 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+## Experimental MAME VBlank-latched sprite capture
+
+An optional *source patch generator* captures MAME's real
+`m_buffered_obj` immediately after the CPS-1 VBlank copy. This 0x800-byte
+buffer is the input used by MAME's sprite renderer and cannot reliably be
+recovered from current GFX RAM at arbitrary moments.
+
+- `tools/mame_obj_instrument.py`: generate a patch against a **local**
+  MAME CPS-1 driver source file, with bounded frame-number capture.
+- `tools/mame_obj_validate.py`: check resulting 2048-byte big-endian
+  latched OBJ buffers, SHA-256 and sprite list marker.
+- `tests/test_mame_obj_capture.py`: no-ROM C++17 compiled latch smoke test
+  and synthetic file validation.
+
+See [MAME VBlank OBJ instrumentation instructions](docs/mame-vblank-obj-instrumentation.md).
+The patch has **not** been compiled with full MAME or exercised on the
+original game. Screenshots and object latches may refer to different
+render phases; resulting dumps remain **not pixel-parity eligible** until
+their frame synchronization is independently established.
+
+No original ROM, MAME source or captured sprite data is committed.
+
+## Preferred experimental capture: same render callback
+
+The new [render-pass capture guide](docs/mame-render-pass-capture.md)
+describes a stronger successor to the separate VBlank OBJ dump:
+`tools/mame_render_instrument.py` creates an opt-in patch that captures
+the original CPS-1 RGB image, effective palette, 192 KiB GFX RAM,
+CPS-A/B registers and the actual `m_buffered_obj` **inside one
+screen_update_cps1 invocation, immediately after render_layers**.
+
+`tools/mame_render_import.py` checks the complete 7-file contract
+and produces a private reference PNG plus an OBJ-populated scene JSON
+ready to **attempt** a pixel comparison with the Switch-oriented Python
+renderer. The importer always records
+`pixel_parity_verified: false`: it does not claim that reconstructed
+pixels already match MAME.
+
+The source anchor was checked against upstream MAME CPS-1 video blob
+`c1b5e3867824d0d1877b981142db7741346d2c55`.
+If MAME draws using partial update rectangles rather than the whole
+384x224 view, the experimental collector **does not save a frame**;
+it refuses to combine separate render phases into a misleading snapshot.
+
+The host C++-compilation test and Python data-contract tests are
+synthetic only; full MAME instrumented execution is still pending.
+No original ROMs, captured memory, frames or assets are committed.
+
+## Quantitative pixel matching against a genuine MAME frame
+
+Added `tools/mame_frame_parity.py` to link **same-render callback**
+MAME dumps, the existing independent CPS-1 Python renderer and
+pixel-exact RGBA comparison in one locally runnable command:
+
+```sh
+python3 tools/mame_frame_parity.py /private/dino.zip \
+    /private/cps1-render frame-00000900 \
+    --out-dir /private/cps1-parity --require-exact
+```
+
+It produces both 384x224 PNGs, an absolute-error heatmap and
+a machine-readable parity report with number/percentage of mismatches,
+color errors and SHA-256. A strict flag distinguishes *identical* from
+*not identical* and malformed input without suppressing the report.
+All reports say game-wide accuracy and physical Switch testing are
+**not verified**. No real MAME gameplay frame has yet been captured or
+compared in this environment. Five new ROM-free end-to-end tests exercise
+exact matches and deliberate single-pixel defects.
+See [render-pass capture instructions](docs/mame-render-pass-capture.md).
+
+## v1.3 research diagnostics — spatial parity report
+
+Pixel comparison now includes scanline and column histograms, a precise
+mismatch bounding rectangle, top-left/top-right/bottom-left/bottom-right
+counts and separate R/G/B channel errors. Use these to locate errors in
+sprites, backgrounds, scroll timing and effective palette colors, rather
+than relying solely on a global percentage.
+
+`tools/frame_error_profile.py` is a deterministic dependency-free helper;
+its five new synthetic tests and the end-to-end frame tests verify error
+positions and empty frames. See
+[render-pass capture and spatial error report](docs/mame-render-pass-capture.md).
+
+These checks do not require a game ROM and establish no real MAME frame
+parity. Real original-frame capture and Switch console execution remain
+unverified.
