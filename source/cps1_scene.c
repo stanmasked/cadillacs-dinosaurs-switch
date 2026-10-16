@@ -132,7 +132,7 @@ static void draw_scroll(const uint8_t *gfx, size_t gfx_bytes,
 
 static void draw_sprite_tile(const uint8_t *gfx, size_t gfx_bytes,
                              const Cps1Scene *s, uint8_t *rgba,
-                             const uint8_t *occluded,
+                             uint8_t *occluded,
                              unsigned x,unsigned y,unsigned code,unsigned attr) {
     if (code>=32768u) return;  /* CD63B mapper 16x16 range */
     unsigned color_group=attr&31u;
@@ -149,15 +149,21 @@ static void draw_sprite_tile(const uint8_t *gfx, size_t gfx_bytes,
             unsigned px=flip_x?15u-tx:tx;
             unsigned pen=pixels[py*16u+px];
             size_t index=(size_t)(sy-16u)*CPS1_SCENE_W+sx-64u;
-            if (pen!=15u && !occluded[index])
-                place(rgba,s,index,color_group*16u+pen);
+            if (pen!=15u) {
+                if (!occluded[index])
+                    place(rgba,s,index,color_group*16u+pen);
+                /* MAME PIXEL_OP_REBASE_TRANSPEN_PRIORITY sets priority 31
+                 * even when a higher-priority scroll pen masks this OBJ.
+                 * All later sprite pixels at this position are blocked. */
+                occluded[index]=1u;
+            }
         }
     }
 }
 
 static void draw_sprites(const uint8_t *gfx, size_t gfx_bytes,
                          const Cps1Scene *s,uint8_t *rgba,
-                         const uint8_t *occluded) {
+                         uint8_t *occluded) {
     for (unsigned i=0;i<CPS1_SCENE_OBJ_WORDS;i+=4u) {
         unsigned x=s->obj[i]&0x1ffu, y=s->obj[i+1u]&0x1ffu;
         unsigned code=s->obj[i+2u], attr=s->obj[i+3u];

@@ -235,3 +235,23 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+## Stage 30 — MAME-correct sprite overlap priority
+
+Fixed an original-arcade visual discrepancy in **both**
+`tools/cps1_frame.py` and `source/cps1_scene.c`. MAME renders
+buffered OBJ entries first-to-last and **stamps priority 31 on every
+nontransparent sprite pixel**, even when a high-priority background
+has blocked that pixel's color. Previously the later of two
+overlapping sprites could incorrectly cover the earlier one.
+
+Seven new ROM-free Python regression tests passed locally and three
+additional native C-versus-Python parity scenarios are committed.
+In a full 384×224 synthetic overlap example, exactly **256 pixels**
+changed from the incorrectly frontmost second sprite to the
+MAME-correct first sprite.
+
+See [sprite pixel-priority audit](docs/cps1-sprite-priority.md).
+This is a source-code correction, not a new Switch NRO and not
+evidence of pixel-perfect game footage. Live MAME capture, PR/CI
+review and hardware tests are still required.

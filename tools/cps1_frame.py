@@ -148,8 +148,10 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
         if high_before_sprites:
             sprite_occlusion = bytearray(width * height)
         if lname == 'sprites':
-            # Listed OBJ entries are traversed from first to last by MAME,
-            # with later entries covering earlier ones where alpha permits.
+            # MAME draws OBJ entries first-to-last. Each nontransparent
+            # sprite pen stamps the priority map to 31, even if a foreground
+            # tilemap mask prevented that pen from changing the color.
+            # Consequently the first sprite pixel wins against later OBJ.
             for x,y,code,attr in sprites:
                 mapped = gfxrom_bank_mapper('sprites', code)
                 if mapped == -1:
@@ -171,8 +173,13 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
                                 continue
                             pixel_x = 15-px if part.flip_x else px
                             pen = pixels[pixel_y*16+pixel_x]
-                            if pen != 15 and not sprite_occlusion[(target_y-vy)*width+(target_x-vx)]:
-                                set_pixel(target_x,target_y,palette[base+pen])
+                            if pen != 15:
+                                priority_index = (target_y-vy)*width+(target_x-vx)
+                                if not sprite_occlusion[priority_index]:
+                                    set_pixel(target_x,target_y,palette[base+pen])
+                                # MAME drawgfxt.ipp PIXEL_OP_REBASE_TRANSPEN_PRIORITY:
+                                # stamp priority=31 even if the sprite was masked.
+                                sprite_occlusion[priority_index] = 1
         elif lname in layers and layers[lname].get('enabled', True):
             layer = layers[lname]
             words = layer['words']
