@@ -69,21 +69,15 @@ static unsigned tile_size(int layer) { return 8u << layer; }
 static uint8_t gfx_pen(const uint8_t *gfx, size_t gfx_bytes,
                        int layer, unsigned code, unsigned tile_index,
                        unsigned x, unsigned y) {
-    unsigned side=tile_size(layer);
-    size_t stride=side==8?64u:(size_t)side*side/2u;
-    size_t slot_count=gfx_bytes/stride;
-    unsigned raw_limit=side==8?0xffffu:(side==16?0x7fffu:0x1fffu);
-    if (code>raw_limit || code>=slot_count) return 15;
-    size_t tile_base=(size_t)code*stride;
-    unsigned row_stride=side==8?8u:side/2u;
-    unsigned half=side==8 && (tile_index&32u)?4u:0u;
-    size_t offset=tile_base+(size_t)y*row_stride+half+(x/8u)*4u;
-    unsigned bit=7u-(x&7u);
-    uint8_t pen=0;
-    for (unsigned p=0;p<4;++p)
-        pen |= (uint8_t)(((gfx[offset+p]>>bit)&1u) << (3u-p));
+    uint8_t pen=15u;
+    /* Same validated planar decoder is used by sprite tile viewing,
+     * 8px/16px/32px background rendering, and test utilities. */
+    (void)cps1_read_tile_pen(gfx,gfx_bytes,tile_size(layer),code,
+                             layer==0 && (tile_index&32u)!=0u,
+                             x,y,&pen);
     return pen;
 }
+
 
 static void place(uint8_t *rgba, const Cps1Scene *s, size_t index,
                   unsigned palette_index) {

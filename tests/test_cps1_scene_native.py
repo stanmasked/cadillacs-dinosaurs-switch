@@ -208,6 +208,86 @@ class NativeSceneTests(unittest.TestCase):
         scene['buffered_obj_words']=[1,2,3]
         with self.assertRaises(ValueError): pack_scene(scene)
 
+    def test_scroll1_alternating_8px_halves_at_visible_origin(self):
+        scene=blank_scene()
+        scene['scroll1']={'words':[0]*8192,'enabled':True,'scrollx':0,'scrolly':0}
+        scene['palette_rgb'][513]=[255,0,0]
+        scene['palette_rgb'][514]=[0,255,0]
+        gfx=bytearray(self.gfx)
+        for y in range(8):
+            gfx[y*8+3]=0xff  # scroll1 left half pen 1
+            gfx[y*8+6]=0xff  # scroll1 right half pen 2
+        old=self.gfx
+        self.gfx=bytes(gfx)
+        try:
+            self.parity(scene)
+            frame=self.native_frame(scene)
+            # Physical raster X 64,72,80 correspond to pixel 0,8,16.
+            self.assertEqual(frame[0:4],bytes((255,0,0,255)))
+            self.assertEqual(frame[8*4:9*4],bytes((0,255,0,255)))
+            self.assertEqual(frame[16*4:17*4],bytes((255,0,0,255)))
+        finally:
+            self.gfx=old
+
+    def test_bottom_right_sprite_is_clipped_to_one_pixel(self):
+        scene=blank_scene()
+        scene['buffered_obj_words']=[447,239,0,0,0,0,0,0xff00]
+        self.parity(scene)
+        frame=self.native_frame(scene)
+        self.assertEqual(frame[-4:],bytes((255,0,0,255)))
+        self.assertEqual(frame[-8:-4],bytes((5,6,7,255)))
+
+    def test_scroll2_hardware_rowscroll_at_exact_raster_line(self):
+        scene=blank_scene()
+        scene['palette_rgb'][1025]=[240,10,10]
+        scene['palette_rgb'][1026]=[10,240,10]
+        words=[0]*8192
+        words[tile_ram_index('scroll2',4,1)*2]=0
+        words[tile_ram_index('scroll2',5,1)*2]=1
+        scene['scroll2']={'words':words,'enabled':True,'scrollx':0,'scrolly':0}
+        scene['video_control']=1
+        scene['rowscroll_offset']=7
+        scene['rowscroll']=[0]*1024
+        scene['rowscroll'][23]=16 # Physical raster Y16 only
+        gfx=bytearray(self.gfx)
+        for y in range(16):
+            for half in (0,4):
+                gfx[y*8+half+3]=0xff
+                gfx[128+y*8+half+2]=0xff
+        old=self.gfx
+        self.gfx=bytes(gfx)
+        try:
+            self.parity(scene)
+            frame=self.native_frame(scene)
+            self.assertEqual(frame[:4],bytes((10,240,10,255)))
+            self.assertEqual(frame[W*4:W*4+4],bytes((240,10,10,255)))
+        finally:
+            self.gfx=old
+
+    def test_scroll3_2048px_wrap_at_visible_origin(self):
+        scene=blank_scene()
+        words=[0]*8192
+        words[tile_ram_index('scroll3',0,0)*2]=0
+        words[tile_ram_index('scroll3',1,0)*2]=1
+        scene['scroll3']={'words':words,'enabled':True,'scrollx':1984,'scrolly':0}
+        scene['palette_rgb'][1537]=[200,20,20]
+        scene['palette_rgb'][1538]=[20,200,20]
+        gfx=bytearray(self.gfx)
+        for y in range(32):
+            for col in range(4):
+                gfx[y*16+col*4+3]=0xff
+                gfx[512+y*16+col*4+2]=0xff
+        old=self.gfx
+        self.gfx=bytes(gfx)
+        try:
+            self.parity(scene)
+            frame=self.native_frame(scene)
+            self.assertEqual(frame[:4],bytes((200,20,20,255)))
+            self.assertEqual(frame[32*4:33*4],bytes((20,200,20,255)))
+        finally:
+            self.gfx=old
+
+
 
 if __name__=='__main__':
     unittest.main()
