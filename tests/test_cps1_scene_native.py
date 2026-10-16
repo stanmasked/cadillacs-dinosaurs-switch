@@ -163,6 +163,36 @@ class NativeSceneTests(unittest.TestCase):
     def test_empty_scene_matches_reference(self):
         self.parity(blank_scene())
 
+    def test_first_opaque_sprite_owns_overlap_in_native_and_python(self):
+        snap=blank_scene()
+        snap['palette_rgb'][17]=[0,230,60]
+        snap['buffered_obj_words']=[
+            64,16,0,0,  # First OBJ: opaque red pen1, group0
+            64,16,0,1,  # Later OBJ: same pixels, green group1
+            0,0,0,0xff00]
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],bytes((255,0,0,255)))
+
+    def test_first_transparent_sprite_leaves_later_obj_visible(self):
+        snap=blank_scene()
+        snap['palette_rgb'][17]=[0,230,60]
+        snap['buffered_obj_words']=[
+            64,16,2,0,  # Code2 is pen15, does not stamp priority
+            64,16,0,1,
+            0,0,0,0xff00]
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],bytes((0,230,60,255)))
+
+    def test_pen_zero_opaque_sprite_stamps_priority(self):
+        snap=blank_scene()
+        snap['palette_rgb'][17]=[0,230,60]
+        snap['buffered_obj_words']=[
+            64,16,1,0,  # Code1 is pen0, still opaque
+            64,16,0,1,
+            0,0,0,0xff00]
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],bytes((0,0,0,255)))
+
     def test_scroll2_with_sprite_matches_reference(self):
         scene=blank_scene()
         scene['scroll2']={'words':[0]*8192,'enabled':True,'scrollx':0,'scrolly':0}
