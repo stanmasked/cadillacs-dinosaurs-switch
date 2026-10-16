@@ -11,6 +11,8 @@ import struct
 import tempfile
 import unittest
 
+from tools.mame_capture_crc import CAPTURE_FILES, capture_checksums
+
 LIB=ctypes.util.find_library('lua5.4')
 ROOT=Path(__file__).resolve().parents[1]
 SCRIPT=ROOT/'tools'/'mame_cps1_capture.lua'
@@ -98,6 +100,9 @@ class MameLuaCaptureStubTests(unittest.TestCase):
                 manifest=json.loads((root/(prefix+'manifest.json')).read_text())
                 self.assertFalse(manifest['pixel_parity_eligible'])
                 self.assertEqual(manifest['obj_latch'],'NOT_CAPTURED')
+                blobs={name:(root/(prefix+name)).read_bytes()
+                       for name in CAPTURE_FILES}
+                self.assertEqual(manifest['file_crc32'],capture_checksums(blobs))
             finally:
                 os.chdir(old)
 
