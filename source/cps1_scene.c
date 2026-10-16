@@ -208,6 +208,22 @@ bool cps1_scene_render(const uint8_t *gfx,size_t gfx_bytes,
         else draw_scroll(gfx,gfx_bytes,s,(int)layer-1,rgba,occluded,next==0u);
     }
     free(occluded);
+    /* MAME screen_update_cps1 flips all tilemaps and mirrors OBJ on
+     * VIDEO_CONTROL bit15. The visible CPS-1 raster [64,447]x[16,239]
+     * is symmetric about the hardware 512x256 screen centre.
+     * Rotate after composing priorities, preserving sprite ownership. */
+    if (s->video_control & 0x8000u) {
+        const size_t count=(size_t)CPS1_SCENE_W*CPS1_SCENE_H;
+        for (size_t i=0;i<count/2u;++i) {
+            uint8_t *first=rgba+4u*i;
+            uint8_t *last=rgba+4u*(count-1u-i);
+            for (unsigned c=0;c<4u;++c) {
+                uint8_t tmp=first[c];
+                first[c]=last[c];
+                last[c]=tmp;
+            }
+        }
+    }
     return true;
 }
 
