@@ -37,10 +37,9 @@ CODE = r'''
 				{
 					// The completed manifest is the commit marker. Never overwrite
 					// an already captured frame during duplicate raster updates.
-					char manifest_path[1024];
-					std::snprintf(manifest_path, sizeof(manifest_path), "%s.manifest.json", stem);
+					const std::string manifest_path = std::string(stem) + ".manifest.json";
 					bool previously_committed = false;
-					if (std::FILE *existing = std::fopen(manifest_path, "rb"))
+					if (std::FILE *existing = std::fopen(manifest_path.c_str(), "rb"))
 					{
 						previously_committed = true;
 						std::fclose(existing);
@@ -148,7 +147,7 @@ def instrument(source):
     offset = start + fragment.index(DRAW) + len(DRAW)
     updated = source[:offset] + CODE + source[offset:]
     includes = ''.join(f'#include {header}\n'
-                       for header in ('<cstdio>', '<cstdlib>', '<cstring>')
+                       for header in ('<cstdio>', '<cstdlib>', '<cstring>', '<string>')
                        if f'#include {header}' not in updated)
     if includes:
         pos = updated.find('#include ')
