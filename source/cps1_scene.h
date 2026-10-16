@@ -1,5 +1,5 @@
-#ifndef CPS1_SCENE_H
-#define CPS1_SCENE_H
+#ifndef CPS1_SCENE_INCLUDED_H
+#define CPS1_SCENE_INCLUDED_H
 
 #include <stdbool.h>
 #include <stddef.h>
