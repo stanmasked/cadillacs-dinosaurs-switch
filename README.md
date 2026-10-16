@@ -74,3 +74,15 @@ Validation: **50/50 Python tests passed locally**. The renderer also
 produced a 384×224 PNG using real ROM pixel data with **synthetic test
 VRAM and synthetic palette**, which is *not a game screenshot*.
 Nintendo Switch compilation and GitHub Actions execution remain unverified.
+
+## QS2 frame replay — raster / priority / capture conversion
+
+A local raw-dump adapter `tools/cps1_capture.py` converts **coherent MAME/CPS-1 RAM and register dumps** into the replay JSON. It requires 0x40000 bytes of graphics RAM, 0x40 bytes each of CPS-A/CPS-B registers, and 0x800 bytes of **buffered** sprite OBJ RAM; the original `dino.zip` is only needed for the subsequent private frame rendering step. Native-game RAM capture is not yet automated.
+
+The frame renderer now accepts `priority_masks`, `video_control`, `rowscroll`, and `rowscroll_offset` to model CD63B sprite occlusion and per-scanline Scroll2 scrolling. A separate effective palette RAM capture is necessary for *authentic* colors; otherwise the adapter explicitly labels the current source-palette estimate as approximate.
+
+See [raw capture workflow and exact register mappings](docs/cps1-capture-and-raster.md).
+
+Local validation: **68/68 Python tests passed** and a 384×224 diagnostic frame was reconstructed from *synthetic* raw RAM dumps plus the locally supplied real `dino.zip` graphics. The resulting scene is not an original gameplay frame.
+
+A dedicated [Switch native bootstrap workflow](.github/workflows/switch-bootstrap.yml) now attempts a **ROM-free** `.nro` build in the official devkitPro devkitA64 container. Its CI outcome and real-console runtime remain unverified.
