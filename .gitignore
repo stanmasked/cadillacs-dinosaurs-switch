@@ -4,4 +4,6 @@ build/
 *.nacp
 *.map
 roms/
+local_outputs/
+*.zip
 __pycache__/
