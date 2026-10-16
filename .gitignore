@@ -7,3 +7,5 @@ roms/
 local_outputs/
 *.zip
 __pycache__/
+palette_snapshots/
+captures/
