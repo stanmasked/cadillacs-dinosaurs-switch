@@ -47,14 +47,17 @@ def parse_snapshot(path):
 
 
 def render_atlas(region, palette, layer='sprites', first_code=0,
-                 count=32, color=0, columns=8, scale=2):
+                 count=32, color=0, columns=8, scale=2, scroll1_half='left'):
     if layer not in LAYERS:
         raise ValueError('Unknown layer')
+    if scroll1_half not in ('left', 'right'):
+        raise ValueError('scroll1_half must be left or right')
     if len(palette) != 3072:
         raise ValueError('Palette must contain 3072 colors')
     if not 1 <= scale <= 8 or count <= 0 or columns <= 0 or first_code < 0:
         raise ValueError('Invalid atlas geometry')
-    width, height, _, _ = LAYOUTS[LAYERS[layer]]
+    layout = f'8x8-{scroll1_half}' if layer == 'scroll1' else LAYERS[layer]
+    width, height, _, _ = LAYOUTS[layout]
     cols = min(columns, count)
     rows = (count + cols - 1) // cols
     w, h = cols * width * scale, rows * height * scale
@@ -62,9 +65,9 @@ def render_atlas(region, palette, layer='sprites', first_code=0,
     pbase = color_group_base(layer, color)
     for i in range(count):
         mapped = gfxrom_bank_mapper(layer, first_code + i)
-        if mapped < 0 or mapped >= tile_count(region, LAYERS[layer]):
+        if mapped < 0 or mapped >= tile_count(region, layout):
             continue  # transparent, just like hardware out-of-range tile
-        pixels = decode_tile(region, LAYERS[layer], mapped)
+        pixels = decode_tile(region, layout, mapped)
         bx, by = (i % cols) * width * scale, (i // cols) * height * scale
         for y in range(height):
             for x in range(width):
@@ -83,6 +86,8 @@ def main(argv=None):
     p.add_argument('palette_json', type=Path)
     p.add_argument('--layer', choices=LAYERS, default='sprites')
     p.add_argument('--color', type=int, default=0)
+    p.add_argument('--scroll1-half', choices=('left', 'right'), default='left',
+                   help='8x8 character view; tilemap index bit 5 selects half')
     p.add_argument('--first-code', type=lambda s: int(s, 0), default=0)
     p.add_argument('--count', type=int, default=32)
     p.add_argument('--columns', type=int, default=8)
@@ -95,7 +100,7 @@ def main(argv=None):
         with zipfile.ZipFile(args.rom_zip) as archive:
             region = assemble_gfx(archive.read)
         png = render_atlas(region, palette, args.layer, args.first_code,
-                           args.count, args.color, args.columns, args.scale)
+                           args.count, args.color, args.columns, args.scale, args.scroll1_half)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_bytes(png)
         print(f'Palette-based tile atlas: {args.out} ({len(png)} bytes)')
