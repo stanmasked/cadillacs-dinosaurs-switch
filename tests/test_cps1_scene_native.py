@@ -163,6 +163,50 @@ class NativeSceneTests(unittest.TestCase):
     def test_empty_scene_matches_reference(self):
         self.parity(blank_scene())
 
+    def _with_wrap_graphics(self, callback):
+        # Two different real-layout 16x16 test cells at 0x7ff0 and 0x0000;
+        # ALL ROM bytes are synthetic. Keep this scoped to one test.
+        buf=bytearray(self.gfx)
+        for row in range(16):
+            for part in (0,4):
+                buf[row*8+part:row*8+part+4]=b'\x00'*4
+                buf[row*8+part+2]=255 # Code0 pen2
+                buf[0x7ff0*128+row*8+part+3]=255 # Code0x7ff0 pen1
+        old=self.gfx
+        self.gfx=bytes(buf)
+        try:
+            callback()
+        finally:
+            self.gfx=old
+
+    def test_composite_last_tile_wrap_native_python_identically(self):
+        snap=blank_scene()
+        snap['palette_rgb'][2]=[0,220,70]
+        snap['buffered_obj_words']=[64,16,0x7ff0,0x1000,0,0,0,0xff00]
+        def verify():
+            self.parity(snap)
+            picture=self.native_frame(snap)
+            self.assertEqual(picture[:4],bytes((255,0,0,255)))
+            self.assertEqual(picture[16*W*4:16*W*4+4],bytes((0,220,70,255)))
+        self._with_wrap_graphics(verify)
+
+    def test_composite_vertical_flip_wrap_native_python_identically(self):
+        snap=blank_scene()
+        snap['palette_rgb'][2]=[0,220,70]
+        snap['buffered_obj_words']=[64,16,0x7ff0,0x1040,0,0,0,0xff00]
+        def verify():
+            self.parity(snap)
+            picture=self.native_frame(snap)
+            self.assertEqual(picture[:4],bytes((0,220,70,255)))
+            self.assertEqual(picture[16*W*4:16*W*4+4],bytes((255,0,0,255)))
+        self._with_wrap_graphics(verify)
+
+    def test_unmapped_original_obj_base_stays_blank_in_both_engines(self):
+        snap=blank_scene()
+        snap['buffered_obj_words']=[64,16,0x8000,0x1000,0,0,0,0xff00]
+        self.parity(snap)
+        self.assertEqual(self.native_frame(snap)[:4],bytes((5,6,7,255)))
+
     def test_first_opaque_sprite_owns_overlap_in_native_and_python(self):
         snap=blank_scene()
         snap['palette_rgb'][17]=[0,230,60]
