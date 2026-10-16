@@ -12,6 +12,7 @@
 #include <string.h>
 #include "cps1_tile.h"
 #include "cps1_scene.h"
+#include "cps1_sequence.h"
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
        GRID_COLS = 16, GRID_ROWS = 8, PAGE_TILES = GRID_COLS * GRID_ROWS,
@@ -21,6 +22,8 @@ static const char *const GFX_PATH =
 static uint8_t s_cache[PAGE_TILES][CPS1_TILE16_PIXELS];
 static const char *const SCENE_PATH =
     "sdmc:/switch/cadillacs-dinosaurs-switch/scene.bin";
+static const char *const SEQUENCE_PATH =
+    "sdmc:/switch/cadillacs-dinosaurs-switch/sequence.bin";
 
 /* A tiny self-contained bitmap font. Only HUD ASCII is required. */
 typedef struct { char letter; uint8_t rows[7]; } Glyph;
@@ -171,7 +174,9 @@ static uint8_t *load_scene_image(const uint8_t *gfx, Cps1Scene **scene_out) {
     return rgba;
 }
 
-static void scene_frame(uint32_t *frame,unsigned pitch,const uint8_t *rgba) {
+static void scene_frame(uint32_t *frame,unsigned pitch,const uint8_t *rgba,
+                        const Cps1Sequence *sequence,
+                        const Cps1Playback *playback) {
     rectangle(frame,pitch,0,0,FB_WIDTH,FB_HEIGHT,rgb(9,14,22));
     for (unsigned y=0; y<CPS1_SCENE_H; ++y) {
         for (unsigned x=0; x<CPS1_SCENE_W; ++x) {
@@ -183,8 +188,59 @@ static void scene_frame(uint32_t *frame,unsigned pitch,const uint8_t *rgba) {
                     frame[(dy+sy)*pitch+dx+sx]=color;
         }
     }
-    label(frame,pitch,64,4,"NATIVE CPS1 SCENE   DPAD PAN   ZR FAST   A RESET",1,rgb(215,226,231));
-    label(frame,pitch,64,704,"X TILES   PLUS EXIT   DIAGNOSTIC NOT GAMEPLAY",1,rgb(180,198,206));
+    if (sequence && playback) {
+        char status[96];
+        const char *speed=playback->speed_num==1?"HALF":
+                          playback->speed_num==4?"DOUBLE":"NORMAL";
+        snprintf(status,sizeof(status),"FRAME %03u / %03u  FPS %02u  %s  %s",
+                 playback->index+1,sequence->frame_count,sequence->fps,
+                 speed,playback->paused?"PAUSED":"PLAYING");
+        label(frame,pitch,64,4,status,1,rgb(215,226,231));
+        label(frame,pitch,64,704,
+              "A PAUSE  B NEXT  Y PREV  L R SPEED  X TILES",1,rgb(180,198,206));
+    } else {
+        label(frame,pitch,64,4,"NATIVE CPS1 SCENE   DPAD PAN   ZR FAST   A RESET",1,rgb(215,226,231));
+        label(frame,pitch,64,704,"X TILES   PLUS EXIT   DIAGNOSTIC NOT GAMEPLAY",1,rgb(180,198,206));
+    }
+}
+
+/* Load every versioned frame into bounded RAM. Keep the sequence buffer
+ * alive as long as Cps1Sequence points inside it. Prefer sequence.bin if
+ * present; fall back to the legacy standalone scene.bin otherwise. */
+static uint8_t *load_sequence_image(const uint8_t *gfx,
+                                    Cps1Scene **scene_out,
+                                    Cps1Sequence *sequence_out,
+                                    uint8_t **buffer_out) {
+    if (!scene_out || !sequence_out || !buffer_out) return NULL;
+    *buffer_out=NULL;
+    FILE *file=fopen(SEQUENCE_PATH,"rb");
+    if (!file) return NULL;
+    if (fseek(file,0,SEEK_END)!=0) { fclose(file);return NULL; }
+    long length=ftell(file);
+    if (length < (long)(CPS1_SEQUENCE_HEADER_BYTES+CPS1_SCENE_FILE_BYTES) ||
+        (unsigned long)length>CPS1_SEQUENCE_MAX_BYTES ||
+        fseek(file,0,SEEK_SET)!=0) { fclose(file);return NULL; }
+    uint8_t *blob=malloc((size_t)length);
+    Cps1Scene *scene=malloc(sizeof(*scene));
+    uint8_t *rgba=malloc(CPS1_SCENE_RGBA_BYTES);
+    if (!blob || !scene || !rgba) {
+        free(blob);free(scene);free(rgba);
+        fclose(file);return NULL;
+    }
+    bool ok=fread(blob,1,(size_t)length,file)==(size_t)length;
+    fclose(file);
+    Cps1Sequence seq={0};
+    if (ok) ok=cps1_sequence_decode(blob,(size_t)length,&seq);
+    if (ok) ok=cps1_sequence_frame(&seq,0,scene);
+    if (ok) ok=cps1_scene_render(gfx,CPS1_GFX_BYTES,scene,rgba,CPS1_SCENE_RGBA_BYTES);
+    if (!ok) {
+        free(blob);free(scene);free(rgba);
+        return NULL;
+    }
+    *sequence_out=seq;
+    *scene_out=scene;
+    *buffer_out=blob;
+    return rgba;
 }
 
 static void fallback_text(PadState *pad) {
@@ -235,20 +291,50 @@ int main(int argc, char **argv) {
     unsigned page=0;
     bool invert=false,grid=true,transparent=true;
     Cps1Scene *scene=NULL;
-    uint8_t *scene_rgba=load_scene_image(gfx,&scene);
+    Cps1Sequence sequence={0};
+    Cps1Playback playback;
+    cps1_playback_init(&playback);
+    uint8_t *sequence_blob=NULL;
+    uint8_t *scene_rgba=load_sequence_image(gfx,&scene,&sequence,&sequence_blob);
+    if (!scene_rgba) scene_rgba=load_scene_image(gfx,&scene);
     uint16_t initial_scrollx[3]={0}, initial_scrolly[3]={0};
     if (scene) {
         memcpy(initial_scrollx,scene->scrollx,sizeof(initial_scrollx));
         memcpy(initial_scrolly,scene->scrolly,sizeof(initial_scrolly));
     }
-    bool show_scene=false;
+    bool show_scene=(sequence_blob!=NULL);
     cache_page(gfx,page);
+    u64 last_tick=armGetSystemTick(), clock_carry=0;
     while (appletMainLoop()) {
         padUpdate(&pad);
         const u64 down=padGetButtonsDown(&pad);
         const u64 held=padGetButtons(&pad);
+        u64 now=armGetSystemTick();
+        u64 elapsed_ns=armTicksToNs(now-last_tick);
+        last_tick=now;
+        if (elapsed_ns>250000000ULL) elapsed_ns=250000000ULL;
         if (down & HidNpadButton_Plus) break;
-        if (show_scene && scene_rgba && scene) {
+        if ((down & HidNpadButton_X) && scene_rgba) show_scene=!show_scene;
+        if (show_scene && scene_rgba && scene && sequence_blob) {
+            bool redraw=false;
+            if (down & HidNpadButton_A) playback.paused=!playback.paused;
+            if (down & HidNpadButton_L) cps1_playback_speed(&playback,-1);
+            if (down & HidNpadButton_R) cps1_playback_speed(&playback,1);
+            if (down & HidNpadButton_B) redraw=cps1_playback_step(&playback,&sequence,1);
+            if (down & HidNpadButton_Y) redraw=cps1_playback_step(&playback,&sequence,-1);
+            /* Fixed 60 Hz virtual clock, not a frame-counted sleep loop.
+             * Resume after tiles does not replay accumulated hidden time. */
+            clock_carry+=elapsed_ns*60u;
+            uint32_t ticks=(uint32_t)(clock_carry/1000000000ULL);
+            clock_carry%=1000000000ULL;
+            if (cps1_playback_advance(&playback,&sequence,ticks)) redraw=true;
+            if (redraw && cps1_sequence_frame(&sequence,playback.index,scene))
+                cps1_scene_render(gfx,CPS1_GFX_BYTES,scene,
+                                  scene_rgba,CPS1_SCENE_RGBA_BYTES);
+        } else {
+            clock_carry=0;
+        }
+        if (show_scene && scene_rgba && scene && !sequence_blob) {
             /* Free navigation: does not advance the game's CPU or AI.
              * Sprites remain at their captured screen coordinates.
              */
@@ -278,13 +364,14 @@ int main(int argc, char **argv) {
         if (!show_scene && (down & HidNpadButton_A)) invert=!invert;
         if (!show_scene && (down & HidNpadButton_B)) transparent=!transparent;
         if (!show_scene && (down & HidNpadButton_Y)) grid=!grid;
-        if ((down & HidNpadButton_X) && scene_rgba) show_scene=!show_scene;
         if (next != page && cache_page(gfx,next)) page=next;
         u32 stride=0;
         uint32_t *frame=(uint32_t*)framebufferBegin(&fb,&stride);
         if (!frame) break;
         if (show_scene && scene_rgba)
-            scene_frame(frame,stride/sizeof(uint32_t),scene_rgba);
+            scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
+                        sequence_blob?&sequence:NULL,
+                        sequence_blob?&playback:NULL);
         else
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
@@ -292,6 +379,7 @@ int main(int argc, char **argv) {
     framebufferClose(&fb);
     free(scene_rgba);
     free(scene);
+    free(sequence_blob);
     free(gfx);
     return 0;
 }
