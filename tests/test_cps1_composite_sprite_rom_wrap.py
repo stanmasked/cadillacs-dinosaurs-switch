@@ -81,7 +81,7 @@ class CompositeSpriteRomWrapTests(unittest.TestCase):
 
     def test_2x2_flip_wraps_second_row_for_both_columns(self):
         picture = render_frame(REGION, palette, scene(0x7ff0, 0x1160), VIEW)
-        self.assertEqual(pixel(picture, 0, 0), BACK)
+        self.assertEqual(pixel(picture, 0, 0), bytes((0, 0, 0, 255)))
         self.assertEqual(pixel(picture, 16, 0), GREEN)
         self.assertEqual(pixel(picture, 0, 16), BLUE)
         self.assertEqual(pixel(picture, 16, 16), RED)
