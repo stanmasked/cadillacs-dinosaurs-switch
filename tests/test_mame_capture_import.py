@@ -8,6 +8,7 @@ import unittest
 from tools.mame_capture_import import (GFX_BYTES,REF_W,REF_H,
     decode_reference_rgb24,import_capture,unpack_be_words,main)
 from tools.cps1_scene_export import pack_scene
+from tools.mame_capture_crc import CAPTURE_FILES, capture_checksums
 
 STEM='frame-00000900'
 
@@ -38,6 +39,15 @@ class MameReferenceCaptureTests(unittest.TestCase):
             bytes(i%256 for i in range(3072*3)))
         (self.directory/(STEM+'.reference-rgb24.bin')).write_bytes(
             bytes((9,20,40))*(REF_W*REF_H))
+        self._refresh_crc()
+
+    def _refresh_crc(self):
+        path=self.directory/(STEM+'.manifest.json')
+        manifest=json.loads(path.read_text())
+        blobs={name:(self.directory/(STEM+'.'+name)).read_bytes()
+               for name in CAPTURE_FILES}
+        manifest['file_crc32']=capture_checksums(blobs)
+        path.write_text(json.dumps(manifest))
 
     def test_preserves_mapped_graphics_registers_and_palette(self):
         scene,png=import_capture(self.directory,STEM)
@@ -46,6 +56,7 @@ class MameReferenceCaptureTests(unittest.TestCase):
         self.assertEqual(scene['buffered_obj_source'],'UNAVAILABLE_MAME_LUA')
         self.assertFalse(scene['pixel_parity_eligible'])
         self.assertEqual(scene['gfxram_mapped_bytes'],0x30000)
+        self.assertEqual(len(scene['capture_file_crc32']),5)
         self.assertEqual(scene['buffered_obj_words'][3],0xff00)
         self.assertEqual(struct.unpack_from('>II',png,16),(REF_W,REF_H))
 
@@ -118,6 +129,7 @@ class MameReferenceCaptureTests(unittest.TestCase):
         a[0x02//2]=0x2c0
         a[0x04//2]=0x300
         (self.directory/(STEM+'.cps-a-be.bin')).write_bytes(struct.pack('>32H',*a))
+        self._refresh_crc()
         with self.assertRaises(ValueError):import_capture(self.directory,STEM)
 
     def test_reject_out_of_map_rowscroll(self):
@@ -125,6 +137,7 @@ class MameReferenceCaptureTests(unittest.TestCase):
         a[0x22//2]=1
         a[0x08//2]=0x300
         (self.directory/(STEM+'.cps-a-be.bin')).write_bytes(struct.pack('>32H',*a))
+        self._refresh_crc()
         with self.assertRaises(ValueError):import_capture(self.directory,STEM)
 
     def test_native_scene_export_blocks_unlatched_sprite_state(self):
