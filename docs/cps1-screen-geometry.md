@@ -39,6 +39,16 @@ code, attributes, source pixel position (including tile flip),
 Scroll1 half selection, palette group and priority group **without
 decoding a single graphics ROM byte**.
 
+The probe also checks CD63B's actual ROM-bank ranges: Scroll1 codes
+0..65535, Scroll2 0..32767, Scroll3 0..8191. A 16-bit Scroll3 word
+first has its top two bits masked off, as in MAME, but a resulting code
+of 0x3fff is still **unmapped**, not a drawable tile. The fields
+`cd63b_code_valid`, `mapped_tile_code`, and
+`draw_slots_bottom_to_top` avoid counting invalid codes or layers
+excluded by CPS-B order as potentially visible. The flag
+`candidate_drawn` does **not** prove that the pixel survives later
+layer occlusion, transparency or priority rules.
+
 ```sh
 python3 tools/cps1_geometry_probe.py /private/frame-snapshot.json \
   --layer scroll2 --x 64 --y 16 \
