@@ -20,7 +20,8 @@ class MameReferenceCaptureTests(unittest.TestCase):
             'pixel_parity_eligible':False,
             'palette_source':'MAME_effective_pen_color','raw_word_endianness':'big',
             'reference_width':384,'reference_height':224,
-            'reference_pixel_encoding':'indexed'}
+            'reference_pixel_encoding':'rgb32_resolved',
+            'reference_source_format':'indexed_bitmap'}
         (self.directory/(STEM+'.manifest.json')).write_text(json.dumps(metadata))
         ram=[0]*(GFX_BYTES//2)
         ram[0x4000//2]=0x1234
@@ -107,7 +108,8 @@ class MameReferenceCaptureTests(unittest.TestCase):
     def test_accept_provenance_of_direct_rgb_pixels(self):
         path=self.directory/(STEM+'.manifest.json')
         metadata=json.loads(path.read_text())
-        metadata['reference_pixel_encoding']='direct_rgb'
+        metadata['reference_pixel_encoding']='rgb32_resolved'
+        metadata['reference_source_format']='rgb_bitmap'
         path.write_text(json.dumps(metadata))
         snapshot,png=import_capture(self.directory,STEM)
         self.assertFalse(snapshot['pixel_parity_eligible'])
