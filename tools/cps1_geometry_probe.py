@@ -56,6 +56,15 @@ def probe_layer(snapshot, layer, screen_x, screen_y):
         raise ValueError('Invalid tile code or attribute word')
     if layer == 'scroll3':
         code &= 0x3fff
+    # CD63B mapper range after tile-size shifts: a valid map address
+    # can still contain an invalid ROM tile code that MAME renders blank.
+    max_code = {'scroll1':0xffff,'scroll2':0x7fff,'scroll3':0x1fff}[layer]
+    code_valid = code <= max_code
+    layer_id = {'scroll1':1,'scroll2':2,'scroll3':3}[layer]
+    control = snapshot.get('layer_control',0)
+    if type(control) is not int or not 0 <= control <= 0xffff:
+        raise ValueError('Invalid CPS-B layer control')
+    layer_slots = [i for i in range(4) if (control>>(6+i*2))&3 == layer_id]
     sampled_x = size - 1 - local_x if attr & 0x20 else local_x
     sampled_y = size - 1 - local_y if attr & 0x40 else local_y
     return {
@@ -66,7 +75,10 @@ def probe_layer(snapshot, layer, screen_x, screen_y):
         'effective_scroll_y': scroll_y,
         'world_xy': [wx,wy], 'tile_col_row': [col,row],
         'tile_index': index, 'ram_word_index': index*2,
-        'tile_code': code, 'attribute': attr,
+        'tile_code': code, 'mapped_tile_code': code if code_valid else None,
+        'cd63b_code_valid': code_valid, 'attribute': attr,
+        'draw_slots_bottom_to_top': layer_slots,
+        'candidate_drawn': bool(ram.get('enabled',True)) and bool(layer_slots) and code_valid,
         'sampled_pixel_xy': [sampled_x,sampled_y],
         'scroll1_half': ('right' if index & 32 else 'left') if size == 8 else None,
         'palette_group_base': {'scroll1':512,'scroll2':1024,'scroll3':1536}[layer]
