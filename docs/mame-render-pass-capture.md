@@ -115,3 +115,43 @@ https://github.com/mamedev/mame/blob/master/src/mame/capcom/cps1_v.cpp
 
 Do not upload real captured RAM, original ROMs, images, palettes or
 extracted copyrighted graphics to GitHub.
+
+## One-command local pixel-parity measurement
+
+New `tools/mame_frame_parity.py` connects all previously independent
+tools into an end-to-end, **local-only** comparison. It requires seven
+validated same-render-pass capture files and a privately owned dino ROM.
+It never attempts to match an incomplete Lua/VBlank-only capture.
+
+```sh
+python3 tools/mame_frame_parity.py \
+  /private/dino.zip /private/cps1-render frame-00000900 \
+  --out-dir /private/cps1-parity \
+  --require-exact
+```
+
+Outputs four files:
+
+- `frame-00000900.mame-reference.png`: unscaled 384x224 MAME reference;
+- `frame-00000900.reconstructed.png`: this project's partial CPS-1
+  renderer, fed exactly the captured RAM, buffer and palette;
+- `frame-00000900.error-heatmap.png`: red-channel per-pixel maximum
+  absolute RGB/RGBA channel difference;
+- `frame-00000900.parity-report.json`: frame dimensions, mismatch count
+  and ratio, mean absolute channel error, maximum channel error, first
+  mismatch position, PNG SHA256 checksums and strict provenance flags.
+
+With `--require-exact`, exit code 0 means **one captured frame** matched,
+1 means mismatches were measured, and 2 means input validation or I/O
+failed. Without that flag, it records nonzero mismatch metrics normally.
+
+Reports always mark `game_wide_parity_verified: false` and
+`native_switch_runtime_tested: false`. The comparator refuses incomplete
+OBJ, wrong capture manifest, invalid GFX sizes and attempts to use
+previously 'verified' incoming snapshots.
+
+Five ROM-free synthetic regression tests verify a full 86,016-pixel
+exact match, a deliberate single-pixel difference and heatmap location,
+and rejection of incomplete or invalid inputs. These exercises test
+**the measurement pipeline**; they are NOT evidence that any real
+Cadillacs and Dinosaurs game frame has reached pixel parity.
