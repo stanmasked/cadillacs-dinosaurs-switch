@@ -305,3 +305,20 @@ All reports say game-wide accuracy and physical Switch testing are
 compared in this environment. Five new ROM-free end-to-end tests exercise
 exact matches and deliberate single-pixel defects.
 See [render-pass capture instructions](docs/mame-render-pass-capture.md).
+
+## v1.3 research diagnostics — spatial parity report
+
+Pixel comparison now includes scanline and column histograms, a precise
+mismatch bounding rectangle, top-left/top-right/bottom-left/bottom-right
+counts and separate R/G/B channel errors. Use these to locate errors in
+sprites, backgrounds, scroll timing and effective palette colors, rather
+than relying solely on a global percentage.
+
+`tools/frame_error_profile.py` is a deterministic dependency-free helper;
+its five new synthetic tests and the end-to-end frame tests verify error
+positions and empty frames. See
+[render-pass capture and spatial error report](docs/mame-render-pass-capture.md).
+
+These checks do not require a game ROM and establish no real MAME frame
+parity. Real original-frame capture and Switch console execution remain
+unverified.
