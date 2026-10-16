@@ -78,6 +78,8 @@ def import_capture(directory,frame_stem):
     scene['reference_frame']=frame_stem
     scene['pixel_parity_eligible']=False
     scene['capture_method']='mame_lua_frame_done'
+    scene['reference_pixel_encoding']=manifest['reference_pixel_encoding']
+    scene['reference_source_format']=manifest['reference_source_format']
     scene['gfxram_mapped_bytes']=GFX_BYTES
     scene['note']=('Authentic reference pixels; reconstructed RAM snapshot lacks '
                    'VBlank-latched sprite buffer and is NOT parity eligible')
