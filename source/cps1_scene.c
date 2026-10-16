@@ -134,7 +134,9 @@ static void draw_sprite_tile(const uint8_t *gfx, size_t gfx_bytes,
                              const Cps1Scene *s, uint8_t *rgba,
                              uint8_t *occluded,
                              unsigned x,unsigned y,unsigned code,unsigned attr) {
-    if (code>=32768u) return;  /* CD63B mapper 16x16 range */
+    /* MAME gfx_element::prio_transpen wraps a composite *part* after
+     * gfxrom_bank_mapper validated the original OBJ base code. */
+    code %= CPS1_TILE16_COUNT;
     unsigned color_group=attr&31u;
     bool flip_x=(attr&0x20u)!=0, flip_y=(attr&0x40u)!=0;
     uint8_t pixels[CPS1_TILE16_PIXELS];
@@ -168,6 +170,9 @@ static void draw_sprites(const uint8_t *gfx, size_t gfx_bytes,
         unsigned x=s->obj[i]&0x1ffu, y=s->obj[i+1u]&0x1ffu;
         unsigned code=s->obj[i+2u], attr=s->obj[i+3u];
         if ((attr&0xff00u)==0xff00u) break;
+        /* Base code is checked by MAME gfxrom_bank_mapper, before
+         * expanding the composite. Never resurrect an invalid raw OBJ. */
+        if (code >= CPS1_TILE16_COUNT) continue;
         unsigned nx=(attr&0xff00u)?((attr>>8u)&15u)+1u:1u;
         unsigned ny=(attr&0xff00u)?((attr>>12u)&15u)+1u:1u;
         for (unsigned row=0;row<ny;++row) {
