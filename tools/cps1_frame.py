@@ -157,8 +157,16 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
                 if mapped == -1:
                     continue
                 base = color_group_base('sprites', attr & 0x1f)
+                # MAME validates/maps the OBJ base code once, then
+                # gfx_element::prio_transpen wraps composite *parts* modulo
+                # the available 16x16 graphics elements. A vertical block
+                # starting at code 0x7ff0 may legitimately wrap to tile 0.
+                sprite_count = tile_count(region, '16x16')
                 for part in sprite_block_tiles(mapped, attr):
-                    pixels = _decode_cached(cache, region, 'sprites', part.code)
+                    if sprite_count == 0:
+                        continue
+                    pixels = _decode_cached(cache, region, 'sprites',
+                                            part.code % sprite_count)
                     if pixels is None:
                         continue
                     sx, sy = ((x+part.dx)&0x1ff), ((y+part.dy)&0x1ff)
