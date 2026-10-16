@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Local-only pixel-exact comparison of 8-bit RGBA PNG reference frames.
+
+Accepts PNG filters 0..4, noninterlaced RGBA. Outputs JSON metrics and an
+optional absolute-error heatmap. No third-party packages or ROMs required.
+"""
+import argparse
+import json
+from pathlib import Path
+import struct
+import sys
+import zlib
+
+SIGNATURE = b'\x89PNG\r\n\x1a\n'
+
+
+def _paeth(a, b, c):
+    p = a+b-c
+    pa,pb,pc = abs(p-a),abs(p-b),abs(p-c)
+    if pa <= pb and pa <= pc: return a
+    if pb <= pc: return b
+    return c
+
+
+def load_rgba_png(data):
+    if not data.startswith(SIGNATURE):
+        raise ValueError('Not a PNG')
+    pos = len(SIGNATURE)
+    ihdr = None
+    compressed = []
+    seen_end = False
+    while pos + 12 <= len(data):
+        size = struct.unpack_from('>I',data,pos)[0]
+        if size > len(data)-pos-12:
+            raise ValueError('Truncated PNG chunk')
+        kind = data[pos+4:pos+8]
+        payload = data[pos+8:pos+8+size]
+        checksum = struct.unpack_from('>I',data,pos+8+size)[0]
+        if zlib.crc32(kind+payload) & 0xffffffff != checksum:
+            raise ValueError('PNG chunk CRC mismatch')
+        pos += size+12
+        if kind == b'IHDR':
+            if ihdr is not None or size != 13:
+                raise ValueError('Malformed or duplicate IHDR')
+            ihdr = struct.unpack('>IIBBBBB',payload)
+        elif kind == b'IDAT':
+            compressed.append(payload)
+        elif kind == b'IEND':
+            seen_end = True
+            break
+    if ihdr is None or not compressed or not seen_end:
+        raise ValueError('Incomplete PNG')
+    width,height,depth,mode,compression,filtering,interlace = ihdr
+    if not 0 < width <= 8192 or not 0 < height <= 8192:
+        raise ValueError('Invalid PNG dimensions')
+    if (depth,mode,compression,filtering,interlace) != (8,6,0,0,0):
+        raise ValueError('Only 8-bit noninterlaced RGBA PNG supported')
+    stride = width*4
+    expected = height*(stride+1)
+    try:
+        decompressor = zlib.decompressobj()
+        raw = decompressor.decompress(b''.join(compressed),expected+1)
+        if len(raw) != expected or not decompressor.eof or decompressor.unused_data:
+            raise ValueError('Incorrect PNG pixel stream length')
+    except zlib.error as exc:
+        raise ValueError('Invalid PNG compression') from exc
+    rgba=bytearray(height*stride)
+    prev=bytearray(stride)
+    for row in range(height):
+        start = row*(stride+1)
+        kind=raw[start]
+        if kind > 4: raise ValueError('Unsupported PNG filter')
+        pixels=bytearray(raw[start+1:start+1+stride])
+        for i in range(stride):
+            a=pixels[i-4] if i>=4 else 0
+            b=prev[i]
+            c=prev[i-4] if i>=4 else 0
+            if kind==1: pixels[i]=(pixels[i]+a)&255
+            elif kind==2: pixels[i]=(pixels[i]+b)&255
+            elif kind==3: pixels[i]=(pixels[i]+(a+b)//2)&255
+            elif kind==4: pixels[i]=(pixels[i]+_paeth(a,b,c))&255
+        rgba[row*stride:(row+1)*stride]=pixels
+        prev=pixels
+    return width,height,bytes(rgba)
+
+
+def compare_frames(reference,candidate,width,height,*,ignore_alpha=False):
+    if len(reference)!=width*height*4 or len(candidate)!=len(reference):
+        raise ValueError('RGBA buffer dimensions do not match')
+    total=width*height
+    count=0
+    absolute=0
+    peak=0
+    first=None
+    nch=3 if ignore_alpha else 4
+    diff=bytearray(total*4)
+    for i in range(total):
+        index=i*4
+        errors=[abs(reference[index+c]-candidate[index+c]) for c in range(nch)]
+        err=max(errors)
+        if err:
+            count+=1
+            if first is None: first=[i%width,i//width]
+        absolute+=sum(errors)
+        peak=max(peak,err)
+        diff[index:index+4]=bytes((err,0,0,255))
+    return {
+        'width':width,'height':height,
+        'compared_channels':'RGB' if ignore_alpha else 'RGBA',
+        'pixels':total,'different_pixels':count,'different_ratio':count/total,
+        'mean_absolute_channel_error':absolute/(total*nch),
+        'max_channel_error':peak,'first_difference_xy':first,
+        'identical':count==0
+    },bytes(diff)
+
+
+def main(argv=None):
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('reference_png',type=Path)
+    p.add_argument('candidate_png',type=Path)
+    p.add_argument('--diff',type=Path,help='Optional red absolute-error heatmap')
+    p.add_argument('--ignore-alpha',action='store_true')
+    p.add_argument('--max-different-pixels',type=int,default=0)
+    args=p.parse_args(argv)
+    if args.max_different_pixels<0:
+        p.error('--max-different-pixels must be nonnegative')
+    try:
+        width,height,ref=load_rgba_png(args.reference_png.read_bytes())
+        w2,h2,cur=load_rgba_png(args.candidate_png.read_bytes())
+        if (width,height)!=(w2,h2):
+            raise ValueError(f'Image sizes differ: {(width,height)} vs {(w2,h2)}')
+        result,diff=compare_frames(ref,cur,width,height,ignore_alpha=args.ignore_alpha)
+        print(json.dumps(result,indent=2))
+        if args.diff:
+            try: from tools.cps1_tiles import _png_rgba
+            except ModuleNotFoundError: from cps1_tiles import _png_rgba
+            args.diff.parent.mkdir(parents=True,exist_ok=True)
+            args.diff.write_bytes(_png_rgba(width,height,diff,'Absolute RGB/RGBA error'))
+        return int(result['different_pixels']>args.max_different_pixels)
+    except (OSError,ValueError,TypeError) as exc:
+        print(f'ERROR: {exc}',file=sys.stderr)
+        return 2
+
+
+if __name__=='__main__':
+    raise SystemExit(main())

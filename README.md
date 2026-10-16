@@ -86,3 +86,27 @@ See [raw capture workflow and exact register mappings](docs/cps1-capture-and-ras
 Local validation: **68/68 Python tests passed** and a 384×224 diagnostic frame was reconstructed from *synthetic* raw RAM dumps plus the locally supplied real `dino.zip` graphics. The resulting scene is not an original gameplay frame.
 
 A dedicated [Switch native bootstrap workflow](.github/workflows/switch-bootstrap.yml) now attempts a **ROM-free** `.nro` build in the official devkitPro devkitA64 container. Its CI outcome and real-console runtime remain unverified.
+
+## Verified Switch NRO bootstrap and frame parity QA (2026-10-16)
+
+The `Makefile` follows the canonical devkitPro/libnx application layout.
+The private-repo pull-request CI executed in `devkitpro/devkita64:20260219`
+and **successfully built and uploaded a valid native Switch NRO**:
+
+- [NRO build run #38929163586](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/38929163586) — SUCCESS, artifact `cadillacs-dinosaurs-switch-bootstrap`. Verified `NRO0` header at offset `0x10`, file size **166,085 bytes**, SHA-256 `ef682e60afb7f1d7ba79b04b2368e5239926d330e65f2cca4eec3fbdefd47093`.
+- [Python test run #38929164566](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/38929164566) — SUCCESS, **77 tests** including nine new reference-frame comparator tests.
+
+`tools/frame_compare.py` reads two same-size RGBA PNG frames, counts
+pixel/color differences, and optionally saves a red-channel error heatmap.
+Usage and capture requirements: [Pixel-exact frame QA](docs/frame-parity-testing.md).
+
+```sh
+python3 tools/frame_compare.py /private/mame_reference.png \
+  /private/cps1_reconstruction.png \
+  --diff local_outputs/pixel_error.png
+```
+
+**Important:** The NRO is a ROM-free **technical bootstrap**, not yet a playable
+game. Native compilation and output format are confirmed; real Switch hardware
+boot and gameplay functionality are not tested. A real MAME reference frame
+has not been captured, so there is no pixel-parity claim for the actual game.
