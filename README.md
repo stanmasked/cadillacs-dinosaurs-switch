@@ -257,3 +257,19 @@ Details: [native graphics layout and ROM parity](docs/native-graphics-layout-par
 This confirms sampled **tile indices**, not original game-frame accuracy:
 MAME runtime capture, effective palette timing, arcade CPU execution and
 Nintendo Switch hardware validation are still separate tasks.
+
+## Stage 22 — physical screen geometry diagnostics
+
+Added [CPS-1 screen-coordinate geometry guide](docs/cps1-screen-geometry.md)
+and `tools/cps1_geometry_probe.py`. For one physical raster pixel it
+reports which 64×64 tilemap entry, RAM word, ROM tile half, source-pixel
+coordinate and palette/priority group contribute to the viewport.
+
+The hardware visible area is X=64..447, Y=16..239, cropped to
+384×224 output. Fixed regression oracles check Scroll1 alternating
+8px halves, Scroll2 horizontal movement on one scanline, Scroll3's
+2048px map wrap and a 16px sprite at the final visible pixel.
+
+New Python probe tests and native C-versus-Python scene tests have been
+committed. Synthetic local Python placement checks passed, but no
+full-MAME gameplay parity or newer Switch hardware proof is implied.
