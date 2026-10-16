@@ -82,7 +82,7 @@ class NativeTileLayoutTests(unittest.TestCase):
             self.assertFalse(ok)
             ok,_=self.decode(symbol,side,0,right,region=GFX[:-1])
             self.assertFalse(ok)
-            out=ctypes.create_string_buffer(bytes([77])*(side*side))
+            out=ctypes.create_string_buffer(bytes([77])*(side*side),side*side)
             fn=getattr(self.lib,symbol)
             success=(fn(None,len(GFX),0,right,out) if side==8 else
                      fn(None,len(GFX),0,out))
