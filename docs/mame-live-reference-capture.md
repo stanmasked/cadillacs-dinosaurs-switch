@@ -101,3 +101,36 @@ It checks that six expected files are written and that byte lengths,
 big-endian words, manifest and honesty/provenance fields are correct.
 If liblua5.4 is not available, the smoke test is skipped and reported as
 such. **This is not a real MAME capture.**
+
+## Pixel-format correctness (MAME Lua API audit)
+
+A critical video capture issue was corrected: official MAME screen APIs
+allow **two different pixel representations**. `screen:pixel(x,y)` or
+`screen:pixels()` may return **indexed palette pens** OR **packed direct
+RGB values**. Assuming all pixels are indexed can abort an otherwise
+valid capture or corrupt its color values.
+
+The capture code now uses the documented `screen:pixels()` bulk method,
+which returns a binary array of native-endian 32-bit values plus visible
+width and height. Lua `string.unpack('=I4')` decodes each sample with
+the host's byte order. The documented `screen.palette` attribute
+distinguishes indexed screens (non-nil) from direct-RGB screens (nil):
+
+- indexed: validate the palette index and read effective `pen_color`;
+- direct RGB: take the lower three packed RGB channels directly, **without
+  applying a second palette lookup**.
+
+The capture rejects unexpected visible-area dimensions and records the
+conversion mode in `reference_pixel_encoding` (`indexed` or
+`direct_rgb`). The Python importer requires and validates this field,
+the exact 384 × 224 dimensions, and a safe capture filename stem.
+
+Additional Lua 5.4 smoke tests execute the capture script under **both
+pixel formats** and reject incorrect visible-area metadata. These tests
+are still synthetic API simulations and **do not mean that a real MAME
+frame has been captured**.
+
+Authoritative sources:
+
+- [MAME screen pixel formats, bulk pixels and palette property](https://docs.mamedev.org/luascript/ref-devices.html)
+- [MAME memory shares and address-space reads](https://docs.mamedev.org/luascript/ref-mem.html)
