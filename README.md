@@ -283,3 +283,21 @@ program; they do not constitute a live MAME run. Real first-level
 data, MAME pixel parity and hardware Switch execution remain pending.
 The runner is based on this feature's parent PR #12 (ROM audit),
 and actual capture requires independent PR #8 instrumentation.
+
+### MAME recorded input for first-level capture attempts
+
+The local capture runner now supports `--playback-inp /private/first-stage.inp`
+so MAME can reproduce a recorded coin/start/first-level input sequence
+instead of saving only attract-mode frames. An opt-in companion,
+`tools/mame_playback_plan.py`, validates a regular .inp file
+(1..64 MiB), records its SHA-256 without exposing user data and
+refuses captures when the recording changes during MAME execution.
+Eight ROM-free playback-plan tests have passed locally; three more
+runner integration tests cover the MAME subprocess command, refusal
+of missing .inp and detecting a modified recording.
+
+**Important:** a valid .inp is not proof of deterministic replay or
+successful first-level entry. MAME playback can desynchronize if the
+configuration or NVRAM differs. The report always marks the replay
+authenticity unverified until actual frames have been inspected.
+See [local MAME runner and input replay](docs/mame-local-capture-run.md).
