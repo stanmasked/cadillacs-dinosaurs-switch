@@ -2,8 +2,10 @@
 
 This is the first local-only bridge from a **running, user-owned MAME game**
 to reference-frame analysis. The Lua script is written against the publicly
-documented MAME 0.289 API but has **not yet been executed against running MAME**
-in our CI environment. The Python importer is unit-tested with synthetic data.
+documented MAME 0.289 API and was **executed under Lua 5.4 with synthetic
+MAME API stubs**, confirming file sizes, endian layout and manifest format.
+It has **not yet been executed against running MAME** in our CI environment.
+The Python importer is unit-tested with synthetic data.
 
 ## Exact QSound video memory and palette inputs
 
@@ -89,3 +91,13 @@ the Switch compositor.
 
 All actual ROMs, captured game graphics, palettes, screenshots and RAM
 dumps must remain outside GitHub. Tests use synthetic bytes only.
+
+### Lua smoke test
+
+`tests/test_mame_lua_stub.py` optionally loads the actual capture script
+under an installed Lua 5.4 shared library, with an artificial in-memory
+simulation of MAME's named shares, palette, screen and frame-complete hook.
+It checks that six expected files are written and that byte lengths,
+big-endian words, manifest and honesty/provenance fields are correct.
+If liblua5.4 is not available, the smoke test is skipped and reported as
+such. **This is not a real MAME capture.**
