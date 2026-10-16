@@ -16,12 +16,14 @@ try:
     from tools.cps1_gfx import assemble_gfx
     from tools.cps1_tiles import _png_rgba
     from tools.frame_compare import compare_frames, load_rgba_png
+    from tools.frame_error_profile import profile_rgba
 except ModuleNotFoundError:
     from mame_render_import import import_render
     from cps1_frame import render_frame
     from cps1_gfx import assemble_gfx
     from cps1_tiles import _png_rgba
     from frame_compare import compare_frames, load_rgba_png
+    from frame_error_profile import profile_rgba
 
 DIMENSIONS=(384,224)
 
@@ -55,6 +57,7 @@ def run_parity(capture_directory, stem, graphics_region):
         'reference_png_sha256':hashlib.sha256(reference_png).hexdigest(),
         'reconstructed_png_sha256':hashlib.sha256(reconstructed_png).hexdigest(),
         'comparison':metrics,
+        'spatial_error_profile':profile_rgba(reference_rgba,raw,*DIMENSIONS),
     }
     return report,reference_png,reconstructed_png,_png_rgba(*DIMENSIONS,diff,
         'Pixel error; red channel = max abs error')
