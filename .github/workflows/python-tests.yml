@@ -40,7 +40,17 @@ jobs:
         with:
           python-version: '3.13'
       - name: Run synthetic ROM mapping and tile decoder tests
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee python-tests.log
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cps1-python-test-diagnostics
+          path: python-tests.log
+          if-no-files-found: warn
       - name: Compile and run portable C tile decoder tests
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -Werror -Isource \
