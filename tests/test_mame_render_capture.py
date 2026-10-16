@@ -122,6 +122,15 @@ int main(int argc,char **) {
                        CPS1_RENDER_DUMP_COUNT='1')
             subprocess.run([str(exe),'partial'],env=env,check=True)
             self.assertFalse(list(folder.glob('frame-*.bin')))
+            # A missing/unwritable binary stream must NOT result in a
+            # committed manifest claiming all six streams are complete.
+            blocked=folder/'blocked'
+            blocked.mkdir()
+            (blocked/'frame-00000900.buffered-obj-be.bin').mkdir()
+            blocked_env=env.copy()
+            blocked_env['CPS1_RENDER_DUMP_DIR']=str(blocked)
+            subprocess.run([str(exe)],env=blocked_env,check=True)
+            self.assertFalse((blocked/'frame-00000900.manifest.json').exists())
             subprocess.run([str(exe)],env=env,check=True)
             for suffix,size in SIZES.items():
                 with self.subTest(suffix=suffix):
