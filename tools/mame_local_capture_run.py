@@ -17,9 +17,11 @@ import sys
 try:
     from tools.mame_rom_readiness import audit_game, check_device
     from tools.mame_playback_plan import playback_plan, confirm_playback_unchanged
+    from tools.mame_capture_motion_audit import audit_sequence
 except ModuleNotFoundError:
     from mame_rom_readiness import audit_game, check_device
     from mame_playback_plan import playback_plan, confirm_playback_unchanged
+    from mame_capture_motion_audit import audit_sequence
 
 STREAMS = {
     'gfxram-be.bin': 196608, 'cps-a-be.bin': 64,
@@ -158,6 +160,10 @@ def run_capture(*,mame,rom_dir,output_dir,start,count,seconds,wall_timeout=300,
     if result['emulator_process']['exit_code']!=0:
         raise ValueError('Instrumented MAME process did not complete successfully')
     result['captured_frames']=[validate_dump(output_dir,start+i) for i in range(count)]
+    # A complete dump may still be an attract-mode or static screen.
+    # Motion evidence is diagnostic only; never infer a playable first level.
+    result['sequence_motion_diagnostic']=audit_sequence(output_dir,start,count)
+    result['first_level_verified']=False
     result['capture_format_valid']=True
     result['status']='complete_capture_format_verified_not_gameplay_parity'
     return result

@@ -110,6 +110,16 @@ class MameLocalCaptureRunnerTests(unittest.TestCase):
             mame=self.executable,rom_dir=self.roms,output_dir=self.output,
             start=900,count=2,seconds=25,wall_timeout=20,**options)
 
+    def test_capture_includes_motion_evidence_not_first_level_claim(self):
+        result=self.run_fake()
+        motion=result['sequence_motion_diagnostic']
+        self.assertEqual(motion['frame_count'],2)
+        self.assertEqual(motion['frames'][1]['rgb_since_previous']['different_pixels'],1)
+        self.assertFalse(motion['first_level_verified'])
+        self.assertFalse(motion['input_replay_synchronized'])
+        self.assertFalse(result['first_level_verified'])
+        self.assertTrue(result['capture_format_valid'])
+
     def test_full_capture_has_only_hashes_and_exact_sizes(self):
         report=self.run_fake()
         self.assertTrue(report['capture_format_valid'])
