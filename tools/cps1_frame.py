@@ -109,6 +109,11 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
     vx, vy, width, height = viewport
     if not 1 <= width <= 512 or not 1 <= height <= 256 or not 0 <= vx <= 511 or not 0 <= vy <= 255:
         raise ValueError('Invalid viewport')
+    # Crop coordinates are physical CPS-1 raster coordinates. Validate the
+    # *whole* rectangle before rendering, even with global flip disabled.
+    # Otherwise a normal crop could silently contain impossible overscan.
+    if vx + width > 512 or vy + height > 256:
+        raise ValueError('Viewport must fit 512x256 CPS-1 raster')
     if not isinstance(snapshot, dict):
         raise ValueError('Snapshot must be an object')
     layers = {}
@@ -127,8 +132,6 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
         # VIDEO_CONTROL bit15 mirrors the whole CPS-1 hardware raster.
         # Mirror from physical source viewport, NOT the same crop:
         # x->511-x and y->255-y; visible [64..447,16..239] is symmetric.
-        if vx+width > 512 or vy+height > 256:
-            raise ValueError('Flipped viewport must fit 512x256 CPS-1 raster')
         normal=dict(snapshot)
         normal['video_control']=video_control & ~0x8000
         source_viewport=(512-vx-width,256-vy-height,width,height)
