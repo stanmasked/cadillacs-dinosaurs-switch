@@ -1,0 +1,41 @@
+name: Nintendo Switch native bootstrap
+
+on:
+  push:
+    paths:
+      - 'source/**'
+      - 'Makefile'
+      - '.github/workflows/switch-bootstrap.yml'
+  pull_request:
+    paths:
+      - 'source/**'
+      - 'Makefile'
+      - '.github/workflows/switch-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-switch-nro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: devkitpro/devkita64:20260219
+    env:
+      DEVKITPRO: /opt/devkitpro
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native Nintendo Switch bootstrap
+        run: make -j2
+      - name: Verify NRO output
+        run: |
+          test -s cadillacs-dinosaurs-switch.nro
+          file cadillacs-dinosaurs-switch.nro || true
+          sha256sum cadillacs-dinosaurs-switch.nro
+      - name: Upload NRO (ROM-free technical bootstrap)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadillacs-dinosaurs-switch-bootstrap
+          path: cadillacs-dinosaurs-switch.nro
+          if-no-files-found: error
