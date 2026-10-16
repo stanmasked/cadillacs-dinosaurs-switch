@@ -3,8 +3,9 @@
 
 Implements CD63B tile codes, 64x64 tilemaps, normal sprite lists,
 blocked sprites, color groups, palette and hardware visible area.
-Limitations: high-priority tile masks, line scrolling, stars, flipscreen,
-sprite latency and mid-frame changes are NOT emulated. No ROM bundled.
+Includes CPS-B priority pens and Scroll2 raster rowscroll from coherent snapshots.
+Limitations: stars, flipscreen, accurate raster interrupts, sprite latency and
+mid-frame changes are NOT emulated. No ROM bundled.
 """
 import argparse
 import json
@@ -13,11 +14,13 @@ import sys
 import zipfile
 
 try:
+    from tools.cps1_raster import scroll2_x_for_line, pen_blocks_sprite
     from tools.cps1_gfx import assemble_gfx
     from tools.cps1_tiles import decode_tile, tile_count, _png_rgba
     from tools.cps1_video import (TOTAL_COLORS, build_palette, color_group_base,
                                    gfxrom_bank_mapper, sprite_block_tiles)
 except ModuleNotFoundError:
+    from cps1_raster import scroll2_x_for_line, pen_blocks_sprite
     from cps1_gfx import assemble_gfx
     from cps1_tiles import decode_tile, tile_count, _png_rgba
     from cps1_video import (TOTAL_COLORS, build_palette, color_group_base,
@@ -96,8 +99,8 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
     snapshot schema: {"layer_control": word, "scroll1|2|3":
     {"words": 8192 entries, "scrollx": int, "scrolly": int, "enabled": bool},
     "buffered_obj_words": [x,y,code,attr,...]}.
-    Missing layers are transparent. For fidelity, priority masks/rowscroll
-    must eventually be supplied and modelled; this is a partial renderer.
+    Missing layers are transparent. Supports QS2 priority pen masks and
+    Scroll2 rowscroll when registers and RAM are supplied. Still partial.
     """
     if len(palette) != TOTAL_COLORS or any(len(rgb) != 3 or any(not isinstance(c,int) or not 0 <= c <= 255 for c in rgb) for rgb in palette):
         raise ValueError('Need 3072 RGB colors in 0..255')
@@ -114,17 +117,36 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
             _validate_layer(snapshot[lname])
             layers[lname] = snapshot[lname]
     sprites = scan_sprite_words(snapshot.get('buffered_obj_words', []))
+    priority_registers = snapshot.get('priority_masks', [0, 0, 0, 0])
+    # Validate masks once; do not silently ignore malformed register dumps.
+    pen_blocks_sprite(0, 0, priority_registers)
+    video_control = snapshot.get('video_control', 0)
+    if type(video_control) is not int or not 0 <= video_control <= 0xffff:
+        raise ValueError('video_control must be an unsigned 16-bit value')
+    use_rowscroll = bool(video_control & 1)
+    rowscroll = snapshot.get('rowscroll', None)
+    rowscroll_offset = snapshot.get('rowscroll_offset', 0)
+    if use_rowscroll and 'scroll2' in layers:
+        if (not isinstance(rowscroll, list) or len(rowscroll) != 1024 or
+                any(type(w) is not int or not 0 <= w <= 0xffff for w in rowscroll)):
+            raise ValueError('Enabled Scroll2 rowscroll needs 1024 RAM words')
     order = decode_layer_control(snapshot['layer_control'])
     back = bytes(palette[0xbff]) + b'\xff'
     rgba = bytearray(back * (width * height))
     cache = {}
+    sprite_occlusion = bytearray(width * height)
 
     def set_pixel(screen_x, screen_y, rgb):
         if vx <= screen_x < vx+width and vy <= screen_y < vy+height:
             offset = ((screen_y-vy) * width + screen_x-vx) * 4
             rgba[offset:offset+4] = bytes(rgb) + b'\xff'
 
-    for lname in order:
+    for order_index, lname in enumerate(order):
+        # MAME draws the *previous* tilemap's high-priority pens into a
+        # priority bitmap immediately before sprites are rendered.
+        high_before_sprites = (order_index < 3 and order[order_index + 1] == 'sprites')
+        if high_before_sprites:
+            sprite_occlusion = bytearray(width * height)
         if lname == 'sprites':
             # Listed OBJ entries are traversed from first to last by MAME,
             # with later entries covering earlier ones where alpha permits.
@@ -149,7 +171,7 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
                                 continue
                             pixel_x = 15-px if part.flip_x else px
                             pen = pixels[pixel_y*16+pixel_x]
-                            if pen != 15:
+                            if pen != 15 and not sprite_occlusion[(target_y-vy)*width+(target_x-vx)]:
                                 set_pixel(target_x,target_y,palette[base+pen])
         elif lname in layers and layers[lname].get('enabled', True):
             layer = layers[lname]
@@ -157,11 +179,14 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
             tile_size = TILE_SIZE[lname]
             wrap = tile_size * 64
             for py in range(height):
-                # No rowscroll model in this reference implementation.
+                line_scrollx = layer.get('scrollx', 0)
+                if lname == 'scroll2' and use_rowscroll:
+                    line_scrollx = scroll2_x_for_line(line_scrollx, (vy+py) & 255,
+                                                     rowscroll, rowscroll_offset)
                 world_y = (vy+py + layer.get('scrolly',0)) % wrap
                 row, local_y = divmod(world_y, tile_size)
                 for px in range(width):
-                    world_x = (vx+px + layer.get('scrollx',0)) % wrap
+                    world_x = (vx+px + line_scrollx) % wrap
                     col, local_x = divmod(world_x, tile_size)
                     idx = tile_ram_index(lname,col,row)
                     code,attr = words[2*idx:2*idx+2]
@@ -178,6 +203,9 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
                         continue
                     base = color_group_base(lname,attr & 0x1f)
                     set_pixel(vx+px,vy+py,palette[base+pen])
+                    if high_before_sprites:
+                        group = (attr & 0x0180) >> 7
+                        sprite_occlusion[py * width + px] = int(pen_blocks_sprite(pen,group,priority_registers))
     return bytes(rgba)
 
 
@@ -207,7 +235,7 @@ def main(argv=None):
         with zipfile.ZipFile(args.rom_zip) as archive:
             region=assemble_gfx(archive.read)
         rgba=render_frame(region,palette,snapshot)
-        png=_png_rgba(VIEWPORT[2],VIEWPORT[3],rgba,'PARTIAL CPS1 frame: no priority/rowscroll; local-only')
+        png=_png_rgba(VIEWPORT[2],VIEWPORT[3],rgba,'PARTIAL CPS1 frame with priority/rowscroll support; local-only')
         args.out.parent.mkdir(parents=True,exist_ok=True)
         args.out.write_bytes(png)
         print(f'Wrote {args.out} ({VIEWPORT[2]}x{VIEWPORT[3]}, {len(png)} bytes)')
