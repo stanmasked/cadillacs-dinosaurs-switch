@@ -200,3 +200,33 @@ An opt-in C++17 regression test compiles the generated hook with
 the same frame and a blocked output path, and ensures that no
 incorrect manifest is committed. The native source has not yet been
 built with the full upstream MAME toolchain.
+
+## Spatial error analysis (new)
+
+To make parity failures actionable, `tools/mame_frame_parity.py` now adds a
+`spatial_error_profile` section to the same JSON report. No extra game
+assets or images are needed.
+
+For the actual 384x224 CPS-1 viewport it records:
+
+- Inclusive mismatch bounds `[min_x, min_y, max_x, max_y]`, or `null`
+  if RGB values are identical.
+- Error counts for each of the 224 scanlines and each of the 384 columns.
+- Number of affected rows and columns, plus the busiest single scanline.
+- Per-channel R/G/B mismatch counts and total absolute channel errors.
+- Mismatch counts in all four screen quadrants.
+
+These metrics help distinguish global tilemap/scroll misalignment from
+localized sprite issues or a palette-component mismatch. All coordinates
+refer to the **cropped 384x224 reference frame** (not the original hardware
+512x256 coordinate space). Alpha is excluded from this second RGB-only
+profile, while the existing exact RGBA comparator remains authoritative
+for the single-frame `identical` boolean.
+
+Five ROM-free standalone regressions cover perfect RGB, a single pixel,
+four quadrants, individual channels, alpha-only changes and malformed
+dimensions. Existing end-to-end parity tests also assert the new spatial
+section for synthetic equal and one-pixel-different frames.
+
+Neither the spatial report nor a matching synthetic fixture proves real
+MAME parity or playable game logic.
