@@ -107,7 +107,7 @@ ROMs or private sequences to GitHub.
 ## ROM-free tests
 
 ```sh
-python3 -m unittest tests.test_mame_local_capture_run -v
+python3 -m unittest discover -s tests -p 'test_mame_local_capture_run.py' -v
 ```
 
 The 12 new regression cases run a tiny Python **test stand-in**, not
