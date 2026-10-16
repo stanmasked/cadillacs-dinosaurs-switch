@@ -45,7 +45,7 @@ PROBE = r'''
 			{
 				std::FILE *output = std::fopen(path, "wb");
 				if (!output)
-					osd_printf_warning("OBJ probe: unable to open %s\\n", path);
+					osd_printf_warning("OBJ probe: unable to open %s\n", path);
 				else
 				{
 					bool complete = true;
@@ -62,7 +62,7 @@ PROBE = r'''
 					if (std::fclose(output) != 0)
 						complete = false;
 					if (!complete)
-						osd_printf_warning("OBJ probe: incomplete %s\\n", path);
+						osd_printf_warning("OBJ probe: incomplete %s\n", path);
 				}
 			}
 		}
