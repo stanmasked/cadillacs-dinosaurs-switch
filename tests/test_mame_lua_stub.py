@@ -30,8 +30,16 @@ function palette:pen(i) return i end
 function palette:pen_color(i)
   return 0xff000000|((i%256)<<16)|(((i+1)%256)<<8)|((i+2)%256)
 end
-local screen={frame_number=900}
-function screen:pixel(x,y) return (x+y)%3072 end
+local screen={frame_number=900,palette=palette}
+function screen:pixels()
+  local result={}
+  for y=0,223 do
+    for x=0,383 do
+      result[#result+1]=string.pack('=I4',(x+y)%3072)
+    end
+  end
+  return table.concat(result),384,224
+end
 local cpu={spaces={program={}}}
 function cpu.spaces.program:read_u16(addr)
   return (((addr-0x900000)//2)*17+33)%65536
@@ -51,7 +59,7 @@ end
 
 @unittest.skipUnless(LIB is not None,'Optional Lua 5.4 shared library not installed')
 class MameLuaCaptureStubTests(unittest.TestCase):
-    def test_lua_script_generates_exact_documented_files(self):
+    def run_capture(self, extra_stub=''):
         lib=ctypes.CDLL(LIB)
         lib.luaL_newstate.restype=ctypes.c_void_p
         lib.luaL_openlibs.argtypes=[ctypes.c_void_p]
@@ -74,7 +82,10 @@ class MameLuaCaptureStubTests(unittest.TestCase):
                 self.assertTrue(L)
                 lib.luaL_openlibs(L)
                 try:
-                    for source,is_file in ((STUB,False),(str(SCRIPT),True)):
+                    for source,is_file in ((STUB,False),(extra_stub,False),
+                                           (str(SCRIPT),True)):
+                        if not source:
+                            continue
                         if is_file:
                             code=lib.luaL_loadfilex(L,source.encode(),None)
                         else:
@@ -98,8 +109,34 @@ class MameLuaCaptureStubTests(unittest.TestCase):
                 manifest=json.loads((root/(prefix+'manifest.json')).read_text())
                 self.assertFalse(manifest['pixel_parity_eligible'])
                 self.assertEqual(manifest['obj_latch'],'NOT_CAPTURED')
+                return (root/(prefix+'reference-rgb24.bin')).read_bytes(),manifest
             finally:
                 os.chdir(old)
+
+    def test_indexed_screen_pixels_use_effective_palette(self):
+        rgb,manifest=self.run_capture()
+        self.assertEqual(manifest['reference_pixel_encoding'],'indexed')
+        self.assertEqual(rgb[:9],bytes((0,1,2,1,2,3,2,3,4)))
+
+    def test_direct_rgb_screen_pixels_bypass_palette(self):
+        extra=r'''
+screen.palette=nil
+function screen:pixels()
+  return string.rep(string.pack('=I4',0xff408020),384*224),384,224
+end
+'''
+        rgb,manifest=self.run_capture(extra)
+        self.assertEqual(manifest['reference_pixel_encoding'],'direct_rgb')
+        self.assertEqual(rgb[:9],bytes((64,128,32))*3)
+
+    def test_malformed_screen_visible_size_is_rejected(self):
+        extra=r'''
+function screen:pixels()
+  return string.rep(string.pack('=I4',0xff408020),320*224),320,224
+end
+'''
+        with self.assertRaisesRegex(AssertionError,'Unexpected MAME visible area'):
+            self.run_capture(extra)
 
 if __name__=='__main__':
     unittest.main()
