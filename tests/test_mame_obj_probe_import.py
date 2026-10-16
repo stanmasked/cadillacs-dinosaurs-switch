@@ -1,4 +1,5 @@
 """ROM-free buffered OBJ probe import and parity-safety regressions."""
+import hashlib
 import json
 from pathlib import Path
 import struct
@@ -68,6 +69,8 @@ class MameObjProbeImportTests(unittest.TestCase):
         self.assertEqual(new['buffered_obj_words'][:8], buffer_words()[:8])
         self.assertEqual(new['obj_probe_first_end_marker_slot'], 1)
         self.assertEqual(new['obj_probe_frame'], STEM)
+        self.assertEqual(new['obj_probe_sha256'],
+                         hashlib.sha256(big_endian_blob(buffer_words())).hexdigest())
         self.assertEqual(new['obj_probe_frame_alignment'], 'NOT_INDEPENDENTLY_VERIFIED')
         self.assertFalse(new['pixel_parity_eligible'])
         self.assertIn('UNSYNCED', new['buffered_obj_source'])
