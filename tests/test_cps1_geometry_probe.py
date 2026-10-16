@@ -40,6 +40,9 @@ class PhysicalGeometryTests(unittest.TestCase):
         self.assertEqual(a['tile_index'],258)
         self.assertEqual(a['ram_word_index'],516)
         self.assertEqual(a['scroll1_half'],'left')
+        self.assertTrue(a['candidate_drawn'])
+        self.assertEqual(a['draw_slots_bottom_to_top'],[3])
+        self.assertTrue(a['cd63b_code_valid'])
         self.assertEqual(a['sampled_pixel_xy'],[0,0])
         self.assertEqual(b['tile_index'],290)
         self.assertEqual(b['scroll1_half'],'right')
@@ -103,10 +106,30 @@ class PhysicalGeometryTests(unittest.TestCase):
         self.assertEqual(tile['world_xy'],[0,16])
         self.assertEqual(tile['tile_col_row'],[0,0])
         self.assertEqual(tile['tile_code'],0x3fff)
+        self.assertFalse(tile['cd63b_code_valid'])
+        self.assertIsNone(tile['mapped_tile_code'])
+        self.assertFalse(tile['candidate_drawn'])
         self.assertEqual(tile['ram_word_index'],0)
         next_tile=probe_layer(scene,'scroll3',96,16)
         self.assertEqual(next_tile['tile_col_row'],[1,0])
         self.assertEqual(next_tile['tile_index'],8)
+
+    def test_cd63b_out_of_range_and_missing_layer_slot(self):
+        scene=make_scene('scroll2')
+        pos=probe_layer(scene,'scroll2',64,16)
+        scene['scroll2']['words'][pos['ram_word_index']]=0x8000
+        invalid=probe_layer(scene,'scroll2',64,16)
+        self.assertFalse(invalid['cd63b_code_valid'])
+        self.assertFalse(invalid['candidate_drawn'])
+        self.assertIsNone(invalid['mapped_tile_code'])
+        scene['scroll2']['words'][pos['ram_word_index']]=0x7fff
+        valid=probe_layer(scene,'scroll2',64,16)
+        self.assertTrue(valid['cd63b_code_valid'])
+        self.assertEqual(valid['mapped_tile_code'],0x7fff)
+        scene['layer_control']=0
+        hidden=probe_layer(scene,'scroll2',64,16)
+        self.assertFalse(hidden['candidate_drawn'])
+        self.assertEqual(hidden['draw_slots_bottom_to_top'],[])
 
     def test_scroll1_vertical_wrap_and_attribute_flip(self):
         scene=make_scene('scroll1')
