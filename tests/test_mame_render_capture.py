@@ -103,6 +103,11 @@ int main(int argc,char **) {
     rectangle clip{64,16,447,239};
     if (argc>1) clip.max_x=440;
     state.screen_update_cps1(screen,bitmap,clip);
+    // A second render update with the same frame number MUST NOT
+    // replace an already committed MAME snapshot.
+    state.m_gfxram[0]=0xf00d;
+    state.m_buffered_obj[0]=0xbeef;
+    state.screen_update_cps1(screen,bitmap,clip);
     return 0;
 }
 '''
@@ -123,6 +128,19 @@ int main(int argc,char **) {
                     self.assertEqual((folder/('frame-00000900.'+suffix)).stat().st_size,size)
             self.assertEqual((folder/'frame-00000900.gfxram-be.bin').read_bytes()[:2],b'\xab\xcd')
             self.assertEqual((folder/'frame-00000900.buffered-obj-be.bin').read_bytes()[:2],b'\x89\xab')
+            # Both files must retain the FIRST rendering call's inputs.
+            self.assertNotEqual((folder/'frame-00000900.gfxram-be.bin').read_bytes()[:2],
+                                b'\xf0\x0d')
+            self.assertNotEqual((folder/'frame-00000900.buffered-obj-be.bin').read_bytes()[:2],
+                                b'\xbe\xef')
+            marker=folder/'frame-00000900.manifest.json'
+            self.assertTrue(marker.is_file())
+            before=marker.read_bytes()
+            # A restarted MAME run must not overwrite the same frame on disk.
+            subprocess.run([str(exe)],env=env,check=True)
+            self.assertEqual(marker.read_bytes(),before)
+            self.assertEqual((folder/'frame-00000900.gfxram-be.bin').read_bytes()[:2],
+                             b'\xab\xcd')
             self.assertEqual((folder/'frame-00000900.reference-rgb24.bin').read_bytes()[:3],b'\x11\x22\x83')
 
 class ImportTests(unittest.TestCase):
