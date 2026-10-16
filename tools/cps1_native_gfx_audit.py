@@ -30,10 +30,11 @@ FORMATS=(
 
 
 def audit(region, count=256, seed=38102026, compiler='gcc'):
-    if not isinstance(region,(bytes,bytearray)) or len(region)==0:
+    if not isinstance(region,(bytes,bytearray)) or len(region)<512:
         raise ValueError('Nonempty raw CPS-1 GFX region required')
     if type(count) is not int or count<1 or count>65536:
         raise ValueError('Sample size must be 1..65536 tiles per format')
+    region=bytes(region)
     if not shutil.which(compiler):
         raise ValueError('Host C compiler unavailable: '+compiler)
     with tempfile.TemporaryDirectory(prefix='cps1-gfx-verify-') as temp:
@@ -50,9 +51,10 @@ def audit(region, count=256, seed=38102026, compiler='gcc'):
             if len(region)%unit:
                 raise ValueError('GFX byte count is not aligned to '+layout)
             codes=len(region)//unit
-            chosen={0,codes-1,codes//2}
+            desired=min(count,codes)
+            chosen=set([0,codes//2,codes-1][:desired])
             rng=random.Random(seed+unit+int(right))
-            while len(chosen)<min(count,codes):
+            while len(chosen)<desired:
                 chosen.add(rng.randrange(codes))
             fn=getattr(dll,symbol)
             fn.argtypes=([ctypes.c_void_p,ctypes.c_size_t,ctypes.c_size_t,
