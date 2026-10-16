@@ -235,3 +235,25 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+## Experimental MAME VBlank-latched sprite capture
+
+An optional *source patch generator* captures MAME's real
+`m_buffered_obj` immediately after the CPS-1 VBlank copy. This 0x800-byte
+buffer is the input used by MAME's sprite renderer and cannot reliably be
+recovered from current GFX RAM at arbitrary moments.
+
+- `tools/mame_obj_instrument.py`: generate a patch against a **local**
+  MAME CPS-1 driver source file, with bounded frame-number capture.
+- `tools/mame_obj_validate.py`: check resulting 2048-byte big-endian
+  latched OBJ buffers, SHA-256 and sprite list marker.
+- `tests/test_mame_obj_capture.py`: no-ROM C++17 compiled latch smoke test
+  and synthetic file validation.
+
+See [MAME VBlank OBJ instrumentation instructions](docs/mame-vblank-obj-instrumentation.md).
+The patch has **not** been compiled with full MAME or exercised on the
+original game. Screenshots and object latches may refer to different
+render phases; resulting dumps remain **not pixel-parity eligible** until
+their frame synchronization is independently established.
+
+No original ROM, MAME source or captured sprite data is committed.
