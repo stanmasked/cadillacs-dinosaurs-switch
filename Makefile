@@ -17,9 +17,9 @@ SOURCES := source
 DATA :=
 INCLUDES :=
 
-APP_TITLE := Cadillacs and Dinosaurs - Technical Bootstrap
+APP_TITLE := CPS-1 Graphics Inspector
 APP_AUTHOR := Community Research Project
-APP_VERSION := 0.1.0
+APP_VERSION := 0.2.0
 
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS := -g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES)

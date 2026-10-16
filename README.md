@@ -110,3 +110,29 @@ python3 tools/frame_compare.py /private/mame_reference.png \
 game. Native compilation and output format are confirmed; real Switch hardware
 boot and gameplay functionality are not tested. A real MAME reference frame
 has not been captured, so there is no pixel-parity claim for the actual game.
+
+## Native Nintendo Switch graphics inspector — v0.2
+
+The ROM-free NRO now renders a **native 1280×720 interactive grid** of
+actual CPS-1 16×16 graphics tiles when a local, user-provided `gfx.bin`
+is available on SD. These are grayscale palette-index previews, **not**
+restored HD images, gameplay, or authentic in-game colors. If the asset
+is missing, the app explains the required path and exits with PLUS.
+
+```sh
+# On a computer: assemble a 4 MiB region from your own parent ROM set
+python3 tools/cps1_gfx.py /private/dino.zip --out-local gfx.bin
+
+# On Switch SD card: place the binary at
+# sdmc:/switch/cadillacs-dinosaurs-switch/gfx.bin
+
+# ROM-free local regression tests
+python3 -m unittest discover -s tests -v
+gcc -std=c11 -O2 -Wall -Wextra -Werror -Isource \
+ tests/cps1_tile_native_test.c source/cps1_tile.c -o /tmp/cps1_tile_tests
+/tmp/cps1_tile_tests
+```
+
+Detailed installation, navigation and limitations: [Switch tile inspector](docs/switch-tile-inspector.md).
+
+**Never commit gfx.bin, game ROMs or derived copyrighted assets.**

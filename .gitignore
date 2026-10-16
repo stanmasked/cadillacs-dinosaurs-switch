@@ -9,3 +9,6 @@ local_outputs/
 __pycache__/
 palette_snapshots/
 captures/
+
+# Local personal CPS-1 ROM regions / memory snapshots
+*.bin
