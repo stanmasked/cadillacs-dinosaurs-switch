@@ -18,7 +18,9 @@ class MameReferenceCaptureTests(unittest.TestCase):
         self.directory=Path(self.temp.name)
         metadata={'game':'dino','frame':900,'obj_latch':'NOT_CAPTURED',
             'pixel_parity_eligible':False,
-            'palette_source':'MAME_effective_pen_color','raw_word_endianness':'big'}
+            'palette_source':'MAME_effective_pen_color','raw_word_endianness':'big',
+            'reference_width':384,'reference_height':224,
+            'reference_pixel_encoding':'indexed'}
         (self.directory/(STEM+'.manifest.json')).write_text(json.dumps(metadata))
         ram=[0]*(GFX_BYTES//2)
         ram[0x4000//2]=0x1234
@@ -93,6 +95,29 @@ class MameReferenceCaptureTests(unittest.TestCase):
         a[0x08//2]=0x300
         (self.directory/(STEM+'.cps-a-be.bin')).write_bytes(struct.pack('>32H',*a))
         with self.assertRaises(ValueError):import_capture(self.directory,STEM)
+
+    def test_reject_invalid_reference_pixel_encoding(self):
+        path=self.directory/(STEM+'.manifest.json')
+        metadata=json.loads(path.read_text())
+        metadata['reference_pixel_encoding']='unknown'
+        path.write_text(json.dumps(metadata))
+        with self.assertRaises(ValueError):
+            import_capture(self.directory,STEM)
+
+    def test_accept_provenance_of_direct_rgb_pixels(self):
+        path=self.directory/(STEM+'.manifest.json')
+        metadata=json.loads(path.read_text())
+        metadata['reference_pixel_encoding']='direct_rgb'
+        path.write_text(json.dumps(metadata))
+        snapshot,png=import_capture(self.directory,STEM)
+        self.assertFalse(snapshot['pixel_parity_eligible'])
+        self.assertEqual(struct.unpack_from('>II',png,16),(384,224))
+
+    def test_reject_invalid_capture_stem(self):
+        with self.assertRaises(ValueError):
+            import_capture(self.directory,'../secrets')
+        with self.assertRaises(ValueError):
+            import_capture(self.directory,'frame-1')
 
     def test_native_scene_export_blocks_unlatched_sprite_state(self):
         scene,_=import_capture(self.directory,STEM)
