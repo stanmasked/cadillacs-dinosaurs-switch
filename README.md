@@ -301,3 +301,22 @@ successful first-level entry. MAME playback can desynchronize if the
 configuration or NVRAM differs. The report always marks the replay
 authenticity unverified until actual frames have been inspected.
 See [local MAME runner and input replay](docs/mame-local-capture-run.md).
+
+### Stage 28: reject invalid or wrong-game MAME input recordings
+
+Previously an arbitrary nonempty file named `.inp` could pass our
+preflight. The input planner now validates the actual MAME 3.x
+`inp_header`: 64-byte `MAMEINP` magic/version fields and the system
+name `dino`. Missing/short, wrong-game, unsupported-major and
+modified recordings are refused before their capture is considered
+valid. The minor version is recorded without pretending that gameplay
+replay synchronization has been proven.
+
+With `--playback-inp` the emulator also receives
+`-exit_after_playback` to stop at the end of the recorded session
+rather than continuing into attract mode. The capture still requires
+complete same-render-pass inputs and **does not assert that any
+particular frame is first-level gameplay**.
+
+The expanded header parser passed 14 ROM-free tests locally; additional
+runner subprocess tests are committed but await a working CI runner.
