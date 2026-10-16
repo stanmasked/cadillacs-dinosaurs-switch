@@ -185,3 +185,18 @@ confirms **no manifest is committed**.
 Manifest filenames are built using `std::string`, avoiding truncation
 warnings under GCC `-Werror` for long output paths. This check has
 been run on the synthetic C++ stand-in, not a complete MAME build.
+
+## Write-success gate (hardened)
+
+A further fail-closed correction ensures that a pre-existing incomplete
+binary **cannot accidentally satisfy the size check** if writing the new
+content fails. The capture now records the result of *every* binary
+`fwrite` and `fclose` operation, including all 86,016 rendered RGB
+pixels and 3,072 palette entries. The completed manifest is written
+only if **every fresh write succeeded** and all file sizes are exact.
+
+An opt-in C++17 regression test compiles the generated hook with
+`-Wall -Wextra -Werror`, simulates two different render calls for
+the same frame and a blocked output path, and ensures that no
+incorrect manifest is committed. The native source has not yet been
+built with the full upstream MAME toolchain.
