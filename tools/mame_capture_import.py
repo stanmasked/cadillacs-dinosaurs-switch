@@ -13,10 +13,12 @@ try:
     from tools.cps1_capture import convert_capture, base_byte, SCROLL_SIZE, OTHER_SIZE
     from tools.cps1_tiles import _png_rgba
     from tools.mame_capture_manifest import validate_capture_manifest, validate_frame_stem
+    from tools.mame_capture_crc import CAPTURE_FILES, validate_capture_checksums
 except ModuleNotFoundError:
     from cps1_capture import convert_capture, base_byte, SCROLL_SIZE, OTHER_SIZE
     from cps1_tiles import _png_rgba
     from mame_capture_manifest import validate_capture_manifest, validate_frame_stem
+    from mame_capture_crc import CAPTURE_FILES, validate_capture_checksums
 
 GFX_BYTES=0x30000
 REF_W,REF_H=384,224
@@ -44,11 +46,14 @@ def import_capture(directory,frame_stem):
     stem=directory/frame_stem
     manifest=json.loads((directory/(frame_stem+'.manifest.json')).read_text())
     validate_capture_manifest(manifest,frame_stem)
-    gfx=unpack_be_words(Path(str(stem)+'.gfxram-be.bin').read_bytes(),
-                        GFX_BYTES,'CPS-1 QSound gfx RAM')
-    a=unpack_be_words(Path(str(stem)+'.cps-a-be.bin').read_bytes(),64,'CPS-A')
-    b=unpack_be_words(Path(str(stem)+'.cps-b-be.bin').read_bytes(),64,'CPS-B')
-    pal=Path(str(stem)+'.palette-rgb24.bin').read_bytes()
+    # Read once, bind all five binaries to the manifest before using ANY
+    # for reconstruction. Reject equally sized files from other frames.
+    raw={name:Path(str(stem)+'.'+name).read_bytes() for name in CAPTURE_FILES}
+    verified_crc=validate_capture_checksums(manifest,raw)
+    gfx=unpack_be_words(raw['gfxram-be.bin'],GFX_BYTES,'CPS-1 QSound gfx RAM')
+    a=unpack_be_words(raw['cps-a-be.bin'],64,'CPS-A')
+    b=unpack_be_words(raw['cps-b-be.bin'],64,'CPS-B')
+    pal=raw['palette-rgb24.bin']
     if len(pal)!=PALETTE_COLORS*3:
         raise ValueError('Effective palette must contain exactly 9216 RGB bytes')
     palette=[list(pal[i:i+3]) for i in range(0,len(pal),3)]
@@ -72,9 +77,10 @@ def import_capture(directory,frame_stem):
     scene['pixel_parity_eligible']=False
     scene['capture_method']='mame_lua_frame_done'
     scene['gfxram_mapped_bytes']=GFX_BYTES
+    scene['capture_file_crc32']=verified_crc
     scene['note']=('Authentic reference pixels; reconstructed RAM snapshot lacks '
                    'VBlank-latched sprite buffer and is NOT parity eligible')
-    rgb=Path(str(stem)+'.reference-rgb24.bin').read_bytes()
+    rgb=raw['reference-rgb24.bin']
     return scene,decode_reference_rgb24(rgb)
 
 def main(argv=None):
