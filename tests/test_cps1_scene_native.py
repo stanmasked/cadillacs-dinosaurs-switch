@@ -50,11 +50,13 @@ class NativeSceneTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp=tempfile.TemporaryDirectory(prefix='cps1-native-scene-')
         cls.libpath=Path(cls.tmp.name)/'libcps1scene.so'
-        subprocess.run(['gcc','-std=c11','-O2','-Wall','-Wextra','-Werror',
-                        '-fPIC','-shared','-Isource',
-                        'source/cps1_scene.c','source/cps1_tile.c',
-                        '-o',str(cls.libpath)],cwd=ROOT,check=True,
-                       capture_output=True)
+        compiled=subprocess.run(['gcc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+                                 '-fPIC','-shared','-Isource',
+                                 'source/cps1_scene.c','source/cps1_tile.c',
+                                 '-o',str(cls.libpath)],cwd=ROOT,check=False,
+                                capture_output=True,text=True)
+        if compiled.returncode:
+            raise AssertionError('Host C compiler failed:\\n' + compiled.stderr)
         cls.dll=ctypes.CDLL(str(cls.libpath))
         cls.dll.cps1_scene_decode.argtypes=[ctypes.c_void_p,ctypes.c_size_t,ctypes.c_void_p]
         cls.dll.cps1_scene_decode.restype=ctypes.c_bool
