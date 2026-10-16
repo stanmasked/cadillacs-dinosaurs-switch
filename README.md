@@ -178,3 +178,29 @@ Details and limitations: [Interactive scene inspection v0.4](docs/switch-interac
 This is a developer camera test, **not movement/gameplay of characters**.
 CI exercises native-vs-Python pixel equality, 16-bit wrap and scroll reset;
 real console testing and synchronized MAME frame capture remain pending.
+
+## Nintendo Switch v0.5: native frame sequence player
+
+An optional private `sequence.bin` now provides a **bounded 1–120-frame
+timeline** of existing `CPS1SCN1` snapshots. The native C renderer plays
+back the sequence using a real timer with a 60 Hz virtual tick clock,
+rather than incorrectly assuming that one display iteration is one
+game frame. It supports pause, previous/next frame, and 0.5×/1×/2× speed.
+
+```sh
+# Purely synthetic, ROM-free animation test from generated state snapshots:
+python3 tools/cps1_sequence_export.py --demo --fps 12 --out sequence.bin
+
+# Alternatively, pack your own *synchronized* authorized CPS-1 capture JSONs:
+python3 tools/cps1_sequence_export.py \
+    --frames-dir /private/captured-frames --fps 12 --out sequence.bin
+```
+
+Copy sequence.bin next to your privately created gfx.bin on Switch SD.
+If sequence.bin is unavailable or invalid, v0.4's optional static
+scene.bin and tile inspector remain available. See
+[full installation, format, controls, and limitations](docs/switch-sequence-v05.md).
+
+**This is diagnostic motion of independent static captures, not original
+game execution, character animation restoration, or real-time gameplay.**
+No commercial assets are embedded in the GitHub build.
