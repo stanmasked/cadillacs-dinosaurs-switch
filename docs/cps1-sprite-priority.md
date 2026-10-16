@@ -32,7 +32,7 @@ metadata and Nintendo Switch input handling are unchanged.
 
 `tests/test_cps1_sprite_priority.py` adds six **ROM-free** Python
 tests for first-opaque-wins, reversed order, transparency, pen 0,
-scroll mask and OBJ end-of-list marker. All six passed locally.
+scroll mask and OBJ end-of-list marker. All six passed locally; the new full-viewport regression is committed but awaits local execution.
 
 Three new `NativeSceneTests` cases in
 `tests/test_cps1_scene_native.py` compile the actual C renderer and
