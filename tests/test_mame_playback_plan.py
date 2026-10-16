@@ -90,6 +90,11 @@ class PlaybackPlanTests(unittest.TestCase):
         self.path.write_bytes(b'X'*100)
         self.assertFalse(confirm_playback_unchanged(self.path,metadata))
 
+    def test_deleted_recording_is_detected_as_changed(self):
+        _, metadata = playback_plan(self.path)
+        self.path.unlink()
+        self.assertFalse(confirm_playback_unchanged(self.path,metadata))
+
     def test_reject_empty(self):
         self.path.write_bytes(b'')
         with self.assertRaisesRegex(ValueError, 'size'):
