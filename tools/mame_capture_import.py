@@ -12,9 +12,11 @@ import sys
 try:
     from tools.cps1_capture import convert_capture, base_byte, SCROLL_SIZE, OTHER_SIZE
     from tools.cps1_tiles import _png_rgba
+    from tools.mame_capture_manifest import validate_capture_manifest, validate_frame_stem
 except ModuleNotFoundError:
     from cps1_capture import convert_capture, base_byte, SCROLL_SIZE, OTHER_SIZE
     from cps1_tiles import _png_rgba
+    from mame_capture_manifest import validate_capture_manifest, validate_frame_stem
 
 GFX_BYTES=0x30000
 REF_W,REF_H=384,224
@@ -35,15 +37,13 @@ def decode_reference_rgb24(data):
     return _png_rgba(REF_W,REF_H,rgba,'MAME native CPS-1 RGB reference frame')
 
 def import_capture(directory,frame_stem):
+    # Validate before any path construction or file reads. The manifest must
+    # describe this *exact* frame, not an unrelated or incomplete capture.
+    validate_frame_stem(frame_stem)
     directory=Path(directory)
     stem=directory/frame_stem
     manifest=json.loads((directory/(frame_stem+'.manifest.json')).read_text())
-    if (manifest.get('game')!='dino' or
-        manifest.get('palette_source')!='MAME_effective_pen_color' or
-        manifest.get('obj_latch')!='NOT_CAPTURED' or
-        manifest.get('pixel_parity_eligible') is not False or
-        manifest.get('raw_word_endianness')!='big'):
-        raise ValueError('Unsupported or misleading MAME capture provenance')
+    validate_capture_manifest(manifest,frame_stem)
     gfx=unpack_be_words(Path(str(stem)+'.gfxram-be.bin').read_bytes(),
                         GFX_BYTES,'CPS-1 QSound gfx RAM')
     a=unpack_be_words(Path(str(stem)+'.cps-a-be.bin').read_bytes(),64,'CPS-A')
