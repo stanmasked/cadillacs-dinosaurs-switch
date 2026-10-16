@@ -38,8 +38,13 @@ this physical raster center.
 - Pixel data, actual input snapshot and original game art remain
   unchanged.
 
-The Python renderer refuses flipped crop ranges that extend past the
-512×256 hardware raster rather than sampling outside defined bounds.
+Both normal and flipped Python crops must fit entirely inside the
+512×256 hardware raster. This avoids silently drawing impossible
+off-screen rectangles in the unflipped path; the flipped path continues
+to mirror the *full physical coordinates*, never the crop-local origin.
+Four ROM-free regression methods cover both-axis overscan rejection,
+exact hardware-edge crops, physical sprite-coordinate reflection, and
+unchanged caller state.
 
 ## Local verification
 
