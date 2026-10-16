@@ -11,6 +11,8 @@ on:
   pull_request:
     paths:
       - 'tools/**'
+      - 'source/cps1_tile.c'
+      - 'source/cps1_tile.h'
       - 'tests/**'
       - '.github/workflows/python-tests.yml'
   workflow_dispatch:
