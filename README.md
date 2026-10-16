@@ -161,3 +161,20 @@ No ROM or private RAM capture is uploaded to GitHub. Synthetic automated
 tests compare native C-composed pixels to the Python reference. This is
 **static frame replay, not interactive gameplay, HD-restored graphics, or
 confirmed pixel parity with a real MAME frame**.
+
+## Native Switch v0.4 — interactive scene camera
+
+The local-only scene inspector supports manual **on-device camera panning**
+of three background tilemaps. In scene mode press D-pad to scroll, hold ZR
+to pan faster, press A to reset to the original captured scroll values, and
+press X to return to tile browsing. Backgrounds are re-rendered natively
+from 4-bit CPS-1 graphics; sprite coordinates and palette state remain
+those of the captured frame.
+
+The `scene.bin` format and required local `gfx.bin` are **unchanged**.
+No additional commercial assets are included in the ROM-free NRO.
+Details and limitations: [Interactive scene inspection v0.4](docs/switch-interactive-scene-v04.md).
+
+This is a developer camera test, **not movement/gameplay of characters**.
+CI exercises native-vs-Python pixel equality, 16-bit wrap and scroll reset;
+real console testing and synchronized MAME frame capture remain pending.

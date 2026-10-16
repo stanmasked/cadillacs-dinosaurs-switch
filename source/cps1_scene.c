@@ -194,3 +194,14 @@ bool cps1_scene_render(const uint8_t *gfx,size_t gfx_bytes,
     free(occluded);
     return true;
 }
+
+bool cps1_scene_pan(Cps1Scene *scene, int dx, int dy) {
+    if (!scene || (!dx && !dy)) return false;
+    for (unsigned i=0; i<3; ++i) {
+        /* Conversion to uint16_t is intentional: CPS-A scroll registers
+           wrap modulo 2^16 even for negative deltas. */
+        scene->scrollx[i] = (uint16_t)(scene->scrollx[i] + (uint16_t)dx);
+        scene->scrolly[i] = (uint16_t)(scene->scrolly[i] + (uint16_t)dy);
+    }
+    return true;
+}

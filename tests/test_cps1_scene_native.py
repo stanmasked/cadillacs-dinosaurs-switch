@@ -63,6 +63,8 @@ class NativeSceneTests(unittest.TestCase):
         cls.dll.cps1_scene_render.argtypes=[ctypes.c_void_p,ctypes.c_size_t,ctypes.c_void_p,
                                              ctypes.c_void_p,ctypes.c_size_t]
         cls.dll.cps1_scene_render.restype=ctypes.c_bool
+        cls.dll.cps1_scene_pan.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_int]
+        cls.dll.cps1_scene_pan.restype=ctypes.c_bool
         cls.gfx=synthetic_graphics()
 
     @classmethod
@@ -84,6 +86,61 @@ class NativeSceneTests(unittest.TestCase):
         pal=[tuple(x) for x in snapshot['palette_rgb']]
         py=render_frame(self.gfx,pal,snapshot)
         self.assertEqual(cpp,py)
+
+
+    def test_pan_is_noop_for_zero_and_null(self):
+        scene=ctypes.create_string_buffer(70000)
+        self.assertTrue(self.dll.cps1_scene_decode(
+            pack_scene(blank_scene()), FILE_BYTES, scene))
+        self.assertFalse(self.dll.cps1_scene_pan(scene,0,0))
+        self.assertFalse(self.dll.cps1_scene_pan(None,1,0))
+
+    def test_pan_wraps_all_three_unsigned_scroll_registers(self):
+        original=blank_scene()
+        original['scroll2']={'words':[0]*8192,'scrollx':65535,'scrolly':0,
+                             'enabled':True}
+        src=pack_scene(original)
+        scene=ctypes.create_string_buffer(70000)
+        self.assertTrue(self.dll.cps1_scene_decode(src,len(src),scene))
+        self.assertTrue(self.dll.cps1_scene_pan(scene,3,-1))
+        # Cps1Scene starts with layer/video words, followed by scrollx[3]
+        # and scrolly[3]. Do not inspect opaque padding beyond this prefix.
+        values=__import__('struct').unpack_from('<8H',scene.raw)
+        self.assertEqual(values[2:5],(3,2,3))
+        self.assertEqual(values[5:8],(65535,65535,65535))
+
+    def test_native_pan_frame_equals_python_scrolled_frame(self):
+        import copy
+        snapshot=blank_scene()
+        words=[0]*8192
+        words[tile_ram_index('scroll2',5,1)*2]=2
+        snapshot['scroll2']={'words':words,'scrollx':0,'scrolly':0,'enabled':True}
+        binary=pack_scene(snapshot)
+        mem=ctypes.create_string_buffer(70000)
+        self.assertTrue(self.dll.cps1_scene_decode(binary,len(binary),mem))
+        initial=ctypes.create_string_buffer(W*H*4)
+        self.assertTrue(self.dll.cps1_scene_render(
+            self.gfx,len(self.gfx),mem,initial,len(initial)))
+        self.assertTrue(self.dll.cps1_scene_pan(mem,16,0))
+        panned=ctypes.create_string_buffer(W*H*4)
+        self.assertTrue(self.dll.cps1_scene_render(
+            self.gfx,len(self.gfx),mem,panned,len(panned)))
+        shifted=copy.deepcopy(snapshot)
+        shifted['scroll2']['scrollx']=16
+        expected=render_frame(self.gfx,
+                              [tuple(c) for c in shifted['palette_rgb']],
+                              shifted)
+        self.assertEqual(panned.raw,expected)
+        self.assertNotEqual(panned.raw,initial.raw)
+
+    def test_pan_accumulates_and_reverses_exactly(self):
+        scene=ctypes.create_string_buffer(70000)
+        binary=pack_scene(blank_scene())
+        self.assertTrue(self.dll.cps1_scene_decode(binary,len(binary),scene))
+        original=scene.raw
+        for delta in ((3,-1),(12,4),(-15,-3)):
+            self.assertTrue(self.dll.cps1_scene_pan(scene,*delta))
+        self.assertEqual(scene.raw,original)
 
     def test_export_size_and_valid_header(self):
         snapshot=blank_scene()

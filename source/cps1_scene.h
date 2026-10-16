@@ -46,4 +46,12 @@ bool cps1_scene_decode(const uint8_t *blob, size_t length, Cps1Scene *out);
 bool cps1_scene_render(const uint8_t *gfx, size_t gfx_bytes,
                        const Cps1Scene *scene, uint8_t *rgba, size_t rgba_bytes);
 
+
+/* Move the diagnostic view across all three background layers.
+ * Original sprite screen coordinates remain unchanged. This is a manual
+ * viewer pan only, NOT emulated game/camera logic. Arithmetic wraps at
+ * 16 bits like CPS-A scroll register writes. Returns false for no-op.
+ */
+bool cps1_scene_pan(Cps1Scene *scene, int dx, int dy);
+
 #endif
