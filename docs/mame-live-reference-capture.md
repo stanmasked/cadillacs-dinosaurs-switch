@@ -135,3 +135,30 @@ Source references:
 - [MAME screen.cpp native pixel and pixels conversion](https://github.com/mamedev/mame/blob/master/src/emu/screen.cpp)
 - [MAME Lua screen device API](https://docs.mamedev.org/luascript/ref-devices.html)
 - [MAME Lua memory shares](https://docs.mamedev.org/luascript/ref-mem.html)
+
+## Repeatable audit of multiple captured frames
+
+Added `tools/mame_capture_audit.py`, a **ROM-free local audit** for actual
+MAME reference dumps. It accepts at most 120 `frame-XXXXXXXX` records.
+
+```sh
+python3 tools/mame_capture_audit.py cps1-captures \
+  --output local_outputs/mame-capture-audit.json
+```
+
+Each capture is checked against the full six-file contract: lengths,
+`dino` ID/frame number, MAME effective palette provenance, original
+384×224 dimensions, big-endian RAM, **RGB32-resolved screen pixels**
+and the explicit absence of the VBlank-latched OBJ buffer. The report
+contains SHA-256 hashes of each binary and the number of distinct RGB
+colors; it flags all-uniform frames, which may signify loading/blank video.
+For consecutive frames it computes exact changed-pixel counts, changed
+palette entries, changed RAM/register flags and frame-number gaps.
+
+No claim of actual MAME execution or pixel-exact re-rendering is made
+by these diagnostics. A frame can change while sprites remain inaccessible,
+and even a fully verified dump is not equivalent to full arcade gameplay.
+The auditor intentionally refuses manifests that falsely claim a complete
+sprite buffer or one-frame pixel parity. Nine new deterministic synthetic
+tests exercise this contract, temporal deltas, malformed stems and safe
+file creation. Raw captures, generated reports and original art remain local.
