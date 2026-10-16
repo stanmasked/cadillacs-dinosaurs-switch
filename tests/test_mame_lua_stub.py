@@ -101,5 +101,47 @@ class MameLuaCaptureStubTests(unittest.TestCase):
             finally:
                 os.chdir(old)
 
+
+    def test_existing_capture_is_not_overwritten_on_restart(self):
+        lib=ctypes.CDLL(LIB)
+        lib.luaL_newstate.restype=ctypes.c_void_p
+        lib.luaL_openlibs.argtypes=[ctypes.c_void_p]
+        lib.luaL_loadstring.argtypes=[ctypes.c_void_p,ctypes.c_char_p]
+        lib.luaL_loadstring.restype=ctypes.c_int
+        lib.luaL_loadfilex.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_char_p]
+        lib.luaL_loadfilex.restype=ctypes.c_int
+        lib.lua_pcallk.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int,
+                                  ctypes.c_longlong,ctypes.c_void_p]
+        lib.lua_pcallk.restype=ctypes.c_int
+        lib.lua_tolstring.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p]
+        lib.lua_tolstring.restype=ctypes.c_char_p
+        lib.lua_close.argtypes=[ctypes.c_void_p]
+        old=os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                root=Path('cps1-captures')
+                root.mkdir()
+                prior=root/'frame-00000900.reference-rgb24.bin'
+                sentinel=b'existing-reference-do-not-overwrite'
+                prior.write_bytes(sentinel)
+                L=lib.luaL_newstate()
+                self.assertTrue(L)
+                lib.luaL_openlibs(L)
+                try:
+                    self.assertEqual(lib.luaL_loadstring(L,STUB.encode()),0)
+                    self.assertEqual(lib.lua_pcallk(L,0,0,0,0,None),0)
+                    self.assertEqual(lib.luaL_loadfilex(L,str(SCRIPT).encode(),None),0)
+                    status=lib.lua_pcallk(L,0,0,0,0,None)
+                    self.assertNotEqual(status,0)
+                    msg=(lib.lua_tolstring(L,-1,None) or b'').decode()
+                    self.assertIn('already exists',msg)
+                finally:
+                    lib.lua_close(L)
+                self.assertEqual(prior.read_bytes(),sentinel)
+                self.assertEqual({p.name for p in root.iterdir()},{prior.name})
+            finally:
+                os.chdir(old)
+
 if __name__=='__main__':
     unittest.main()

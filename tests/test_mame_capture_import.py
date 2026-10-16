@@ -16,8 +16,11 @@ class MameReferenceCaptureTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory=Path(self.temp.name)
-        metadata={'game':'dino','frame':900,'obj_latch':'NOT_CAPTURED',
-            'pixel_parity_eligible':False,
+        metadata={'game':'dino','frame':900,'capture_hook':'frame_done',
+            'gfxram_bytes':GFX_BYTES,'cps_a_bytes':64,'cps_b_bytes':64,
+            'palette_bytes':9216,'reference_width':REF_W,
+            'reference_height':REF_H,'reference_rgb_bytes':REF_W*REF_H*3,
+            'obj_latch':'NOT_CAPTURED','pixel_parity_eligible':False,
             'palette_source':'MAME_effective_pen_color','raw_word_endianness':'big'}
         (self.directory/(STEM+'.manifest.json')).write_text(json.dumps(metadata))
         ram=[0]*(GFX_BYTES//2)
@@ -53,6 +56,36 @@ class MameReferenceCaptureTests(unittest.TestCase):
         doc=json.loads((out/(STEM+'.partial-snapshot.json')).read_text())
         self.assertFalse(doc['pixel_parity_eligible'])
         self.assertEqual(main([str(self.directory),STEM,'--out-dir',str(out)]),2)
+
+    def test_reject_manifest_frame_number_mismatch(self):
+        path=self.directory/(STEM+'.manifest.json')
+        data=json.loads(path.read_text())
+        data['frame']=901
+        path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError,'frame number'):
+            import_capture(self.directory,STEM)
+
+    def test_reject_invalid_capture_hook_or_manifest_sizes(self):
+        path=self.directory/(STEM+'.manifest.json')
+        original=json.loads(path.read_text())
+        for key,value in (('capture_hook','video_update'),
+                          ('gfxram_bytes',0x40000),
+                          ('reference_width',512),
+                          ('reference_rgb_bytes',0)):
+            with self.subTest(key=key):
+                bad=dict(original)
+                bad[key]=value
+                path.write_text(json.dumps(bad))
+                with self.assertRaisesRegex(ValueError,'manifest field'):
+                    import_capture(self.directory,STEM)
+        path.write_text(json.dumps(original))
+
+    def test_frame_stem_path_traversal_is_rejected_before_io(self):
+        for candidate in ('../frame-00000900','frame-00000900/../../other',
+                          '/tmp/frame-00000900','frame-900'):
+            with self.subTest(stem=candidate):
+                with self.assertRaisesRegex(ValueError,'frame name'):
+                    import_capture(self.directory,candidate)
 
     def test_reject_authenticity_claim(self):
         path=self.directory/(STEM+'.manifest.json')

@@ -40,8 +40,31 @@ end
 local step=nil
 local captured,last_frame=0,-1
 
+-- A restarted capture must never silently overwrite genuine gameplay
+-- frames from a previous run. Check ALL outputs before writing the first.
+local suffixes={
+    '.gfxram-be.bin','.cps-a-be.bin','.cps-b-be.bin',
+    '.palette-rgb24.bin','.reference-rgb24.bin','.manifest.json'
+}
+local function assert_available(stem)
+    for _,suffix in ipairs(suffixes) do
+        local path=OUTPUT_DIR..'/'..stem..suffix
+        local previous=io.open(path,'rb')
+        if previous then
+            previous:close()
+            error('MAME capture already exists; choose a fresh directory: '..path)
+        end
+    end
+end
+
 local function write_file(name, bytes)
-    local file,err=io.open(OUTPUT_DIR..'/'..name,'wb')
+    local path=OUTPUT_DIR..'/'..name
+    local previous=io.open(path,'rb')
+    if previous then
+        previous:close()
+        error('Refusing to overwrite MAME capture: '..path)
+    end
+    local file,err=io.open(path,'wb')
     assert(file,err or 'Cannot open output file')
     assert(file:write(bytes))
     assert(file:close())
@@ -82,6 +105,7 @@ end
 
 local function capture(frame)
     local stem=string.format('frame-%08d',frame)
+    assert_available(stem)
     write_file(stem..'.gfxram-be.bin',serialize_words(gfx,0x30000))
     write_file(stem..'.cps-a-be.bin',serialize_words(cps_a,0x40))
     write_file(stem..'.cps-b-be.bin',serialize_words(cps_b,0x40))
