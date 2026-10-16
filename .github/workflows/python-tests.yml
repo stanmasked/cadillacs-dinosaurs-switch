@@ -8,6 +8,8 @@ on:
       - 'source/cps1_tile.h'
       - 'source/cps1_scene.c'
       - 'source/cps1_scene.h'
+      - 'source/cps1_sequence.c'
+      - 'source/cps1_sequence.h'
       - 'tests/**'
       - '.github/workflows/python-tests.yml'
   pull_request:
@@ -17,6 +19,8 @@ on:
       - 'source/cps1_tile.h'
       - 'source/cps1_scene.c'
       - 'source/cps1_scene.h'
+      - 'source/cps1_sequence.c'
+      - 'source/cps1_sequence.h'
       - 'tests/**'
       - '.github/workflows/python-tests.yml'
   workflow_dispatch:
