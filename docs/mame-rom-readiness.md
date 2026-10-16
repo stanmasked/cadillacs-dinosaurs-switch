@@ -69,10 +69,22 @@ The available original archive was read privately:
 | Archival PLD dumps | 12 | 11 |
 | QSound HLE device | separately supplied | not supplied here |
 
-One isolated PLD entry, `ioc1.ic1`, is **279 bytes, CRC32 0d182081**
-in the local archive versus the published reference's **260 bytes,
-CRC32 a399772d**. This is explicitly flagged as an *archival* warning,
-not misreported as a corrupted 68000 program or invalid graphics data.
+The single alternate PLD entry, `ioc1.ic1`, is **279 bytes,
+CRC32 0d182081** in the local archive. This is a **known alternate
+archival revision**, attested in older MAME ROM catalogs. Other public
+romset references specify a **260-byte, CRC32 a399772d** revision.
+The auditor distinguishes a `known_variant` from a genuine unknown
+CRC mismatch. Thus all **12/12 archival entries are known variants**,
+although only **11/12** match the chosen reference profile exactly.
+
+These revisions are not interchangeable guarantees for an arbitrary
+installed MAME version: `mame -verifyroms dino` and
+`mame -listxml dino` against the actual emulator remain authoritative.
+The alternate ROM is not misreported as damaged game code or graphics.
+
+References for the two documented archival versions:
+https://www.gamesdatabase.org/mame-rom/dino
+https://www.arcade-museum.com/tech-center/machine/dino
 
 The original `dino.zip` passed full ZIP member decompression/CRC
 verification, with no missing members from the 16 core files.
@@ -89,7 +101,7 @@ from MAME's own source, but no separate device ZIP was present.
 python3 -m unittest tests.test_mame_rom_readiness -v
 ```
 
-Ten deterministic synthetic tests cover expected metadata, exact/missing
+Eleven deterministic synthetic tests cover expected metadata, exact/missing
 CRC checks, separation of game and device, corrupted ZIP handling,
 duplicate/path-traversing names, inflated-size bounds, and safe report
 creation. Only tools, tests and public metadata are committed; game
