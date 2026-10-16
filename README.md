@@ -245,7 +245,7 @@ nontransparent sprite pixel**, even when a high-priority background
 has blocked that pixel's color. Previously the later of two
 overlapping sprites could incorrectly cover the earlier one.
 
-Six new ROM-free Python regression tests passed locally and three
+Seven new ROM-free Python regression tests passed locally and three
 additional native C-versus-Python parity scenarios are committed.
 In a full 384×224 synthetic overlap example, exactly **256 pixels**
 changed from the incorrectly frontmost second sprite to the
