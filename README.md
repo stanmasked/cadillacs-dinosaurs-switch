@@ -259,3 +259,27 @@ missing/device handling and reporting. See the
 
 Core ROM verification is **not** an emulator boot, a game scene,
 an authentic first-level capture, or a Switch hardware test.
+
+## Stage 26 — local instrumented MAME capture runner
+
+The optional `tools/mame_local_capture_run.py` ties together the
+verified local `dino.zip`, a separate local `qsound_hle.zip`,
+a locally installed **instrumented** MAME and the same-render-pass
+CPS-1 frame contract.
+
+It checks all known essential ROM CRCs, calls MAME `-version` and
+`-verifyroms`, then runs for bounded time with an explicit
+frame-number window. Any resulting six-stream dumps are checked for
+full 384x224 RGB, 2048-byte VBlank OBJ, registers, palette, GFX RAM
+and matching manifest before being called format-valid.
+It records SHA-256 without copying actual game content into its report.
+
+Use `--probe-only` to test the installed executable and ROM/device
+search path **without launching gameplay**. Read the
+[local MAME capture runner instructions](docs/mame-local-capture-run.md).
+
+Twelve ROM-free automated regression cases use a synthetic stand-in
+program; they do not constitute a live MAME run. Real first-level
+data, MAME pixel parity and hardware Switch execution remain pending.
+The runner is based on this feature's parent PR #12 (ROM audit),
+and actual capture requires independent PR #8 instrumentation.
