@@ -35,7 +35,7 @@ function screen:pixels()
   local result={}
   for y=0,223 do
     for x=0,383 do
-      result[#result+1]=string.pack('=I4',(x+y)%3072)
+      result[#result+1]=string.pack('=I4',palette:pen_color((x+y)%3072))
     end
   end
   return table.concat(result),384,224
@@ -116,8 +116,9 @@ class MameLuaCaptureStubTests(unittest.TestCase):
 
     def test_indexed_screen_pixels_use_effective_palette(self):
         rgb,manifest=self.run_capture()
-        self.assertEqual(manifest['reference_pixel_encoding'],'indexed')
+        self.assertEqual(manifest['reference_pixel_encoding'],'rgb32_resolved')
         self.assertEqual(rgb[:9],bytes((0,1,2,1,2,3,2,3,4)))
+        self.assertEqual(manifest['reference_source_format'],'indexed_bitmap')
 
     def test_direct_rgb_screen_pixels_bypass_palette(self):
         extra=r'''
@@ -127,8 +128,9 @@ function __cps1_mock_screen:pixels()
 end
 '''
         rgb,manifest=self.run_capture(extra)
-        self.assertEqual(manifest['reference_pixel_encoding'],'direct_rgb')
+        self.assertEqual(manifest['reference_pixel_encoding'],'rgb32_resolved')
         self.assertEqual(rgb[:9],bytes((64,128,32))*3)
+        self.assertEqual(manifest['reference_source_format'],'rgb_bitmap')
 
     def test_malformed_screen_visible_size_is_rejected(self):
         extra=r'''
