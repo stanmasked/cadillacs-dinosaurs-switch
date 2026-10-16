@@ -101,3 +101,50 @@ It checks that six expected files are written and that byte lengths,
 big-endian words, manifest and honesty/provenance fields are correct.
 If liblua5.4 is not available, the smoke test is skipped and reported as
 such. **This is not a real MAME capture.**
+
+
+## Stage 39 — frame identity checks and non-overwriting captures
+
+A real MAME reference can only be useful for later pixel-parity analysis
+if its name, frame number, geometry and capture method are internally
+consistent. `tools/mame_capture_manifest.py` now validates captures
+**before reading their binary frame data**:
+
+- Require a canonical `frame-XXXXXXXX` filename stem with exactly eight
+  ASCII digits. Reject absolute paths and traversal in the frame argument.
+- Require `manifest.frame` to match that filename exactly (not a boolean
+  or a coerced string), with `capture_hook: frame_done`.
+- Check dino/QSound declared graphics RAM and CPS-A/B register sizes,
+  384×224 RGB frame dimensions, palette bytes, endianness, and unavailable
+  VBlank-latched OBJ provenance. Absent/wrong declarations fail closed.
+- A partial Lua snapshot **remains ineligible for real-frame renderer
+  parity** regardless of matching metadata. It does not become an
+  authentic buffered-OBJ snapshot.
+
+The Lua script now checks **all six destination filenames** before
+writing the first output. It refuses to overwrite any existing frame
+component, including a frame captured during a previous MAME session.
+To recapture the same frame index, create a **fresh private output
+directory** (and update `OUTPUT_DIR` in the script), or move/archive the
+old capture yourself. The script is not a multi-process atomic file lock;
+run only one capture process per output directory.
+
+### Verification boundary
+
+The *exact* new Python manifest helper and its eight ROM-free unittest
+methods were run locally: **8/8 passed**; Git blob hashes were compared
+against the committed GitHub file blobs. The **exact committed Lua
+capture-script blob** was also run locally under Lua 5.4 with a
+synthetic API stub: **2/2 local integration checks passed**, confirming
+six output sizes and refusal to overwrite existing data. Neither test
+loads commercial assets or represents a real MAME session.
+
+Updated Python importer tests and the repository's optional Lua
+smoke-test suite have been committed but are **not independently
+verified as a complete GitHub checkout**: GitHub Actions runners fail
+before any job steps (issue #20). They must run before merging.
+
+This does **not** cryptographically bind binary content to the manifest.
+Mixing same-size binaries between capture sets cannot be detected by
+these metadata checks alone; checksums and synchronized VBlank-latched
+sprite memory are future capture-integrity milestones.
