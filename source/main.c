@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cps1_tile.h"
+#include "cps1_scene.h"
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
        GRID_COLS = 16, GRID_ROWS = 8, PAGE_TILES = GRID_COLS * GRID_ROWS,
@@ -18,6 +19,8 @@ enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
 static const char *const GFX_PATH =
     "sdmc:/switch/cadillacs-dinosaurs-switch/gfx.bin";
 static uint8_t s_cache[PAGE_TILES][CPS1_TILE16_PIXELS];
+static const char *const SCENE_PATH =
+    "sdmc:/switch/cadillacs-dinosaurs-switch/scene.bin";
 
 /* A tiny self-contained bitmap font. Only HUD ASCII is required. */
 typedef struct { char letter; uint8_t rows[7]; } Glyph;
@@ -139,6 +142,47 @@ static void viewer_frame(uint32_t *frame, unsigned pitch, unsigned page,
     label(frame,pitch,40,643,"LEFT RIGHT PAGE   UP DOWN 16   L R 8   A INVERT",2,rgb(205,214,221));
     label(frame,pitch,40,669,"B TRANSPARENT  Y GRID  PLUS EXIT",2,rgb(205,214,221));
     label(frame,pitch,955,682,"ROM-FREE NRO",2,rgb(113,149,169));
+    label(frame,pitch,40,696,"X SCENE  IF CAPTURE AVAILABLE",1,rgb(150,182,192));
+}
+
+static uint8_t *load_scene_image(const uint8_t *gfx) {
+    FILE *file = fopen(SCENE_PATH,"rb");
+    if (!file) return NULL;
+    uint8_t *packed=malloc(CPS1_SCENE_FILE_BYTES);
+    Cps1Scene *scene=malloc(sizeof(*scene));
+    uint8_t *rgba=malloc(CPS1_SCENE_RGBA_BYTES);
+    if (!packed || !scene || !rgba) {
+        free(packed); free(scene); free(rgba);
+        fclose(file);
+        return NULL;
+    }
+    size_t count=fread(packed,1,CPS1_SCENE_FILE_BYTES,file);
+    int trailing=fgetc(file);
+    fclose(file);
+    bool valid = (count==CPS1_SCENE_FILE_BYTES && trailing==EOF &&
+                  cps1_scene_decode(packed,count,scene) &&
+                  cps1_scene_render(gfx,CPS1_GFX_BYTES,scene,
+                                    rgba,CPS1_SCENE_RGBA_BYTES));
+    free(packed);
+    free(scene);
+    if (!valid) { free(rgba); return NULL; }
+    return rgba;
+}
+
+static void scene_frame(uint32_t *frame,unsigned pitch,const uint8_t *rgba) {
+    rectangle(frame,pitch,0,0,FB_WIDTH,FB_HEIGHT,rgb(9,14,22));
+    for (unsigned y=0; y<CPS1_SCENE_H; ++y) {
+        for (unsigned x=0; x<CPS1_SCENE_W; ++x) {
+            const uint8_t *c=rgba+4u*(y*CPS1_SCENE_W+x);
+            uint32_t color=rgb(c[0],c[1],c[2]);
+            unsigned dx=64u+x*3u,dy=24u+y*3u;
+            for (unsigned sy=0;sy<3;++sy)
+                for (unsigned sx=0;sx<3;++sx)
+                    frame[(dy+sy)*pitch+dx+sx]=color;
+        }
+    }
+    label(frame,pitch,64,4,"CAPTURED CPS1 FRAME   X TILES   PLUS EXIT",1,rgb(215,226,231));
+    label(frame,pitch,64,704,"STATIC SCENE REPLAY   NOT GAMEPLAY",1,rgb(180,198,206));
 }
 
 static void fallback_text(PadState *pad) {
@@ -188,6 +232,8 @@ int main(int argc, char **argv) {
 
     unsigned page=0;
     bool invert=false,grid=true,transparent=true;
+    uint8_t *scene_rgba=load_scene_image(gfx);
+    bool show_scene=false;
     cache_page(gfx,page);
     while (appletMainLoop()) {
         padUpdate(&pad);
@@ -203,14 +249,19 @@ int main(int argc, char **argv) {
         if (down & HidNpadButton_A) invert=!invert;
         if (down & HidNpadButton_B) transparent=!transparent;
         if (down & HidNpadButton_Y) grid=!grid;
+        if ((down & HidNpadButton_X) && scene_rgba) show_scene=!show_scene;
         if (next != page && cache_page(gfx,next)) page=next;
         u32 stride=0;
         uint32_t *frame=(uint32_t*)framebufferBegin(&fb,&stride);
         if (!frame) break;
-        viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
+        if (show_scene && scene_rgba)
+            scene_frame(frame,stride/sizeof(uint32_t),scene_rgba);
+        else
+            viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
     }
     framebufferClose(&fb);
+    free(scene_rgba);
     free(gfx);
     return 0;
 }
