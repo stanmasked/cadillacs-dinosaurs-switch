@@ -50,6 +50,7 @@ manager={machine={
   [':gfxram']=gfx,[':cps_a_regs']=a,[':cps_b_regs']=b
   }}
 }}
+_G.__cps1_mock_screen=screen
 emu={}
 function emu.register_frame_done(callback,name)
   assert(name=='frame')
@@ -120,8 +121,8 @@ class MameLuaCaptureStubTests(unittest.TestCase):
 
     def test_direct_rgb_screen_pixels_bypass_palette(self):
         extra=r'''
-screen.palette=nil
-function screen:pixels()
+__cps1_mock_screen.palette=nil
+function __cps1_mock_screen:pixels()
   return string.rep(string.pack('=I4',0xff408020),384*224),384,224
 end
 '''
@@ -131,7 +132,7 @@ end
 
     def test_malformed_screen_visible_size_is_rejected(self):
         extra=r'''
-function screen:pixels()
+function __cps1_mock_screen:pixels()
   return string.rep(string.pack('=I4',0xff408020),320*224),320,224
 end
 '''
