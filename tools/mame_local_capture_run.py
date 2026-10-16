@@ -148,6 +148,10 @@ def run_capture(*,mame,rom_dir,output_dir,start,count,seconds,wall_timeout=300,
                CPS1_RENDER_DUMP_COUNT=str(count))
     run=[executable,'dino','-rompath',str(rom_dir),'-skip_gameinfo',
          '-nothrottle','-seconds_to_run',str(seconds)]+playback_args
+    # A replay must not silently continue into attract mode after its input
+    # stream ends, or those later frames could masquerade as first-level data.
+    if playback_args:
+        run.append('-exit_after_playback')
     result['emulator_process']=run_command(run,env=env,seconds=wall_timeout)
     if not confirm_playback_unchanged(playback_inp,playback_meta):
         raise ValueError('MAME input playback bytes changed during execution')
