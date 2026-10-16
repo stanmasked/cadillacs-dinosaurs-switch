@@ -14,6 +14,17 @@ from unittest.mock import patch
 from tools.mame_local_capture_run import validate_dump, run_capture, main
 
 
+def fake_inp():
+    """Synthetic header mimicking MAME 3.x; NOT authentic game input."""
+    h=bytearray(64)
+    h[:8]=b'MAMEINP\0'
+    h[0x10]=3
+    h[0x11]=0
+    h[0x14:0x20]=b'dino'+bytes(8)
+    return bytes(h)+b'synthetic replay payload'
+
+
+
 FAKE_MAME = r'''#!/usr/bin/env python3
 import json
 import os
@@ -32,6 +43,8 @@ if '-verifyroms' in args:
 if os.environ.get('FAKE_MAME_FAIL_RUN')=='1':
     sys.exit(3)
 if '-playback' in args:
+    if '-exit_after_playback' not in args:
+        sys.exit(23)  # Must not keep capturing after the recording ends.
     print('PLAYBACK_FLAG_ACCEPTED')
     if os.environ.get('FAKE_MAME_MUTATE_REPLAY')=='1':
         Path(args[args.index('-playback')+1]).write_bytes(b'mutated during MAME standin')
@@ -111,7 +124,7 @@ class MameLocalCaptureRunnerTests(unittest.TestCase):
 
     def test_recorded_input_passed_and_digest_retained(self):
         recorded=self.root/'first-level.inp'
-        recorded.write_bytes(b'synthetic MAME controller input replay')
+        recorded.write_bytes(fake_inp())
         report=self.run_fake(playback_inp=recorded)
         self.assertTrue(report['capture_format_valid'])
         self.assertTrue(report['input_replay']['enabled'])
@@ -128,7 +141,7 @@ class MameLocalCaptureRunnerTests(unittest.TestCase):
 
     def test_input_modified_during_emulation_is_rejected(self):
         recording=self.root/'first-level.inp'
-        recording.write_bytes(b'original fake capture inputs')
+        recording.write_bytes(fake_inp())
         with patch.dict(os.environ,{'FAKE_MAME_MUTATE_REPLAY':'1'}):
             with self.assertRaisesRegex(ValueError,'changed during execution'):
                 self.run_fake(playback_inp=recording)
