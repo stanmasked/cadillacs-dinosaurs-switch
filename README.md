@@ -320,3 +320,22 @@ particular frame is first-level gameplay**.
 
 The expanded header parser passed 14 ROM-free tests locally; additional
 runner subprocess tests are committed but await a working CI runner.
+
+## Stage 29 — MAME RGB / OBJ motion evidence (no false level confirmation)
+
+Added `tools/mame_capture_motion_audit.py`, a private, ROM-free
+diagnostic for complete series of same-render-pass captures. It compares
+all 384×224 RGB pixels across successive captured frames and records
+changed-pixel counts, bounding rectangles, per-channel error, and
+SHA-256/uniqueness of all six CPS-1 streams.
+
+This detects static reference windows and distinguishes unchanging RGB
+from moving buffered sprite RAM. A static image is only a warning:
+neither motion nor a successful input replay binary proves that first
+level gameplay was entered. Results **always** mark first-level and
+pixel-perfect parity as unverified.
+
+The existing local MAME capture runner now includes this diagnostic
+after completing its normal capture validation. Ten standalone ROM-free
+tests have passed locally, with a new runner integration test committed.
+See [MAME capture-motion evidence](docs/mame-motion-evidence.md).
