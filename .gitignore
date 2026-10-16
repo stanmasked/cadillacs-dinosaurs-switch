@@ -12,3 +12,7 @@ captures/
 
 # Local personal CPS-1 ROM regions / memory snapshots
 *.bin
+cps1-captures/
+*.reference-rgb24.bin
+*.mame-reference.png
+*.partial-snapshot.json

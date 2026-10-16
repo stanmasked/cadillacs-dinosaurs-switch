@@ -204,3 +204,34 @@ scene.bin and tile inspector remain available. See
 **This is diagnostic motion of independent static captures, not original
 game execution, character animation restoration, or real-time gameplay.**
 No commercial assets are embedded in the GitHub build.
+
+## Experimental MAME reference capture — live-data bridge
+
+The next graphics-fidelity milestone is **authentic CPS-1 reference pixels**,
+not another synthetic demonstration. Added:
+
+- `tools/mame_cps1_capture.lua`: runs through MAME's documented
+  `-autoboot_script` interface and samples real **384×224 RGB frames**,
+  effective 3072-color palette, CPS-A/B registers, and the QSound board's
+  **0x30000-byte** mapped graphics RAM. The Lua script has not yet been
+  tested in a running MAME session.
+- `tools/mame_capture_import.py`: validates lengths/endian/map boundaries
+  and converts native MAME RGB bytes into a lossless reference PNG and
+  **explicitly partial** register/VRAM snapshot.
+- A safety guard in `tools/cps1_scene_export.py` blocks promoting partial
+  captures to native Switch `scene.bin` without VBlank-latched OBJ.
+
+See [MAME reference capture instructions and limitations](docs/mame-live-reference-capture.md).
+
+```sh
+mkdir -p cps1-captures
+mame dino -rompath /private/mame-roms \
+    -autoboot_script /path/to/tools/mame_cps1_capture.lua
+python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
+    --out-dir local_outputs/mame-reference
+```
+
+**Important:** Real captured MAME frames do not yet exist in this
+repository or test environment. The Lua capture cannot access the
+driver's VBlank-latched sprite buffer; incomplete replays are not
+pixel-parity eligible. Original data and derived frames stay local.

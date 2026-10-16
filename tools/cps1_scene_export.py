@@ -34,6 +34,13 @@ def pack_words(values, size, label):
 def pack_scene(snapshot):
     if not isinstance(snapshot, dict):
         raise ValueError('Snapshot must be an object')
+    # Partial live MAME Lua captures have authentic reference colors but NO
+    # VBlank-latched OBJ buffer. Reject conversion to replayable native scenes:
+    # empty/synthetic sprite objects must not masquerade as real game frames.
+    if (snapshot.get('pixel_parity_eligible') is False or
+            snapshot.get('buffered_obj_source') == 'UNAVAILABLE_MAME_LUA'):
+        raise ValueError('Cannot export incomplete live MAME capture: '
+                         'VBlank-latched buffered OBJ memory was not captured')
     palette = snapshot.get('palette_rgb')
     if not isinstance(palette, list) or len(palette) != PALETTE_ENTRIES:
         raise ValueError('Require 3072 RGB colors from EFFECTIVE palette RAM (palette_rgb)')
