@@ -1,0 +1,31 @@
+name: CPS-1 Python tools
+
+on:
+  push:
+    paths:
+      - 'tools/**'
+      - 'tests/**'
+      - '.github/workflows/python-tests.yml'
+  pull_request:
+    paths:
+      - 'tools/**'
+      - 'tests/**'
+      - '.github/workflows/python-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run synthetic ROM mapping and tile decoder tests
+        run: python -m unittest discover -s tests -v
