@@ -161,7 +161,7 @@ def render_frame(region, palette, snapshot, viewport=VIEWPORT):
                 # gfx_element::prio_transpen wraps composite *parts* modulo
                 # the available 16x16 graphics elements. A vertical block
                 # starting at code 0x7ff0 may legitimately wrap to tile 0.
-                sprite_count = tile_count(region, 'sprites')
+                sprite_count = tile_count(region, '16x16')
                 for part in sprite_block_tiles(mapped, attr):
                     if sprite_count == 0:
                         continue
