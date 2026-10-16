@@ -67,10 +67,11 @@ local function active_palette()
     return table.concat(result)
 end
 
--- MAME screen pixels can be EITHER palette indices OR direct packed RGB.
--- screen.palette is nil for the latter, per MAME Lua screen-device docs.
--- Bulk screen:pixels() avoids tens of thousands of per-pixel API calls and
--- uses native-endian 32-bit elements; Lua '=I4' decodes the host byte order.
+-- MAME's screen_device::pixels(u32*) ALWAYS produces RGB32 even when
+-- the underlying screen bitmap is indexed: see src/emu/screen.cpp.
+-- Do not look up a second palette entry. Lua screen:pixels() yields a binary
+-- host-endian u32 buffer, which '=I4' reads correctly. screen.palette is
+-- recorded only as the SOURCE bitmap format, not output encoding.
 local function reference_rgb()
     local blob,width,height=screen:pixels()
     assert(width==384 and height==224,
@@ -82,15 +83,9 @@ local function reference_rgb()
     local result={}
     for i=0,width*height-1 do
         local value=string.unpack('=I4',blob,i*4+1)
-        if indexed then
-            assert(value<palette.entries,
-                   'Indexed screen pixel exceeds MAME palette entries')
-            result[#result+1]=color_bytes(palette:pen_color(value))
-        else
-            result[#result+1]=color_bytes(value)
-        end
+        result[#result+1]=color_bytes(value)
     end
-    return table.concat(result),indexed and 'indexed' or 'direct_rgb'
+    return table.concat(result),indexed and 'indexed_bitmap' or 'rgb_bitmap'
 end
 
 local function capture(frame)
@@ -107,7 +102,8 @@ local function capture(frame)
   "palette_bytes":9216,"reference_width":384,"reference_height":224,
   "reference_rgb_bytes":258048,"raw_word_endianness":"big",
   "palette_source":"MAME_effective_pen_color",
-  "reference_pixel_encoding":"%s",
+  "reference_pixel_encoding":"rgb32_resolved",
+  "reference_source_format":"%s",
   "obj_latch":"NOT_CAPTURED","pixel_parity_eligible":false,
   "warning":"Authentic MAME RGB only; internal buffered OBJ unavailable"
 }
