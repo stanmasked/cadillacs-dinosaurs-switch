@@ -31,6 +31,10 @@ if '-verifyroms' in args:
     sys.exit(0)
 if os.environ.get('FAKE_MAME_FAIL_RUN')=='1':
     sys.exit(3)
+if '-playback' in args:
+    print('PLAYBACK_FLAG_ACCEPTED')
+    if os.environ.get('FAKE_MAME_MUTATE_REPLAY')=='1':
+        Path(args[args.index('-playback')+1]).write_bytes(b'mutated during MAME standin')
 root=Path(os.environ['CPS1_RENDER_DUMP_DIR'])
 start=int(os.environ['CPS1_RENDER_DUMP_START'])
 count=int(os.environ['CPS1_RENDER_DUMP_COUNT'])
@@ -104,6 +108,31 @@ class MameLocalCaptureRunnerTests(unittest.TestCase):
             self.assertTrue(all(len(f['sha256'])==64 for f in frame['streams'].values()))
             self.assertEqual(frame['streams']['buffered-obj-be.bin']['bytes'],2048)
         self.assertNotIn('palette_rgb',json.dumps(report))
+
+    def test_recorded_input_passed_and_digest_retained(self):
+        recorded=self.root/'first-level.inp'
+        recorded.write_bytes(b'synthetic MAME controller input replay')
+        report=self.run_fake(playback_inp=recorded)
+        self.assertTrue(report['capture_format_valid'])
+        self.assertTrue(report['input_replay']['enabled'])
+        self.assertEqual(report['input_replay']['bytes'],recorded.stat().st_size)
+        self.assertFalse(report['input_replay']['input_replay_verified'])
+        self.assertIn('PLAYBACK_FLAG_ACCEPTED',
+                      report['emulator_process']['stdout_tail'])
+        self.assertNotIn(str(recorded),str(report['input_replay']))
+
+    def test_missing_input_recording_rejected_before_mame(self):
+        with self.assertRaisesRegex(ValueError,'non-symlink'):
+            self.run_fake(playback_inp=self.root/'missing.inp')
+        self.assertFalse(self.output.exists())
+
+    def test_input_modified_during_emulation_is_rejected(self):
+        recording=self.root/'first-level.inp'
+        recording.write_bytes(b'original fake capture inputs')
+        with patch.dict(os.environ,{'FAKE_MAME_MUTATE_REPLAY':'1'}):
+            with self.assertRaisesRegex(ValueError,'changed during execution'):
+                self.run_fake(playback_inp=recording)
+        self.assertTrue(self.output.exists())
 
     def test_probe_only_does_not_run_game_or_write_captures(self):
         result=self.run_fake(probe_only=True)
