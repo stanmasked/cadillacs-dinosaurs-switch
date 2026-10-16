@@ -29,6 +29,9 @@ def load_rgba_png(data):
     ihdr = None
     compressed = []
     seen_end = False
+    seen_plte = False
+    seen_idat = False
+    ended_idat = False
     while pos + 12 <= len(data):
         size = struct.unpack_from('>I',data,pos)[0]
         if size > len(data)-pos-12:
@@ -39,17 +42,40 @@ def load_rgba_png(data):
         if zlib.crc32(kind+payload) & 0xffffffff != checksum:
             raise ValueError('PNG chunk CRC mismatch')
         pos += size+12
+        # PNG chunk types are ASCII letters with uppercase reserved bit.
+        if (any(not (65 <= c <= 90 or 97 <= c <= 122) for c in kind)
+                or not 65 <= kind[2] <= 90):
+            raise ValueError('Invalid PNG chunk type')
+        if ihdr is None and kind != b'IHDR':
+            raise ValueError('IHDR must be first PNG chunk')
+        if seen_idat and kind != b'IDAT':
+            ended_idat = True
         if kind == b'IHDR':
             if ihdr is not None or size != 13:
                 raise ValueError('Malformed or duplicate IHDR')
             ihdr = struct.unpack('>IIBBBBB',payload)
+        elif kind == b'PLTE':
+            if seen_plte or seen_idat or not 0 < size <= 768 or size % 3:
+                raise ValueError('Invalid or misplaced PLTE')
+            seen_plte = True
         elif kind == b'IDAT':
+            # IDATs may be split, but must occupy consecutive chunks.
+            if ended_idat:
+                raise ValueError('Noncontiguous PNG IDAT chunks')
             compressed.append(payload)
+            seen_idat = True
         elif kind == b'IEND':
+            if size:
+                raise ValueError('Nonempty PNG IEND')
             seen_end = True
             break
+        elif not (kind[0] & 0x20):
+            # Never ignore an unknown critical chunk that could change pixels.
+            raise ValueError('Unsupported critical PNG chunk')
     if ihdr is None or not compressed or not seen_end:
         raise ValueError('Incomplete PNG')
+    if pos != len(data):
+        raise ValueError('Trailing data after PNG IEND')
     width,height,depth,mode,compression,filtering,interlace = ihdr
     if not 0 < width <= 8192 or not 0 < height <= 8192:
         raise ValueError('Invalid PNG dimensions')
