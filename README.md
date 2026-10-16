@@ -235,3 +235,23 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+## Switch v0.5 multilayer scene playback fixture (Stage 23)
+
+Added `tools/cps1_layered_demo.py`, a deterministic 36-frame, 12 FPS
+`CPS1SEQ1` test timeline for the **existing** Switch v0.5 viewer.
+It populates all three CPS-1 scroll tilemaps, exercises different
+scrolling speeds and scanline-specific Scroll2 raster motion, and
+animates three sprite objects with CPS-1 blocking/flip metadata.
+
+The 2,250,380-byte generated `sequence.bin` is directly compatible
+with v0.5 (no newly compiled NRO). Use your private `gfx.bin` for
+actual ROM graphics. The rendered stages, palette, tile placements and
+object motion are entirely **synthetic**; not restored gameplay,
+authentic map data, music or game AI.
+
+Seven ROM-free tests exercise the tile grids, palette, animation,
+frame CRCs, rendered changes and no-overwrite safety. See
+[Switch multilayer diagnostic playback](docs/switch-multilayer-demo.md).
+
+No original ROM or extracted game resources are included in GitHub.
