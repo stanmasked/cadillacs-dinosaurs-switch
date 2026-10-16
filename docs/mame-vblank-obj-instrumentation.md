@@ -67,3 +67,15 @@ https://github.com/mamedev/mame/blob/master/src/mame/capcom/cps1_v.cpp
 
 ROMs, captured sprites, screenshots and MAME-generated files must stay
 outside GitHub.
+
+## Source anchor verification
+
+Verified directly against upstream MAME `src/mame/capcom/cps1_v.cpp`
+at blob SHA `c1b5e3867824d0d1877b981142db7741346d2c55`:
+the function `cps_state::cps1_objram_latch(int state)` occurs exactly
+once, and contains exactly one
+`memcpy(m_buffered_obj.get(), m_obj, m_obj_size)` call. The generator
+requires this anchor and refuses unexpected variants.
+
+This is a **source-level match**, not a complete MAME compilation or
+live game capture. Any subsequent MAME revision may require a new audit.
