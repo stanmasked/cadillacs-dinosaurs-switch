@@ -50,6 +50,19 @@ class Cps1SpritePriorityTests(unittest.TestCase):
         self.assertEqual(color_at_first_pixel(
             [64,16,0,0, 64,16,0,1],foreground=True),bytes([20,35,210,255]))
 
+    def test_full_viewport_only_first_sprites_16x16_region_is_red(self):
+        # Pixel-level regression for the exact MAME priority difference.
+        # Two fully overlapping 16x16 opaque OBJ entries occupy 256 pixels.
+        scene=snapshot([64,16,0,0, 64,16,0,1])
+        rendered=render_frame(synthetic_graphics(),PALETTE,scene)
+        first=bytes((230,20,30,255))
+        backdrop=bytes((5,6,7,255))
+        self.assertEqual(len(rendered),384*224*4)
+        self.assertEqual(sum(rendered[i:i+4]==first
+                             for i in range(0,len(rendered),4)),256)
+        self.assertEqual(sum(rendered[i:i+4]==backdrop
+                             for i in range(0,len(rendered),4)),86016-256)
+
     def test_pen0_is_opaque_and_also_stamps_priority(self):
         # code1 is all pen0, which is opaque for CPS-1 sprite rendering.
         self.assertEqual(color_at_first_pixel(
