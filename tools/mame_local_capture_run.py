@@ -16,8 +16,10 @@ import sys
 
 try:
     from tools.mame_rom_readiness import audit_game, check_device
+    from tools.mame_playback_plan import playback_plan, confirm_playback_unchanged
 except ModuleNotFoundError:
     from mame_rom_readiness import audit_game, check_device
+    from mame_playback_plan import playback_plan, confirm_playback_unchanged
 
 STREAMS = {
     'gfxram-be.bin': 196608, 'cps-a-be.bin': 64,
@@ -90,7 +92,7 @@ def run_command(argv,*,env=None,seconds=300):
 
 
 def run_capture(*,mame,rom_dir,output_dir,start,count,seconds,wall_timeout=300,
-                require_device=True,probe_only=False):
+                require_device=True,probe_only=False,playback_inp=None):
     """Run ROM preflight and optional instrumented MAME without shell execution."""
     if any(type(v) is not int for v in (start,count,seconds,wall_timeout)):
         raise ValueError('Frame numbers and timeouts must be integers')
@@ -123,6 +125,8 @@ def run_capture(*,mame,rom_dir,output_dir,start,count,seconds,wall_timeout=300,
         raise ValueError('Original core dino ROM bytes failed known CRC/length checks')
     if require_device and not device['valid']:
         raise ValueError('Missing or invalid qsound_hle.zip; obtain/verify privately')
+    playback_args, playback_meta=playback_plan(playback_inp)
+    result['input_replay']=playback_meta
     executable=executable_path(mame)
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FileExistsError(f'Capture directory is nonempty: {output_dir}')
@@ -143,8 +147,10 @@ def run_capture(*,mame,rom_dir,output_dir,start,count,seconds,wall_timeout=300,
                CPS1_RENDER_DUMP_START=str(start),
                CPS1_RENDER_DUMP_COUNT=str(count))
     run=[executable,'dino','-rompath',str(rom_dir),'-skip_gameinfo',
-         '-nothrottle','-seconds_to_run',str(seconds)]
+         '-nothrottle','-seconds_to_run',str(seconds)]+playback_args
     result['emulator_process']=run_command(run,env=env,seconds=wall_timeout)
+    if not confirm_playback_unchanged(playback_inp,playback_meta):
+        raise ValueError('MAME input playback bytes changed during execution')
     if result['emulator_process']['exit_code']!=0:
         raise ValueError('Instrumented MAME process did not complete successfully')
     result['captured_frames']=[validate_dump(output_dir,start+i) for i in range(count)]
@@ -163,6 +169,8 @@ def main(argv=None):
     parser.add_argument('--count',type=int,default=6)
     parser.add_argument('--seconds-to-run',type=int,default=30)
     parser.add_argument('--wall-timeout',type=int,default=300)
+    parser.add_argument('--playback-inp',type=Path,
+                        help='User-local recorded MAME .inp for reproducible stage entry')
     parser.add_argument('--probe-only',action='store_true',
                         help='Run -version and -verifyroms, but not the game')
     parser.add_argument('--allow-unverified-device',action='store_true',
@@ -176,7 +184,8 @@ def main(argv=None):
             mame=args.mame,rom_dir=args.rom_dir,output_dir=args.capture_dir,
             start=args.start,count=args.count,seconds=args.seconds_to_run,
             wall_timeout=args.wall_timeout,probe_only=args.probe_only,
-            require_device=not args.allow_unverified_device)
+            require_device=not args.allow_unverified_device,
+            playback_inp=args.playback_inp)
         args.report.parent.mkdir(parents=True,exist_ok=True)
         with args.report.open('x',encoding='utf-8') as stream:
             json.dump(data,stream,indent=2)
