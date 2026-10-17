@@ -244,7 +244,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
             identity[key] = False
             with self.subTest(key=key):
                 with patch('tools.mame_private_dino_session.inspect_binary',
-                           return_value=identity), \\
+                           return_value=identity), \
                      patch('tools.mame_private_dino_session.subprocess.run') as game:
                     with self.assertRaisesRegex(ValueError, 'verification failed'):
                         execute_private_capture(

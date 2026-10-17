@@ -23,7 +23,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run session-aware ROM-free verifier regressions
-        run: python3 -m unittest discover -s tests -p test_mame_dino_binary_verify.py -v
+        run: |
+          python3 -m unittest discover -s tests -p test_mame_dino_binary_verify.py -v
+          python3 -m unittest discover -s tests -p test_mame_private_dino_session.py -v
 
       - name: Install official Debian/Ubuntu MAME build prerequisites
         run: |
