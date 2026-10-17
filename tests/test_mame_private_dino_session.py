@@ -244,7 +244,8 @@ class PrivateDinoSessionTests(unittest.TestCase):
         with patch('tools.mame_private_dino_session.reference_activity_diagnostic',
                    side_effect=ValueError('synthetic RGB late failure')):
             with self.assertRaisesRegex(ValueError, 'RGB late failure'):
-                self.run_local(process=self.populate_fake_private_capture)
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
@@ -254,7 +255,8 @@ class PrivateDinoSessionTests(unittest.TestCase):
         with patch('tools.mame_private_dino_session.multistream_interval_evidence',
                    side_effect=ValueError('synthetic interval late failure')):
             with self.assertRaisesRegex(ValueError, 'interval late failure'):
-                self.run_local(process=self.populate_fake_private_capture)
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
