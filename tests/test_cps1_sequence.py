@@ -115,6 +115,62 @@ class Cps1SequenceTests(unittest.TestCase):
         struct.pack_into('<I',data,12,zlib.crc32(data[20:]))
         self.assertFalse(self.opened(data)[0])
 
+    def test_sequence_refuses_noncanonical_enable_even_with_both_valid_crcs(self):
+        # Unlike per-frame decoding, a sequence must reject an invalid
+        # embedded frame at open time, before playback can reach it.
+        valid=fixture(3)
+        for frame_index in range(3):
+            for flag_index in range(3):
+                for invalid in (2,255):
+                    with self.subTest(frame=frame_index,flag=flag_index,
+                                      invalid=invalid):
+                        blob=bytearray(valid)
+                        start=HEADER_BYTES+frame_index*FILE_BYTES
+                        blob[start+32+flag_index]=invalid
+                        struct.pack_into('<I',blob,start+12,
+                            zlib.crc32(blob[start+16:start+FILE_BYTES]))
+                        struct.pack_into('<I',blob,12,
+                            zlib.crc32(blob[HEADER_BYTES:]))
+                        self.assertEqual(
+                            zlib.crc32(blob[start+16:start+FILE_BYTES]),
+                            struct.unpack_from('<I',blob,start+12)[0])
+                        self.assertEqual(
+                            zlib.crc32(blob[HEADER_BYTES:]),
+                            struct.unpack_from('<I',blob,12)[0])
+                        untouched=SeqInfo(0x1234,7,12)
+                        self.assertFalse(self.dll.cps1_sequence_decode(
+                            bytes(blob),len(blob),ctypes.byref(untouched)))
+                        self.assertEqual((untouched.blob,
+                                          untouched.frame_count,
+                                          untouched.fps),(0x1234,7,12))
+                        frames=[
+                            bytes(blob[HEADER_BYTES+k*FILE_BYTES:
+                                       HEADER_BYTES+(k+1)*FILE_BYTES])
+                            for k in range(3)
+                        ]
+                        with self.assertRaisesRegex(ValueError,
+                                                    'noncanonical layer-enable'):
+                            pack_sequence(frames,12)
+
+    def test_sequence_accepts_all_eight_boolean_layer_combinations(self):
+        for mask in range(8):
+            with self.subTest(mask=mask):
+                scene=demo_snapshots(1)[0]
+                flags=[]
+                for index,name in enumerate(('scroll1','scroll2','scroll3')):
+                    enabled=bool(mask & (1<<index))
+                    flags.append(int(enabled))
+                    scene[name]['enabled']=enabled
+                packed=pack_scene(scene)
+                self.assertEqual(list(packed[32:35]),flags)
+                sequence=pack_sequence([packed],12)
+                ok,storage,info=self.opened(sequence)
+                self.assertTrue(ok)
+                decoded=ctypes.create_string_buffer(70000)
+                self.assertTrue(self.dll.cps1_sequence_frame(
+                    ctypes.byref(info),0,decoded))
+                self.assertEqual(list(decoded.raw[16:19]),flags)
+
     def test_python_reject_invalid_rate_or_count(self):
         scene=pack_scene(demo_snapshots(1)[0])
         with self.assertRaises(ValueError): pack_sequence([scene],0)
