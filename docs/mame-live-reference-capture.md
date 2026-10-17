@@ -779,3 +779,42 @@ runtime errors to verify the output does not echo original exception
 messages, local paths, ROM data, or tracebacks. This change does not
 run an original ROM or validate its integrity. For local inspection,
 look inside the 0700 private workspace, not public GitHub logs.
+
+
+## Stage 81 — safe, metadata-only post-failure capture progress report
+
+A failed local MAME session can stop before collecting the six expected
+nominal frames and their nine files each (54 total). Until now the strict
+audit simply rejected missing or unexpected inputs, leaving the user to
+manually compare private directory entries. The new standalone command
+allows safe diagnosis **after** a failed run without retrying emulation:
+
+```sh
+python3 tools/mame_private_capture_progress.py \
+  --workspace /private/empty-dino-capture
+```
+
+It requires the existing 0700 private workspace outside this repo. Only
+the expected `cps1-captures/` directory is inspected. File bodies,
+original ROMs, framebuffer pixels, buffers, JSON manifests, C++ sidecar
+contents and the MAME log are **never opened**. It counts recognized
+nominal frame entries, complete file-size sets, missing/short/oversized
+files, unexpected entries, and the six Lua versus three C++ sidecars
+per frame. The output uses only nominal frame labels, integer counts
+and fixed investigation codes; filenames, ROM paths, session tokens
+and digests are excluded. Unexpected symlinks, hardlinks, nonfiles or
+oversized directory listings cause a conservative refusal.
+
+Statuses include `NO_PRIVATE_CAPTURE_DIRECTORY`,
+`NO_EXPECTED_PRIVATE_CAPTURE_FILES`,
+`INCOMPLETE_PRIVATE_CAPTURE_FILE_SET`,
+`INVALID_PRIVATE_CAPTURE_FILE_SIZES`,
+`UNEXPECTED_PRIVATE_CAPTURE_ENTRIES`, and
+`COMPLETE_FILE_SET_UNVERIFIED`. Even a file-size-complete set is
+**not** an integrity-verified game: only the existing private full
+capture launcher can check CRC32, OBJ FNV64, session binding and
+stability. This post-failure tool writes no files and never asserts
+authentic gameplay, hardware VBlank, sprite age or pixel parity.
+ROM-free synthetic tests cover partial/complete sets, 54-count
+arithmetic, missing frames, short files, symlinks and hardlinks,
+privacy-sensitive filenames, bounded scanning and safe CLI errors.
