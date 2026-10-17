@@ -54,7 +54,7 @@ int main(void) {
     assert(cps1_decode_tile32(full_region,sizeof(full_region),0,tile32));
     assert(tile32[0]==8u);
     assert(tile32[8]==9u);
-    assert(tile32[31]==0u);
+    assert(tile32[31]==9u); /* 32x32 row stride is 16 bytes; row1 test data overlaps x24 */
     /* An unmapped code must fail without modifying the result. */
     pen=99u;
     assert(!cps1_tile_pixel(full_region,sizeof(full_region),8u,9u,0,
