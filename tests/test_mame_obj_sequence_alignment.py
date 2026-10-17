@@ -206,6 +206,14 @@ class MultiframeAlignmentTests(unittest.TestCase):
             self.assertEqual(len(doc['probe_register_sha256']),6)
             self.assertFalse(doc['frame_sync_verified'])
             self.assertNotIn('render_register_bytes',doc)
+            self.assertIn('transition_analysis', doc)
+            self.assertTrue(doc['transition_analysis']['transition_diagnostic_only'])
+            self.assertFalse(doc['transition_analysis']['frame_sync_verified'])
+            self.assertFalse(doc['transition_analysis']['pixel_parity_eligible'])
+            # This fixture changes every register word on every frame;
+            # recurring all-register changes are not unique timing evidence.
+            self.assertFalse(doc['transition_analysis']['transition_hypothesis_informative'])
+            self.assertIsNone(doc['diagnostic_offset_metrics_agree'])
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(main(args),2)
             self.assertEqual(json.loads(result.read_text()),doc)

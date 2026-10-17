@@ -13,6 +13,11 @@ import re
 import sys
 import zlib
 
+try:
+    from tools.mame_obj_transition_evidence import transition_diagnostic
+except ModuleNotFoundError:
+    from mame_obj_transition_evidence import transition_diagnostic
+
 REG_A = 'cps-a-be.bin'
 REG_B = 'cps-b-be.bin'
 PROBE = 'render-regs-be.bin'
@@ -194,6 +199,18 @@ def main(argv=None):
         render, lua = read_frames(args.capture_dir, args.first_frame,
                                   args.frame_count, args.frame_step)
         report = audit_sequence(render, lua, args.frame_step, args.max_offset_steps)
+        transitions = transition_diagnostic(
+            render, lua, args.frame_step, args.max_offset_steps)
+        report['transition_analysis'] = transitions
+        # Two diagnostics from the same register data, not independent
+        # physical proof of video/OBJ/frame synchronization.
+        if (report['offset_hypothesis_informative'] and
+                transitions['transition_hypothesis_informative']):
+            report['diagnostic_offset_metrics_agree'] = (
+                report['best_offset_steps'] ==
+                transitions['transition_best_offset_steps'])
+        else:
+            report['diagnostic_offset_metrics_agree'] = None
         report['first_frame'] = args.first_frame
         report['probe_register_sha256'] = [
             hashlib.sha256(blob).hexdigest() for blob in render]
