@@ -256,3 +256,61 @@ color-changing-but-uninformative, one-pixel and two-color
 synthetic images, missing/truncated/oversized files, sample
 bounds, metadata privacy and the end-to-end local mock session.
 No true `dino` game frames were recorded during this stage.
+
+
+## Stage 67 — cross-stream observations, no synchronization certification
+
+The private session already checks all five per-frame Lua CRC32 inputs,
+C++ OBJ/register probe completeness, V2 latch-count fingerprints and
+reference RGB activity. The missing link for *selecting a useful
+follow-up investigation* was a per-interval comparison of these
+different observations at the same **nominal** frame labels.
+
+New local-only module:
+`tools/mame_multistream_interval_evidence.py`.
+
+After all existing CRC32, V2 FNV, size and RGB checks succeed, the
+private-session launcher now produces a
+`multistream_interval_evidence` metadata object. For each of the
+five successive intervals (900→902, 902→904, 904→906, 906→908,
+908→910), the object describes:
+
+- Changed native reference RGB pixels (not actual RGB content).
+- Changed raw eight-byte buffered CPS-1 OBJ slots, **not sprite count**.
+- Changed 16-bit CPS-1 register words in the C++ video-update probe.
+- Number of observed emulator `cps1_objram_latch` callback-count
+  increments between two selected samples.
+- Co-occurrence and divergent observations such as OBJ changes
+  without callback count increments, or callbacks without OBJ changes.
+
+All inputs must have identical six-label sequences, valid step
+bounds, strict numeric ranges, unchanged source totals, explicit
+unverified synchronization/parity flags and **complete V2 FNV
+binding for every sample**. Missing or conflicting reports fail
+closed instead of issuing a plausible-looking conclusion.
+
+The status is either
+`LOW_INFORMATION_FOR_MULTISTREAM_STUDY` or
+`MULTISTREAM_VARIATION_OBSERVED_UNVERIFIED`.
+This is a **data-triage label**, not a synchronization verdict.
+Even if RGB, OBJ and latch counts all change at the same nominal
+frame labels, they still come from one instrumented emulator
+process; that correlation cannot independently establish original
+hardware VBlank timing or the correct displayed frame.
+
+The module emits only interval counts and safe boolean observations,
+no raw commercial RGB/OBJ game bytes, original image, ROM data,
+user paths or captured sprite-word hashes. It always sets
+`hardware_vblank_observed:false`,
+`active_gameplay_verified:false`,
+`obj_latch_age_verified:false`,
+`frame_sync_verified:false` and
+`pixel_parity_eligible:false`.
+
+Thirteen direct ROM-free tests plus the end-to-end session
+integration assertion verify co-change intervals, divergent
+callbacks, static/black frames, version and label mismatches,
+forged totals, invalid numeric data and original-source privacy.
+These tests are synthetic and **do not run `dino` ROM gameplay**.
+A truly independent timing reference or actual trusted game
+frame capture is still required before making frame-parity claims.
