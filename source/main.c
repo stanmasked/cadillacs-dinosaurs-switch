@@ -282,6 +282,12 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
 
     const int x=ox+arena->dummy_x*scale;
     const int y=oy+arena->dummy_y*scale;
+    if (arena->dummy_impact_flash) {
+        /* Short impact marker persists for six simulated ticks and
+         * is independent of renderer timing or protected game graphics. */
+        rectangle(frame,pitch,x-25,y-128,50,5,rgb(255,243,164));
+        rectangle(frame,pitch,x-3,y-146,6,40,rgb(255,243,164));
+    }
     if (arena->finisher_flash) {
         /* A short invented highlight after a three-hit knockback.
          * The visual effect is driven by the fixed 60 Hz combat state. */
@@ -317,6 +323,10 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
     const int px=ox+arena->x*scale;
     const int py=oy+arena->y*scale;
     const int rise=arena->z*scale;
+    if (arena->player_impact_flash) {
+        rectangle(frame,pitch,px-25,py-rise-114,50,5,rgb(255,165,105));
+        rectangle(frame,pitch,px-3,py-rise-132,6,40,rgb(255,165,105));
+    }
     rectangle(frame,pitch,px-16,py-7,32,7,rgb(27,39,43));
     if (player==DINO_POSE_KO) {
         rectangle(frame,pitch,px-34,py-15,68,12,rgb(91,112,140));
