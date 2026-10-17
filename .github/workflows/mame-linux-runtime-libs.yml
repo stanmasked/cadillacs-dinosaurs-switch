@@ -59,7 +59,7 @@ jobs:
               'libstdc++.so.', 'libgcc_s.so.', 'libresolv.so.',
               'libnss_', 'ld-linux-',
           )
-          selected = set(required)
+          selected_paths = {name: lookup[name] for name in required}
           for name in required:
               resolved = subprocess.run(
                   ['ldd', lookup[name]], check=True, capture_output=True,
@@ -67,9 +67,8 @@ jobs:
               for line in resolved.splitlines():
                   m = re.search(r'^\s*(\S+)\s+=>\s+(/\S+)', line)
                   if m and not m.group(1).startswith(omit):
-                      selected.add(m.group(1))
-          for name in sorted(selected):
-              path = lookup.get(name)
+                      selected_paths[m.group(1)] = m.group(2)
+          for name, path in sorted(selected_paths.items()):
               assert path is not None, 'required transitive library unavailable'
               source = Path(path).resolve(strict=True)
               assert source.is_file(), 'runtime dependency not a regular file'
@@ -82,7 +81,7 @@ jobs:
               'Libraries may have different licenses. Their upstream\n'
               'package copyright/licensing information is available\n'
               'in official Ubuntu package metadata.\n')
-          print('ROM-free shared libraries packaged:', len(selected))
+          print('ROM-free shared libraries packaged:', len(selected_paths))
           PY
       - uses: actions/upload-artifact@v4
         with:
