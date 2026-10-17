@@ -25,6 +25,10 @@ except ModuleNotFoundError:
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 128
 DEVICE_MEMBER = 'dl-1425.bin'
+# Verified against pinned MAME 0.289 src/devices/sound/qsoundhle.cpp:
+# ROM_LOAD16_WORD 0x2000 + ROM_IGNORE 0x4000, full source length 0x6000.
+# This public catalog CRC is ZIP *metadata* only, not a payload audit.
+DEVICE_HEADER = (0x6000, 0xd6cf5ef5)
 PLD_MEMBER = 'ioc1.ic1'
 
 
@@ -98,17 +102,20 @@ def triage_private_dino_rom_blockers(rom_directory):
                            for name, expected in EXPECTED.items()
                            if name != PLD_MEMBER)
     device_member_observed = DEVICE_MEMBER in device
+    device_header_matches = device.get(DEVICE_MEMBER) == DEVICE_HEADER
     blocked = bool(not pld_match or other_game_issue or
-                   not device_member_observed)
+                   not device_header_matches)
 
     if other_game_issue:
         next_step = 'REVIEW_PRIVATE_GAME_CATALOG_THEN_LOCAL_MAME_VERIFYROMS'
-    elif not pld_match and not device_member_observed:
+    elif not pld_match and not device_header_matches:
         next_step = 'REVIEW_PRIVATE_PLD_AND_QSOUND_DEPENDENCIES'
     elif not pld_match:
         next_step = 'REVIEW_PRIVATE_PLD_CATALOG_ENTRY'
     elif not device_member_observed:
         next_step = 'CHECK_PRIVATE_QSOUND_DEVICE_ARCHIVE'
+    elif not device_header_matches:
+        next_step = 'REVIEW_PRIVATE_QSOUND_DEVICE_CATALOG_HEADER'
     else:
         next_step = 'RUN_GENUINE_LOCAL_MAME_VERIFYROMS'
 
@@ -126,6 +133,7 @@ def triage_private_dino_rom_blockers(rom_directory):
         'other_game_catalog_issues_observed': other_game_issue,
         'separate_qsound_hle_archive_observed': has_device_zip,
         'qsound_hle_device_member_observed': device_member_observed,
+        'qsound_hle_device_header_matches': device_header_matches,
         'known_dependency_layout_requires_attention': blocked,
         'next_local_action_code': next_step,
     })
