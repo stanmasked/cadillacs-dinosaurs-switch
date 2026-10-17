@@ -17,10 +17,12 @@ try:
     from tools.mame_obj_transition_evidence import transition_diagnostic
     from tools.mame_obj_transition_stability import transition_leave_one_out
     from tools.mame_obj_diagnostic_verdict import diagnostic_verdict
+    from tools.mame_obj_buffer_evidence import obj_buffer_diagnostic
 except ModuleNotFoundError:
     from mame_obj_transition_evidence import transition_diagnostic
     from mame_obj_transition_stability import transition_leave_one_out
     from mame_obj_diagnostic_verdict import diagnostic_verdict
+    from mame_obj_buffer_evidence import obj_buffer_diagnostic
 
 REG_A = 'cps-a-be.bin'
 REG_B = 'cps-b-be.bin'
@@ -105,15 +107,22 @@ def _read_exact_bounded_manifest(path):
     return data
 
 
-def read_frames(directory, first_frame, frame_count, frame_step):
-    """Validate all five captured Lua binaries before scoring register shifts."""
+def read_frames(directory, first_frame, frame_count, frame_step,
+                include_obj=False):
+    """Validate all five Lua binaries; optionally return private OBJ sidecars.
+
+    Existing callers receive the original (render, lua) tuple. The CLI
+    opts in to reading the full OBJ bytes solely for in-memory diagnostics.
+    """
     if (type(first_frame) is not int or first_frame < 0 or
             type(frame_count) is not int or not 4 <= frame_count <= 24 or
             type(frame_step) is not int or not 1 <= frame_step <= 120 or
             first_frame + (frame_count-1)*frame_step > 99999999):
         raise ValueError('Invalid or unbounded capture frame selection')
+    if type(include_obj) is not bool:
+        raise ValueError('include_obj must be a boolean')
     directory = Path(directory)
-    render, lua = [], []
+    render, lua, obj_frames = [], [], []
     for index in range(frame_count):
         frame = first_frame + index * frame_step
         stem = f'frame-{frame:08d}'
@@ -150,7 +159,9 @@ def read_frames(directory, first_frame, frame_count, frame_step):
         obj = _read_exact_small(directory / (stem + '.' + OBJ), 2048)
         render.append(r)
         lua.append(a + b)
-    return render, lua
+        if include_obj:
+            obj_frames.append(obj)
+    return (render, lua, obj_frames) if include_obj else (render, lua)
 
 
 def audit_sequence(render, lua, frame_step, max_offset_steps=2):
@@ -263,12 +274,17 @@ def main(argv=None):
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        render, lua = read_frames(args.capture_dir, args.first_frame,
-                                  args.frame_count, args.frame_step)
+        render, lua, obj_frames = read_frames(
+            args.capture_dir, args.first_frame, args.frame_count,
+            args.frame_step, include_obj=True)
         report = audit_sequence(render, lua, args.frame_step, args.max_offset_steps)
         transitions = transition_diagnostic(
             render, lua, args.frame_step, args.max_offset_steps)
         report['transition_analysis'] = transitions
+        # The buffered OBJ bytes are read privately, never serialized.
+        # Their changes and end-marker slots cannot prove VBlank age.
+        report['obj_buffer_evidence'] = obj_buffer_diagnostic(
+            render, obj_frames, args.first_frame, args.frame_step)
         report['transition_stability'] = transition_leave_one_out(
             render, lua, args.frame_step, args.max_offset_steps)
         # Three diagnostics from the same register data, not independent
