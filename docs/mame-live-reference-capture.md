@@ -314,3 +314,56 @@ forged totals, invalid numeric data and original-source privacy.
 These tests are synthetic and **do not run `dino` ROM gameplay**.
 A truly independent timing reference or actual trusted game
 frame capture is still required before making frame-parity claims.
+
+
+## Stage 68 — all-or-nothing publication of the private audit report
+
+The local private MAME session previously handed the **final**
+`dino-latch-diagnostic.json` path directly to the multiframe
+analyzer. The analyzer wrote JSON as soon as its own checks
+finished, but **later** session-level V2, reference RGB activity
+and cross-stream checks could still reject the capture. This
+could leave a final-looking report on disk even though the full
+session audit had failed.
+
+The corrected local workflow stages the analyzer's JSON in a
+**private temporary directory within the 0700 workspace**. It
+then verifies the bounded JSON, complete six-sample V2 OBJ
+fingerprints and conservative synchronization flags, computes
+the RGB activity and the nominal RGB/OBJ/register/latch interval
+comparison, and only then writes a **completed** JSON record.
+The completed report also includes:
+
+- the original unmodified per-frame register/OBJ/latch diagnostic
+  data, with its original conservative verification fields;
+- `reference_activity` and `multistream_interval_evidence`;
+- `private_capture_completion` with
+  `full_check_sequence_completed:true` and explicit false
+  authenticity, gameplay, VBlank, frame sync and parity claims.
+
+The completed JSON is written, flushed, fsynced and set to
+mode 0600 before **exclusive, atomic hard-link publication**
+under `dino-latch-diagnostic.json`. A final report created
+concurrently by another process is never overwritten, and
+the temporary directory is automatically cleaned up.
+If the CLI fails, JSON is malformed or oversized, V2 is
+legacy/incomplete, activity analysis fails, or interval
+metadata is inconsistent, **no final report is published**.
+The private raw capture and MAME log remain untouched for
+local investigation. Use a new empty 0700 workspace for
+another attempt.
+
+This publication guarantee applies to the **diagnostic JSON
+only**. The original multi-file Lua/C++ capture is still not
+crash-atomic; incomplete frames will fail normal CRC/FNV
+validation. A published local report certifies at most
+`PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY`, not original
+game authenticity, physical VBlank age, active gameplay
+or Nintendo Switch pixel parity.
+
+Five added ROM-free regression methods cover a late RGB
+failure, a late cross-stream failure, malformed or partial
+analyzer output, a final filename collision after the
+emulator has run, and temporary-directory cleanup, while
+the prior end-to-end session test checks that all required
+sections appear only on a complete synthetic pass.
