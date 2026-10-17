@@ -139,6 +139,8 @@ def _base(status):
         'diagnostic_only': True,
         'explicit_private_payload_read_authorized': False,
         'private_payload_bytes_read_locally': False,
+        'private_payload_bytes_may_have_been_read_locally': False,
+        'private_payload_read_completion_verified': False,
         'private_payload_crc_matches_pinned_catalog': False,
         'mame_verifyroms_executed': False,
         'original_game_authenticity_verified': False,
@@ -181,6 +183,8 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
     result.update({
         'explicit_private_payload_read_authorized': True,
         'private_payload_bytes_read_locally': (game_read + device_read) > 0,
+        'private_payload_bytes_may_have_been_read_locally': (game_read + device_read) > 0,
+        'private_payload_read_completion_verified': True,
         'private_payload_crc_matches_pinned_catalog': all_verified,
         'expected_member_count': len(EXPECTED) + 1,
         'payload_catalog_verified_count': game_verified + device_verified,
@@ -205,6 +209,13 @@ def main(argv=None):
             args.rom_dir, allow_private_reads=args.verify_private_payloads)
     except Exception:
         out = _base('PRIVATE_DINO_ROM_PAYLOAD_CRC_AUDIT_REFUSED')
+        if args.verify_private_payloads:
+            # The scan may have read a subset of original ROM members
+            # before failing, even when no aggregate result is available.
+            # Refusal must NOT claim zero original bytes were accessed.
+            out['explicit_private_payload_read_authorized'] = True
+            out['private_payload_bytes_read_locally'] = None
+            out['private_payload_bytes_may_have_been_read_locally'] = True
         print(json.dumps(out, sort_keys=True), file=sys.stderr)
         return 2
     print(json.dumps(out, sort_keys=True))
