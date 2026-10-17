@@ -83,5 +83,9 @@ jobs:
             exit 1
           fi
           echo "Instrumented real MAME built successfully: $binary"
-          "$binary" -listxml dino > /dev/null
-          echo "ROM-free MAME driver metadata command passed"
+          # Verify the real MAME 0.289 driver XML AND that the freshly
+          # compiled CPS-1 video ELF includes our V2 latch-probe format.
+          # No original game ROMs, screenshots or emulator binaries uploaded.
+          python3 "$GITHUB_WORKSPACE/tools/mame_dino_binary_verify.py" \
+            "$binary" "$RUNNER_TEMP/mame0289"
+          echo "Verified genuine dino driver and instrumented CPS-1 ELF"
