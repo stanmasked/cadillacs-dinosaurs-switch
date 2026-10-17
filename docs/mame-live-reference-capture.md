@@ -1278,3 +1278,56 @@ A Stage 93 fixed Lua exit message alone could suggest all 54 files were size-rea
 This reconciliation never overrides existing strict capture failures or creates a success report on its own. Missing/unreadable/ambiguous markers, malformed counts, unsafe capture paths and missing source frame rows produce a fixed **unavailable/not usable** status rather than an inference. Successful private auto-exit captures place `auto_exit_post_run_reconciliation` in their private final report; an opt-in failure using both `--auto-exit-after-capture` and `--diagnose-failed-capture` includes the same fixed diagnostic in its single safe stderr JSON. Manual launches skip the reconciliation and retain a null report field. No filenames, original ROM bytes, framebuffer data, OBJ words, private hash digests, session IDs or raw log messages are disclosed.
 
 A `READY_MESSAGE_AGREES_WITH_SIZE_ONLY_FILES` result only means the observed fixed Lua message agrees with final *file size evidence*. It is **not** independent confirmation of Lua/C++ callbacks, original CPS-1 VBlank, genuine active game frames, hardware timing or Nintendo Switch pixel parity. The first run with the user-owned original `dino` still requires the locally built instrumented MAME executable and private ROM; public CI remains entirely synthetic.
+
+
+## Stage 95 — a one-command private first-capture handoff
+
+For the first local original-game capture, a new wrapper uses a
+ROM-free **check-only default** and an explicit **--run** flag.
+
+First prepare a fresh, empty private workspace OUTSIDE this public
+GitHub repository (mode 0700) and check prerequisites without opening
+original ROM bytes:
+
+~~~sh
+umask 077
+mkdir -m 700 /private/new-empty-dino-workspace
+python3 tools/mame_private_first_capture.py \
+  --mame /private/mame0289/dino \
+  --mame-tree /private/mame0289 \
+  --rom-dir /private/owned-mame-roms \
+  --workspace /private/new-empty-dino-workspace
+~~~
+
+Replace every example path with its *local* value. The binary must be
+a genuine locally built instrumented MAME 0.289 dino executable,
+not the Switch NRO technical bootstrap. The ROM directory must contain
+the original set legally possessed by the operator. This default
+command checks only path isolation, linked MAME identity and game-set
+presence metadata. It does NOT read original ROM bytes, emulate the
+game or create any frame capture. Its short JSON status is
+PRIVATE_DINO_FIRST_CAPTURE_READINESS_METADATA_ONLY.
+
+Only when you choose to start a real *local* game run, repeat the
+same command with --run appended. This performs the same-invocation
+MAME -verifyroms ROM audit, private SHA-256 input stability checking,
+six Lua/C++ samples and optional size-based automatic exit, then
+requires the existing strict 54-file CRC/FNV/session and interval
+validation. Original ROM bytes are read locally by Python and MAME
+only in this explicit run mode.
+
+The helper prints **one small whitelisted JSON report**, with
+schema PRIVATE_DINO_FIRST_CAPTURE_HANDOFF_V1. On strict structural
+capture success it returns PRIVATE_SIX_FRAME_STRUCTURAL_AUDIT_PASSED
+plus fixed counts and statuses; on refusal it returns
+PRIVATE_DINO_FIRST_CAPTURE_REFUSED with a fixed safe reason, bounded
+file counts and fixed Lua-exit diagnostic codes if available.
+No original filenames, user directory paths, framebuffers, buffered
+OBJ bytes, SHA digests, MAME log text or session tokens are echoed.
+
+**Only paste the small emitted JSON into ChatGPT** for troubleshooting.
+Do not upload private commercial ROMs, logs, game capture directories
+or detailed diagnostic manifests to a public GitHub repository.
+Even a successful structural audit does not prove original-game
+authenticity, physical CPS-1 VBlank, framebuffer pixel parity or
+completed Nintendo Switch gameplay. Public CI only uses synthetic data.
