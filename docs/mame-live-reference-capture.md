@@ -1442,3 +1442,51 @@ and altered CRC. A matching header is **not a trustworthy payload
 checksum**: ZIP directory CRC data is untrusted until genuine MAME
 `dino -verifyroms` has processed the privately held assets. No actual
 game launch, audio validation or MAME VBlank/pixel proof is claimed.
+
+## Stage 106 — explicit local-only payload verification before MAME launch
+
+Stage 104/105 scans were **metadata-only** by design: malicious or
+damaged ZIP content can claim an otherwise valid CRC and length.
+The new **separate opt-in** command permits a stronger preliminary
+check using only the user's privately held ROM archives, outside GitHub:
+
+~~~sh
+python3 tools/mame_private_rom_payload_audit.py \
+  --rom-dir /private/owned-mame-roms \
+  --verify-private-payloads
+~~~
+
+Without the explicit flag, the command refuses before reading any ROM
+member payload. With it, the tool opens regular single-link ZIP files
+with no-follow file descriptors where supported; confirms file metadata
+before/after; validates bounded ZIP directory names and entry counts;
+and decompresses **only** the 28 expected `dino` members plus the
+single `qsound_hle` DSP entry, keeping each member in a bounded
+64-KiB streaming buffer. The aggregate decompressed budget is 32 MiB
+and each catalog member must be at most 2 MiB. Size and CRC32 are
+compared to the pinned MAME 0.289 public catalog using a second local
+streamed computation; zipfile also checks the stored CRC when the
+member reaches EOF.
+
+The returned JSON contains fixed labels, booleans and aggregate
+counts only. The two possible ordinary statuses are
+`PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MATCH_ONLY` and
+`PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MISMATCH`; failures are
+collapsed into `PRIVATE_DINO_ROM_PAYLOAD_CRC_AUDIT_REFUSED`,
+without leaking exception messages, private ROM file paths,
+individual names, hashes or original content. Private file bytes
+are **never** written to GitHub or into the working tree.
+
+**Scope limitation:** matching a CRC32 catalog is neither
+cryptographic authentication of an original ROM set nor actual
+MAME ROM auditing. A file can share CRC32 with different content,
+and the emulator may require a different layout or additional
+dependencies. This preliminary scan does not execute the game or
+measure audio, CPS-1 VBlank/OBJ latch, video parity or Switch gameplay.
+Run the actual local `mame dino -verifyroms` command afterwards.
+
+All CI coverage is ROM-free. Fixtures generate small synthetic
+ZIP archives and exercise explicit consent, matching or wrong
+metadata, missing device, symlink/hardlink refusal, ZIP directory
+duplicates, path traversal, payload corruption with unchanged header
+CRC, decompression bounds and redacted error output.
