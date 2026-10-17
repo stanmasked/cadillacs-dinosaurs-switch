@@ -485,3 +485,59 @@ render test, or successful GitHub Actions run. The existing CI
 runner-allocation blocker remains in issue #20. The report still
 unconditionally has `frame_sync_verified:false` and
 `pixel_parity_eligible:false`.
+
+## Stage 51 — actual end-to-end local CLI execution on synthetic private captures
+
+Unlike the earlier focused helper tests, the **unmodified production
+`tools/mame_obj_sequence_alignment.py` from PR #34** was reconstructed
+byte-for-byte in the local test workspace and verified against Git blob
+`8c94251b4af8cfd84ca1df028e00276335552f5d`.
+
+The new `tests/test_mame_obj_cli_end_to_end.py` writes temporary
+**synthetic**, valid-shaped six- or ten-frame capture files with canonical
+`frame-XXXXXXXX` names, five-entry CRC32 manifests, 64-byte Lua CPS-A,
+64-byte Lua CPS-B, 128-byte C++ register sidecars and 2048-byte buffered
+OBJ files. Then it invokes the **real production CLI `main()`**
+without mocking the filesystem, capture loader, scorer, transition
+diagnostic, LOO checker, verdict classifier, or JSON writer.
+
+Fourteen new end-to-end regression methods cover:
+
+- Correctly aligned dynamic registers → conservative
+  `CONSISTENT_BUT_UNVERIFIED` with zero nominal offset;
+- One-step synthetic capture lag → the same *unverified* classification
+  with offset +1; a short two-step lag does **not** receive independent
+  transition support because only 3/5 transitions overlap;
+- A ten-sample two-step lag can pass the 75% overlap and LOO guards,
+  while a static scene, or periodic changed-register masks, remain
+  explicitly inconclusive / uncorroborated;
+- CRC32 corruption **without changing input size**, truncated OBJ,
+  wrong frame-number metadata, missing checksum manifest, and absent
+  C++ probe all produce an error exit and **no JSON output**;
+- Existing output is preserved byte-for-byte, unbounded frame counts
+  are rejected, and a valid JSON report contains only diagnostic counts,
+  SHA256 and status fields, never raw CPS register or OBJ word arrays.
+
+**Reproducible local execution:** The new test module was copied
+byte-for-byte from the committed GitHub file, verified against Git
+blob `bc004d781ce9679125334d361132bec53dc6d9f2`, and run
+alongside the prior 45 unit tests. The actual production CLI module,
+new test file, and Stage 47–50 helper sources were verified against
+their corresponding remote Git blobs.
+
+```sh
+PYTHONPATH=. python -m unittest discover -s tests -v
+# 59 tests, OK (45 earlier + 14 end-to-end CLI)
+```
+
+**Precise boundary:** This confirms that the assembled production
+*Python diagnostic path* works on fabricated capture artifacts under
+local Python, including its file I/O and JSON. It does **not** exercise
+actual MAME 0.289 video callbacks, original `dino` ROMs, authentic
+VBlank-latched OBJ timing, raster/pixel comparison, complete repo
+tests/CI or a Switch NRO build. All `frame_sync_verified` and
+`pixel_parity_eligible` values remain false even when the synthetic
+register sequence has a unique best offset. No generated capture files,
+ROMs or original arcade assets are committed.
+
+GitHub Actions runner allocation remains tracked in issue #20.
