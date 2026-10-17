@@ -16,6 +16,7 @@ import sys
 EXPECTED_MAME_BLOB = 'c1b5e3867824d0d1877b981142db7741346d2c55'
 INCLUDE = '#include "cps1.h"\n'
 HOOK = '\tfind_last_sprite();\n\n\tcps1_update_transmasks();'
+LATCH_HOOK = '\t\tmemcpy(m_buffered_obj.get(), m_obj, m_obj_size);\n'
 PROBE_MARKER = 'CPS1_DINO_OBJ_PROBE_V1'
 
 # This block runs *during the MAME video update*, after find_last_sprite()
@@ -33,19 +34,26 @@ PROBE = r'''
 		if (frame_number >= 900 && frame_number <= 910 &&
 				((frame_number - 900) % 2) == 0)
 		{
-			char path[128], registers_path[128];
+			char path[128], registers_path[128], latch_path[128];
+			const unsigned long long observed_latch_count =
+				cps1_dino_obj_latch_events.load(std::memory_order_relaxed);
 			std::snprintf(path, sizeof(path),
 				"cps1-captures/frame-%08llu.buffered-obj-be.bin", frame_number);
 			std::snprintf(registers_path, sizeof(registers_path),
 				"cps1-captures/frame-%08llu.render-regs-be.bin", frame_number);
+			std::snprintf(latch_path, sizeof(latch_path),
+				"cps1-captures/frame-%08llu.obj-latch-count.txt", frame_number);
 			std::FILE *existing = std::fopen(path, "rb");
 			std::FILE *existing_registers = std::fopen(registers_path, "rb");
-			if (existing || existing_registers)
+			std::FILE *existing_latch = std::fopen(latch_path, "rb");
+			if (existing || existing_registers || existing_latch)
 			{
 				if (existing)
 					std::fclose(existing);
 				if (existing_registers)
 					std::fclose(existing_registers);
+				if (existing_latch)
+					std::fclose(existing_latch);
 			}
 			else
 			{
@@ -95,7 +103,23 @@ PROBE = r'''
 							if (std::fclose(registers) != 0)
 								registers_complete = false;
 							if (!registers_complete)
-								osd_printf_warning("OBJ probe: incomplete %s\n", registers_path);
+								osd_printf_warning("OBJ probe: incomplete %s\\n", registers_path);
+							else
+							{
+								// Snapshot count was read at the beginning of video update.
+								// A count difference is not a measurement of latch age.
+								std::FILE *latch_output = std::fopen(latch_path, "wb");
+								if (!latch_output)
+									osd_printf_warning("OBJ probe: unable to open %s\\n", latch_path);
+								else
+								{
+									const bool wrote = std::fprintf(latch_output,
+										"CPS1_DINO_LATCH_V1 %llu\\n", observed_latch_count) > 0;
+									const bool closed = std::fclose(latch_output) == 0;
+									if (!wrote || !closed)
+										osd_printf_warning("OBJ probe: incomplete %s\\n", latch_path);
+								}
+							}
 						}
 					}
 				}
@@ -114,12 +138,20 @@ def instrument(source):
     """Inject only where the verified upstream video-update anchor exists."""
     if not isinstance(source, str) or PROBE_MARKER in source:
         raise ValueError('Invalid or already instrumented CPS-1 source')
-    if source.count(INCLUDE) != 1 or source.count(HOOK) != 1:
+    if (source.count(INCLUDE) != 1 or source.count(HOOK) != 1 or
+            source.count(LATCH_HOOK) != 1):
         raise ValueError('MAME 0.289 CPS-1 probe anchors are missing or ambiguous')
     if 'void cps_state::cps1_objram_latch(int state)' not in source:
         raise ValueError('CPS-1 VBlank-latched OBJ implementation not found')
     result = source.replace(INCLUDE,
-                            INCLUDE + '#include <cstdio>\n#include <cstring>\n', 1)
+                            INCLUDE + '#include <atomic>\\n#include <cstdio>\\n#include <cstring>\\n'
+                            + 'static std::atomic<unsigned long long> '
+                            'cps1_dino_obj_latch_events{0};\\n', 1)
+    result = result.replace(
+        LATCH_HOOK,
+        LATCH_HOOK + '\\t\\tif (std::strcmp(machine().system().name, "dino") == 0)\\n'
+        + '\\t\\t\\tcps1_dino_obj_latch_events.fetch_add(1, std::memory_order_relaxed);\\n',
+        1)
     return result.replace(HOOK,
                           '\tfind_last_sprite();\n' + PROBE +
                           '\n\tcps1_update_transmasks();', 1)
