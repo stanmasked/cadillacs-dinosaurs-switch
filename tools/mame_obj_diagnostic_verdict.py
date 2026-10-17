@@ -48,13 +48,25 @@ def diagnostic_verdict(exact, transition, stability):
         raise ValueError('Diagnostic-only provenance must be explicitly preserved')
     if applicable != transition_ok or (stable and not applicable):
         raise ValueError('Stability metadata conflicts with transition assessment')
-    if stable:
-        trials = stability.get('leave_one_out_trial_count')
-        consistent = stability.get('leave_one_out_consistent_trials')
-        if (type(trials) is not int or not 3 <= trials <= 23 or
-                type(consistent) is not int or consistent != trials or
-                stability.get('leave_one_out_unstable_indices') != []):
-            raise ValueError('Stable label requires all bounded trials to pass')
+    trials = stability.get('leave_one_out_trial_count')
+    consistent = stability.get('leave_one_out_consistent_trials')
+    unstable = stability.get('leave_one_out_unstable_indices')
+    if (type(trials) is not int or type(consistent) is not int or
+            not isinstance(unstable, list) or
+            any(type(index) is not int for index in unstable)):
+        raise ValueError('Invalid leave-one-out trial counters')
+    if not applicable:
+        if trials != 0 or consistent != 0 or unstable:
+            raise ValueError('Inapplicable leave-one-out report cannot have trials')
+    elif (not 3 <= trials <= 23 or not 0 <= consistent <= trials or
+            len(unstable) != trials - consistent or
+            sorted(set(unstable)) != unstable or
+            any(not 0 <= index < trials for index in unstable)):
+        raise ValueError('Inconsistent leave-one-out trial accounting')
+    if stable and (consistent != trials or unstable):
+        raise ValueError('Stable label requires all bounded trials to pass')
+    if applicable and not stable and consistent == trials:
+        raise ValueError('All passing trials must be labeled stable')
 
     exact_offset = _offset(exact, 'best_offset_steps', exact_ok)
     transition_offset = _offset(
