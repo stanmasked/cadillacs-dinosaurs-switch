@@ -103,21 +103,21 @@ PROBE = r'''
 							if (std::fclose(registers) != 0)
 								registers_complete = false;
 							if (!registers_complete)
-								osd_printf_warning("OBJ probe: incomplete %s\\n", registers_path);
+								osd_printf_warning("OBJ probe: incomplete %s\n", registers_path);
 							else
 							{
 								// Snapshot count was read at the beginning of video update.
 								// A count difference is not a measurement of latch age.
 								std::FILE *latch_output = std::fopen(latch_path, "wb");
 								if (!latch_output)
-									osd_printf_warning("OBJ probe: unable to open %s\\n", latch_path);
+									osd_printf_warning("OBJ probe: unable to open %s\n", latch_path);
 								else
 								{
 									const bool wrote = std::fprintf(latch_output,
-										"CPS1_DINO_LATCH_V1 %llu\\n", observed_latch_count) > 0;
+										"CPS1_DINO_LATCH_V1 %llu\n", observed_latch_count) > 0;
 									const bool closed = std::fclose(latch_output) == 0;
 									if (!wrote || !closed)
-										osd_printf_warning("OBJ probe: incomplete %s\\n", latch_path);
+										osd_printf_warning("OBJ probe: incomplete %s\n", latch_path);
 								}
 							}
 						}
