@@ -451,16 +451,16 @@ int main(int argc, char **argv) {
                                   scene_rgba,CPS1_SCENE_RGBA_BYTES);
         }
         unsigned next=page;
-        if (!show_scene && (down & HidNpadButton_Left) && next>0) --next;
-        if (!show_scene && (down & HidNpadButton_Right) && next+1<PAGE_COUNT) ++next;
-        if (!show_scene && (down & HidNpadButton_Up)) next=next>=16?next-16:0;
-        if (!show_scene && (down & HidNpadButton_Down)) next=next+16<PAGE_COUNT?next+16:PAGE_COUNT-1;
-        if (!show_scene && (down & HidNpadButton_L)) next=next>=8?next-8:0;
-        if (!show_scene && (down & HidNpadButton_R)) next=next+8<PAGE_COUNT?next+8:PAGE_COUNT-1;
-        if (!show_scene && (down & HidNpadButton_A)) invert=!invert;
-        if (!show_scene && (down & HidNpadButton_B)) transparent=!transparent;
-        if (!show_scene && (down & HidNpadButton_Y)) grid=!grid;
-        if (next != page && cache_page(gfx,next)) page=next;
+        if (!arena_active && !show_scene && (down & HidNpadButton_Left) && next>0) --next;
+        if (!arena_active && !show_scene && (down & HidNpadButton_Right) && next+1<PAGE_COUNT) ++next;
+        if (!arena_active && !show_scene && (down & HidNpadButton_Up)) next=next>=16?next-16:0;
+        if (!arena_active && !show_scene && (down & HidNpadButton_Down)) next=next+16<PAGE_COUNT?next+16:PAGE_COUNT-1;
+        if (!arena_active && !show_scene && (down & HidNpadButton_L)) next=next>=8?next-8:0;
+        if (!arena_active && !show_scene && (down & HidNpadButton_R)) next=next+8<PAGE_COUNT?next+8:PAGE_COUNT-1;
+        if (!arena_active && !show_scene && (down & HidNpadButton_A)) invert=!invert;
+        if (!arena_active && !show_scene && (down & HidNpadButton_B)) transparent=!transparent;
+        if (!arena_active && !show_scene && (down & HidNpadButton_Y)) grid=!grid;
+        if (!arena_active && gfx && next != page && cache_page(gfx,next)) page=next;
         u32 stride=0;
         uint32_t *frame=(uint32_t*)framebufferBegin(&fb,&stride);
         if (!frame) break;
