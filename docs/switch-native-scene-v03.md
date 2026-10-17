@@ -167,3 +167,27 @@ consistency for these controlled scenes*, **not** reproduction of an
 original `dino` frame, MAME gameplay/VBlank accuracy, real palette
 history or Switch hardware framebuffer equivalence. The current
 MAME 0.289 ROM audit limitations remain unchanged.
+
+### Stage 100 — private original-ROM trial (no gameplay data published)
+
+The Stage 100 tool was actually executed in an isolated private Linux
+workspace using the **user-provided original dino ZIP** and the
+exact ROM-free native C source exported from GitHub Actions
+`cps1-scene-parity-source-rom-free`.
+
+- **4** controlled synthetic scenes at **384×224 RGBA**;
+- **344,064** pixel comparisons across Python and Nintendo Switch
+  source-level C renderers;
+- **0** RGBA pixel mismatches;
+- **752** pixels changed when **only** the CPS-1 sprite-priority masks
+  were altered while tilemaps, RGB palette, sprite list and layer order
+  were kept identical.
+
+Thus original game **graphics tiles** were consumed, but the scene
+registers/VRAM/palette/OBJ were synthetic. This is strictly internal
+compositor equivalence, **not an arcade original-game frame or proof
+of MAME sprite/VBlank chronology**. No proprietary ROM, derived
+full-frame image, original palette, or frame data was uploaded to the
+GitHub repo or CI; only a compact local numeric/Boolean result was
+retained. The code-only CI artifact is explicitly allowlisted and
+expires after three days.
