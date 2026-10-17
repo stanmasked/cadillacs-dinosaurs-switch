@@ -818,3 +818,34 @@ authentic gameplay, hardware VBlank, sprite age or pixel parity.
 ROM-free synthetic tests cover partial/complete sets, 54-count
 arithmetic, missing frames, short files, symlinks and hardlinks,
 privacy-sensitive filenames, bounded scanning and safe CLI errors.
+
+
+## Stage 82 — locate Lua versus C++ coverage gaps by nominal frame
+
+The read-only post-failure tool from Stage 81 now computes separate
+**size-only completeness** for the six Lua files and three C++ video
+probe files per nominal sample (frames 900, 902, 904, 906, 908, 910).
+For each frame the report includes count of correctly sized Lua/C++
+entries, whether the Lua manifest or C++ latch-count sidecar entry exists,
+and a fixed coverage classification: both complete, Lua complete but C++
+incomplete, C++ complete but Lua incomplete, or neither complete. Fixed
+aggregate counts explain how many samples fall into each group. A manifest
+or latch sidecar present without the other expected source entries is
+highlighted solely as **incomplete file-set metadata**, never as proof of
+callback write ordering, real frame age or video synchronization.
+
+When only Lua files appear, the suggested local action names the
+instrumented C++ video-update hook. When only C++ files appear, it names
+the Lua `frame_done` hook. If both source families occur on different
+nominal frames, it suggests comparing their frame coverage. Otherwise
+the existing safe generic advice remains; invalid sizes, unexpected entries,
+and complete-file-set notices retain their original higher priority.
+
+No ROM/game content, framebuffer or OBJ buffers, SHA values, local paths,
+private filenames, or capture logs are read or emitted by this tool.
+Six-frame coverage is **never** proof of same-instant execution,
+independent hardware VBlank, authentic gameplay or Nintendo Switch parity.
+The strict 54-file audit and the private runtime launch remain separate.
+New ROM-free regression tests cover Lua-only, C++-only, mixed/interleaved
+samples, partial sidecars, invalid-sized components and preservation
+of all conservative provenance flags.

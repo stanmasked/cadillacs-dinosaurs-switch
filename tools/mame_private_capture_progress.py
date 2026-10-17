@@ -35,6 +35,75 @@ CPP_SUFFIXES = frozenset((
 assert set(EXPECTED_SIZES) == LUA_SUFFIXES | CPP_SUFFIXES
 
 
+
+def _with_stream_coverage(report):
+    """Reconcile source-specific completeness using file *sizes* only.
+
+    "Complete" here means each expected name has an ordinary file of
+    exactly its expected size (or bounded manifest/sidecar size).
+    It NEVER means the frame was authentic or these hooks synchronized.
+    """
+    frames = report['frame_progress']
+    summary = {
+        'lua_complete_size_only_frames': 0,
+        'cpp_complete_size_only_frames': 0,
+        'paired_complete_size_only_frames': 0,
+        'lua_complete_cpp_incomplete_frames': 0,
+        'cpp_complete_lua_incomplete_frames': 0,
+        'neither_complete_size_only_frames': 0,
+        'lua_manifest_with_incomplete_components_frames': 0,
+        'cpp_latch_sidecar_with_incomplete_components_frames': 0,
+    }
+    for row in frames:
+        lua = row['lua_valid_sized_files']
+        cpp = row['cpp_valid_sized_files']
+        lua_complete = lua == len(LUA_SUFFIXES)
+        cpp_complete = cpp == len(CPP_SUFFIXES)
+        row['lua_size_only_state'] = (
+            'COMPLETE_SIZE_ONLY' if lua_complete else
+            'ABSENT' if row['lua_files_present'] == 0 else 'INCOMPLETE_SIZE_ONLY')
+        row['cpp_size_only_state'] = (
+            'COMPLETE_SIZE_ONLY' if cpp_complete else
+            'ABSENT' if row['cpp_files_present'] == 0 else 'INCOMPLETE_SIZE_ONLY')
+        row['cross_stream_size_only_state'] = (
+            'BOTH_COMPLETE_SIZE_ONLY' if lua_complete and cpp_complete else
+            'LUA_COMPLETE_CPP_INCOMPLETE' if lua_complete else
+            'CPP_COMPLETE_LUA_INCOMPLETE' if cpp_complete else
+            'NEITHER_COMPLETE_SIZE_ONLY')
+        summary['lua_complete_size_only_frames'] += lua_complete
+        summary['cpp_complete_size_only_frames'] += cpp_complete
+        summary['paired_complete_size_only_frames'] += lua_complete and cpp_complete
+        summary['lua_complete_cpp_incomplete_frames'] += lua_complete and not cpp_complete
+        summary['cpp_complete_lua_incomplete_frames'] += cpp_complete and not lua_complete
+        summary['neither_complete_size_only_frames'] += not lua_complete and not cpp_complete
+        summary['lua_manifest_with_incomplete_components_frames'] += (
+            row['lua_manifest_present'] and not lua_complete)
+        summary['cpp_latch_sidecar_with_incomplete_components_frames'] += (
+            row['cpp_latch_sidecar_present'] and not cpp_complete)
+    if (summary['paired_complete_size_only_frames'] != report['complete_metadata_frames'] or
+            sum((
+                summary['paired_complete_size_only_frames'],
+                summary['lua_complete_cpp_incomplete_frames'],
+                summary['cpp_complete_lua_incomplete_frames'],
+                summary['neither_complete_size_only_frames'],
+            )) != FRAME_COUNT):
+        raise ValueError('Private stream coverage counters disagree')
+    report['stream_coverage'] = summary
+    if report['status'] == 'INCOMPLETE_PRIVATE_CAPTURE_FILE_SET':
+        lua_present = sum(row['lua_valid_sized_files'] for row in frames)
+        cpp_present = sum(row['cpp_valid_sized_files'] for row in frames)
+        if lua_present and not cpp_present:
+            report['next_local_investigation_code'] = 'INSPECT_CPP_VIDEO_UPDATE_CAPTURE_HOOK'
+        elif cpp_present and not lua_present:
+            report['next_local_investigation_code'] = 'INSPECT_LUA_FRAME_DONE_CAPTURE_HOOK'
+        elif (summary['lua_complete_cpp_incomplete_frames'] or
+              summary['cpp_complete_lua_incomplete_frames']):
+            report['next_local_investigation_code'] = 'COMPARE_LUA_CPP_NOMINAL_FRAME_COVERAGE'
+        # Other incomplete combinations retain the original conservative
+        # generic hook code; missing data alone never identifies a culprit.
+    return report
+
+
 def _validate_workspace(workspace):
     raw = Path(workspace).expanduser()
     if raw.is_symlink():
@@ -69,11 +138,13 @@ def private_capture_progress(workspace):
     }
     frames = [
         {'nominal_frame': frame, 'present_files': 0, 'valid_sized_files': 0,
-         'lua_files_present': 0, 'cpp_files_present': 0}
+         'lua_files_present': 0, 'cpp_files_present': 0,
+         'lua_valid_sized_files': 0, 'cpp_valid_sized_files': 0,
+         'lua_manifest_present': False, 'cpp_latch_sidecar_present': False}
         for frame in labels
     ]
     if not capture.exists():
-        return {
+        return _with_stream_coverage({
             'status': 'NO_PRIVATE_CAPTURE_DIRECTORY',
             'diagnostic_only': True,
             'nominal_frame_labels': labels,
@@ -93,7 +164,7 @@ def private_capture_progress(workspace):
             'active_gameplay_verified': False,
             'frame_sync_verified': False,
             'pixel_parity_eligible': False,
-        }
+        })
     if not capture.is_dir():
         raise ValueError('Private progress capture path is not a directory')
 
@@ -117,9 +188,17 @@ def private_capture_progress(workspace):
                 frames[index]['lua_files_present'] += 1
             else:
                 frames[index]['cpp_files_present'] += 1
+            if suffix == 'manifest.json':
+                frames[index]['lua_manifest_present'] = True
+            elif suffix == 'obj-latch-count.txt':
+                frames[index]['cpp_latch_sidecar_present'] = True
             if (0 < meta.st_size <= maximum and
                     (suffix in VARIABLE_LENGTH or meta.st_size == maximum)):
                 frames[index]['valid_sized_files'] += 1
+                if suffix in LUA_SUFFIXES:
+                    frames[index]['lua_valid_sized_files'] += 1
+                else:
+                    frames[index]['cpp_valid_sized_files'] += 1
             else:
                 invalid_size += 1
 
@@ -140,7 +219,7 @@ def private_capture_progress(workspace):
     else:
         status = 'COMPLETE_FILE_SET_UNVERIFIED'
         action = 'RUN_FULL_PRIVATE_CAPTURE_INTEGRITY_AUDIT'
-    return {
+    return _with_stream_coverage({
         'status': status,
         'diagnostic_only': True,
         'nominal_frame_labels': labels,
@@ -160,7 +239,7 @@ def private_capture_progress(workspace):
         'active_gameplay_verified': False,
         'frame_sync_verified': False,
         'pixel_parity_eligible': False,
-    }
+    })
 
 
 def main(argv=None):

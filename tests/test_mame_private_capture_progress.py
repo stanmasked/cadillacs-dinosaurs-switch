@@ -38,6 +38,9 @@ class PrivateCaptureProgressTests(unittest.TestCase):
         self.assertEqual(out['present_files'], 0)
         self.assertEqual(out['missing_files'], 54)
         self.assertEqual(out['complete_metadata_frames'], 0)
+        self.assertEqual(out['stream_coverage']['neither_complete_size_only_frames'], 6)
+        self.assertEqual(out['frame_progress'][0]['lua_size_only_state'], 'ABSENT')
+        self.assertEqual(out['frame_progress'][0]['cpp_size_only_state'], 'ABSENT')
         self.assertEqual(out['next_local_investigation_code'],
                          'INSPECT_PRIVATE_MAME_STARTUP_LOG')
         self.assertFalse(out['capture_validated'])
@@ -61,6 +64,14 @@ class PrivateCaptureProgressTests(unittest.TestCase):
         self.assertEqual(out['complete_metadata_frames'], 1)
         self.assertEqual(out['frame_progress'][0]['lua_files_present'], 2)
         self.assertEqual(out['frame_progress'][0]['cpp_files_present'], 1)
+        self.assertEqual(out['frame_progress'][0]['lua_valid_sized_files'], 2)
+        self.assertEqual(out['frame_progress'][0]['cpp_valid_sized_files'], 1)
+        self.assertTrue(out['frame_progress'][0]['lua_manifest_present'])
+        self.assertFalse(out['frame_progress'][0]['cpp_latch_sidecar_present'])
+        self.assertEqual(out['frame_progress'][0]['cross_stream_size_only_state'],
+                         'NEITHER_COMPLETE_SIZE_ONLY')
+        self.assertEqual(
+            out['stream_coverage']['lua_manifest_with_incomplete_components_frames'], 1)
         self.assertEqual(out['frame_progress'][1]['valid_sized_files'], 9)
         self.assertEqual(out['frame_progress'][5]['present_files'], 0)
         self.assertFalse(out['capture_validated'])
@@ -72,11 +83,86 @@ class PrivateCaptureProgressTests(unittest.TestCase):
         self.assertEqual(out['status'], 'COMPLETE_FILE_SET_UNVERIFIED')
         self.assertEqual(out['present_files'], 54)
         self.assertEqual(out['complete_metadata_frames'], 6)
+        self.assertEqual(out['stream_coverage']['paired_complete_size_only_frames'], 6)
+        self.assertEqual(out['stream_coverage']['neither_complete_size_only_frames'], 0)
+        self.assertEqual(out['frame_progress'][5]['cross_stream_size_only_state'],
+                         'BOTH_COMPLETE_SIZE_ONLY')
         self.assertEqual(out['next_local_investigation_code'],
                          'RUN_FULL_PRIVATE_CAPTURE_INTEGRITY_AUDIT')
         for key in ('capture_validated', 'active_gameplay_verified',
                     'frame_sync_verified', 'pixel_parity_eligible'):
             self.assertFalse(out[key])
+
+    def test_only_lua_files_suggest_cpp_local_probe_inspection(self):
+        for frame in (900, 902, 904):
+            self.add_frame(frame, (
+                'gfxram-be.bin', 'cps-a-be.bin', 'cps-b-be.bin',
+                'palette-rgb24.bin', 'reference-rgb24.bin', 'manifest.json'))
+        out = private_capture_progress(self.workspace)
+        self.assertEqual(out['status'], 'INCOMPLETE_PRIVATE_CAPTURE_FILE_SET')
+        self.assertEqual(out['stream_coverage']['lua_complete_size_only_frames'], 3)
+        self.assertEqual(out['stream_coverage']['cpp_complete_size_only_frames'], 0)
+        self.assertEqual(out['stream_coverage']['paired_complete_size_only_frames'], 0)
+        self.assertEqual(out['frame_progress'][0]['cpp_size_only_state'], 'ABSENT')
+        self.assertEqual(out['frame_progress'][0]['cross_stream_size_only_state'],
+                         'LUA_COMPLETE_CPP_INCOMPLETE')
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_CPP_VIDEO_UPDATE_CAPTURE_HOOK')
+        self.assertFalse(out['capture_validated'])
+
+    def test_only_cpp_files_suggest_lua_local_hook_inspection(self):
+        for frame in (900, 902):
+            self.add_frame(frame, (
+                'render-regs-be.bin', 'buffered-obj-be.bin', 'obj-latch-count.txt'))
+        out = private_capture_progress(self.workspace)
+        self.assertEqual(out['stream_coverage']['cpp_complete_size_only_frames'], 2)
+        self.assertEqual(out['stream_coverage']['lua_complete_size_only_frames'], 0)
+        self.assertEqual(out['frame_progress'][1]['cross_stream_size_only_state'],
+                         'CPP_COMPLETE_LUA_INCOMPLETE')
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_LUA_FRAME_DONE_CAPTURE_HOOK')
+        self.assertFalse(out['frame_sync_verified'])
+
+    def test_mixed_complete_streams_identify_nominal_coverage_mismatch(self):
+        self.add_frame(900, (
+            'gfxram-be.bin', 'cps-a-be.bin', 'cps-b-be.bin',
+            'palette-rgb24.bin', 'reference-rgb24.bin', 'manifest.json'))
+        self.add_frame(902, (
+            'render-regs-be.bin', 'buffered-obj-be.bin', 'obj-latch-count.txt'))
+        self.add_frame(904)
+        out = private_capture_progress(self.workspace)
+        coverage = out['stream_coverage']
+        self.assertEqual(coverage['paired_complete_size_only_frames'], 1)
+        self.assertEqual(coverage['lua_complete_cpp_incomplete_frames'], 1)
+        self.assertEqual(coverage['cpp_complete_lua_incomplete_frames'], 1)
+        self.assertEqual(coverage['neither_complete_size_only_frames'], 3)
+        self.assertEqual(out['next_local_investigation_code'],
+                         'COMPARE_LUA_CPP_NOMINAL_FRAME_COVERAGE')
+
+    def test_latch_sidecar_present_without_cpp_pair_is_annotation_only(self):
+        self.add_frame(900, ('obj-latch-count.txt',))
+        out = private_capture_progress(self.workspace)
+        self.assertEqual(
+            out['stream_coverage']['cpp_latch_sidecar_with_incomplete_components_frames'], 1)
+        self.assertTrue(out['frame_progress'][0]['cpp_latch_sidecar_present'])
+        self.assertEqual(out['frame_progress'][0]['cpp_size_only_state'],
+                         'INCOMPLETE_SIZE_ONLY')
+        self.assertFalse(out['capture_validated'])
+
+    def test_bad_size_cannot_mark_lua_cpp_stream_complete(self):
+        self.add_frame(900)
+        (self.captures / 'frame-00000900.buffered-obj-be.bin').write_bytes(b'x')
+        out = private_capture_progress(self.workspace)
+        self.assertEqual(out['status'], 'INVALID_PRIVATE_CAPTURE_FILE_SIZES')
+        self.assertEqual(out['frame_progress'][0]['lua_size_only_state'],
+                         'COMPLETE_SIZE_ONLY')
+        self.assertEqual(out['frame_progress'][0]['cpp_size_only_state'],
+                         'INCOMPLETE_SIZE_ONLY')
+        self.assertEqual(out['frame_progress'][0]['cross_stream_size_only_state'],
+                         'LUA_COMPLETE_CPP_INCOMPLETE')
+        self.assertEqual(out['stream_coverage']['paired_complete_size_only_frames'], 0)
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_PRIVATE_CAPTURE_PARTIAL_WRITES')
 
     def test_bounded_size_error_does_not_open_private_frame(self):
         self.add_frame(900)
