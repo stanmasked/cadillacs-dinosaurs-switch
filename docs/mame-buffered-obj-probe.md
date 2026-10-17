@@ -513,3 +513,40 @@ ROMs, it still does not establish runtime authenticity of dino
 captures, real VBlank latch age, pixel-perfect images or physical
 Nintendo Switch gameplay. The previously approved cover and game
 assets remain separate and untouched.
+
+
+## Stage 61 — real MAME binary identity and compiled CPS-1 object checks
+
+A source tree passing compiler stages is not sufficient to declare
+successful emulation: the resulting executable must contain the
+expected dino driver, and our modified video translation unit must
+actually be compiled.
+
+The new standalone ROM-free tool tools/mame_dino_binary_verify.py
+validates two independent build signals:
+
+1. Run the built executable with -listxml dino, under a 90-second
+   timeout, without loading any game ROM. Parse no more than
+   2 MiB of XML and require MAME 0.289, exactly one runnable
+   dino driver, capcom/cps1.cpp as the reported driver source,
+   and an explicit description.
+2. Search the *freshly compiled MAME build tree* for exactly one
+   nonempty cps1_v.o Linux ELF object, emitted when the real
+   CPS-1 video source is compiled. Missing, duplicate, symlinked,
+   truncated or non-ELF objects are refused.
+
+The verifier reports only source paths and small metadata. Its
+result retains false claims for instrumentation runtime,
+original-game execution, frame synchronization and pixel parity.
+
+Ten ROM-free regression methods test strict XML identity,
+embedded DTD parsing, missing/incorrect ELF objects, duplicate
+objects, CLI errors and subprocess execution. Their subprocess
+is a synthetic XML producer, NOT an actual built MAME binary.
+
+**Rollout condition:** Stage 60's experimental full-tree build
+must complete before the new verifier is made a mandatory
+post-build step. A successful synthetic verifier test alone
+cannot establish a full original MAME build or working dino
+runtime. Full emulator compilation status must be kept separate
+from these additional automated safety checks.
