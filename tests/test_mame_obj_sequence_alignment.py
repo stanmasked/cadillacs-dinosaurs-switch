@@ -8,7 +8,7 @@ import unittest
 import zlib
 
 from tools.mame_obj_sequence_alignment import (
-    audit_sequence, read_frames, main, COMPONENTS,
+    audit_sequence, read_frames, main, COMPONENTS, CAPTURE_SCHEMA,
 )
 
 
@@ -36,6 +36,7 @@ def make_directory(directory, renders, lua, first=900, step=2):
             'game':'dino', 'frame':frame, 'capture_hook':'frame_done',
             'obj_latch':'NOT_CAPTURED', 'pixel_parity_eligible':False,
             'file_crc32':crc,
+            **CAPTURE_SCHEMA,
         }
         (directory/(stem+'.manifest.json')).write_text(json.dumps(manifest))
         (directory/(stem+'.cps-a-be.bin')).write_bytes(a)
@@ -169,6 +170,24 @@ class MultiframeAlignmentTests(unittest.TestCase):
                 path.write_text(json.dumps(wrong))
                 with self.subTest(key=key,value=value):
                     with self.assertRaisesRegex(ValueError,'provenance'):
+                        read_frames(directory,900,6,2)
+
+    def test_loader_rejects_bad_original_capture_geometry_or_endianness(self):
+        frames=series()
+        with tempfile.TemporaryDirectory() as name:
+            directory=Path(name)
+            make_directory(directory,frames,frames)
+            path=directory/'frame-00000900.manifest.json'
+            original=json.loads(path.read_text())
+            for field,value in (('reference_width', 512),
+                                ('raw_word_endianness', 'little'),
+                                ('gfxram_bytes', 0x40000),
+                                ('palette_bytes', True)):
+                modified=dict(original)
+                modified[field]=value
+                path.write_text(json.dumps(modified))
+                with self.subTest(field=field):
+                    with self.assertRaisesRegex(ValueError,'capture schema'):
                         read_frames(directory,900,6,2)
 
     def test_cli_writes_only_new_metadata_report(self):
