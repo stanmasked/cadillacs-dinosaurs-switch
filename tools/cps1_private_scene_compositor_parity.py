@@ -66,6 +66,12 @@ def synthetic_scene(name):
         'unmasked_sprite': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
         'rowscroll_flip': (('scroll1', 'scroll2', 'sprites', 'scroll3'), 2),
         'sprite_under_layers': (('sprites', 'scroll1', 'scroll2', 'scroll3'), 3),
+        'priority_transparent_bit': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
+        'priority_group_selective': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
+        'transparent_palette_unused': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
+        'palette_channels_shift': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
+        'scroll1_priority': (('scroll3', 'scroll2', 'scroll1', 'sprites'), 0),
+        'scroll1_unmasked': (('scroll3', 'scroll2', 'scroll1', 'sprites'), 0),
     }
     if name not in options:
         raise ValueError('Unsupported synthetic compositor parity case')
@@ -73,12 +79,33 @@ def synthetic_scene(name):
     palette = [[(i * 13 + 17) & 255, (i * 7 + 29) & 255,
                 (i * 3 + 41) & 255] for i in range(TOTAL_COLORS)]
     palette[0xbff] = [1, 2, 3]
-    # The first pair is byte-for-byte identical except for hardware
-    # priority masks, so the resulting difference isolates occlusion.
-    regs = ([0x7fff, 0x7fff, 0x7fff, 0x7fff]
-            if name == 'priority_sprite' else
-            [0, 0, 0, 0] if name == 'unmasked_sprite' else
-            [0x00a6, 0x0f0f, 0x1111, 0x8000])
+    # All paired stimuli below preserve VRAM, layer controls and OBJ.
+    # Pen 15 is transparent regardless of palette RGB or mask bit 15.
+    if name in ('priority_sprite', 'scroll1_priority'):
+        regs = [0x7fff] * 4
+    elif name == 'priority_transparent_bit':
+        regs = [0xffff] * 4
+    elif name == 'priority_group_selective':
+        regs = [0x5555, 0xaaaa, 0x0f0f, 0xf0f0]
+    elif name in ('unmasked_sprite', 'transparent_palette_unused',
+                  'palette_channels_shift', 'scroll1_unmasked'):
+        regs = [0] * 4
+    else:
+        regs = [0x00a6, 0x0f0f, 0x1111, 0x8000]
+
+    if name == 'transparent_palette_unused':
+        # Every palette entry addressed by a transparent tile/sprite pen,
+        # excluding the explicit backdrop at 0xbff, must be unobservable.
+        for i in range(15, TOTAL_COLORS, 16):
+            if i != 0xbff:
+                palette[i] = [253, 1, 199]
+    elif name == 'palette_channels_shift':
+        # Remap opaque palette entries with nontrivial independent RGB
+        # changes; keep the backdrop and transparent-pen colors intact.
+        for i in range(TOTAL_COLORS):
+            if i != 0xbff and i % 16 != 15:
+                r, g, b = palette[i]
+                palette[i] = [(r + 71) & 255, g ^ 0x80, (b + 23) & 255]
     # Visible sprites include two overlapping blocks, a flipped sprite,
     # and 16x16 cells crossing all four viewport edges.
     objs = [
@@ -109,8 +136,31 @@ def synthetic_scene(name):
     return scene
 
 
-CASES = ('priority_sprite', 'unmasked_sprite',
-         'rowscroll_flip', 'sprite_under_layers')
+CASES = (
+    'priority_sprite', 'unmasked_sprite',
+    'priority_transparent_bit', 'priority_group_selective',
+    'transparent_palette_unused', 'palette_channels_shift',
+    'scroll1_priority', 'scroll1_unmasked',
+    'rowscroll_flip', 'sprite_under_layers',
+)
+
+# Differential assertions are independent of native/Python pixel agreement.
+# Invariance means pen 15 is never opaque and never blocks a sprite.
+DIFFERENTIAL_EXPECTATIONS = {
+    'priority_mask_changed_rgba_pixels': True,
+    'priority_pen15_changed_rgba_pixels': False,
+    'priority_groups_changed_rgba_pixels': True,
+    'transparent_palette_changed_rgba_pixels': False,
+    'palette_remap_changed_rgba_pixels': True,
+    'scroll1_priority_changed_rgba_pixels': True,
+}
+
+
+def _different_pixels(left, right):
+    if len(left) != FRAME_BYTES or len(right) != FRAME_BYTES:
+        raise ValueError('Synthetic pair has inconsistent RGBA dimensions')
+    return sum(left[i:i+4] != right[i:i+4]
+               for i in range(0, FRAME_BYTES, 4))
 
 
 def _status(code):
@@ -163,8 +213,24 @@ def compare_private_native_scene_compositor(archive):
         scene_mem = ctypes.create_string_buffer(70000)
         frame_mem = ctypes.create_string_buffer(FRAME_BYTES)
         total_mismatches = 0
-        priority_frame = None
-        priority_mask_effect = 0
+        # Hold only three temporary in-RAM reference frames for pairwise
+        # tests; neither C frames nor original graphics are saved to disk.
+        baselines = {}
+        effects = {}
+        paired_cases = {
+            'unmasked_sprite': ('priority_sprite',
+                                'priority_mask_changed_rgba_pixels'),
+            'priority_transparent_bit': ('priority_sprite',
+                                         'priority_pen15_changed_rgba_pixels'),
+            'priority_group_selective': ('priority_sprite',
+                                         'priority_groups_changed_rgba_pixels'),
+            'transparent_palette_unused': ('unmasked_sprite',
+                                            'transparent_palette_changed_rgba_pixels'),
+            'palette_channels_shift': ('unmasked_sprite',
+                                       'palette_remap_changed_rgba_pixels'),
+            'scroll1_unmasked': ('scroll1_priority',
+                                 'scroll1_priority_changed_rgba_pixels'),
+        }
         cases = []
         for name in CASES:
             snap = synthetic_scene(name)
@@ -174,34 +240,37 @@ def compare_private_native_scene_compositor(archive):
             if not render(region, GFX_BYTES, scene_mem, frame_mem, FRAME_BYTES):
                 raise ValueError('Native synthetic CPS-1 frame render failed')
             actual = frame_mem.raw
-            if name == 'priority_sprite':
-                priority_frame = actual
-            if name == 'unmasked_sprite' and priority_frame is not None:
-                priority_mask_effect = sum(
-                    actual[i:i+4] != priority_frame[i:i+4]
-                    for i in range(0, FRAME_BYTES, 4))
+            if name in ('priority_sprite', 'unmasked_sprite',
+                        'scroll1_priority'):
+                baselines[name] = actual
+            if name in paired_cases:
+                baseline, metric = paired_cases[name]
+                effects[metric] = _different_pixels(baselines[baseline], actual)
             expected = render_frame(
                 gfx, [tuple(rgb) for rgb in snap['palette_rgb']], snap)
             if len(actual) != FRAME_BYTES or len(expected) != FRAME_BYTES:
                 raise ValueError('CPS-1 synthetic scene dimensions invalid')
-            mismatches = sum(
-                actual[i:i+4] != expected[i:i+4]
-                for i in range(0, FRAME_BYTES, 4))
+            mismatches = _different_pixels(actual, expected)
             total_mismatches += mismatches
             cases.append({
                 'scenario': name,
                 'compared_rgba_pixels': PIXELS,
                 'mismatching_rgba_pixels': mismatches,
             })
-    result = _status('PRIVATE_NATIVE_SCENE_PARITY_PASSED'
-                     if total_mismatches == 0 else
-                     'PRIVATE_NATIVE_SCENE_PARITY_MISMATCH')
+    covered = (set(effects) == set(DIFFERENTIAL_EXPECTATIONS) and
+               all((effects[key] > 0) == must_change
+                   for key, must_change in DIFFERENTIAL_EXPECTATIONS.items()))
+    result = _status(
+        'PRIVATE_NATIVE_SCENE_PARITY_MISMATCH' if total_mismatches else
+        'PRIVATE_NATIVE_SCENE_DIFFERENTIAL_COVERAGE_REFUSED' if not covered else
+        'PRIVATE_NATIVE_SCENE_PARITY_PASSED')
     result.update({
         'scene_size': [WIDTH, HEIGHT],
         'synthetic_cases': len(CASES),
         'pixels_compared': len(CASES) * PIXELS,
         'mismatching_pixels_total': total_mismatches,
-        'priority_mask_changed_rgba_pixels': priority_mask_effect,
+        **effects,
+        'differential_coverage_verified': covered,
         'scenario_results': cases,
     })
     return result
