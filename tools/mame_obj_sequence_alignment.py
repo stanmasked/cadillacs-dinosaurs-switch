@@ -18,11 +18,13 @@ try:
     from tools.mame_obj_transition_stability import transition_leave_one_out
     from tools.mame_obj_diagnostic_verdict import diagnostic_verdict
     from tools.mame_obj_buffer_evidence import obj_buffer_diagnostic
+    from tools.mame_obj_latch_evidence import latch_counter_diagnostic
 except ModuleNotFoundError:
     from mame_obj_transition_evidence import transition_diagnostic
     from mame_obj_transition_stability import transition_leave_one_out
     from mame_obj_diagnostic_verdict import diagnostic_verdict
     from mame_obj_buffer_evidence import obj_buffer_diagnostic
+    from mame_obj_latch_evidence import latch_counter_diagnostic
 
 REG_A = 'cps-a-be.bin'
 REG_B = 'cps-b-be.bin'
@@ -271,6 +273,8 @@ def main(argv=None):
     parser.add_argument('--frame-count', type=int, default=6)
     parser.add_argument('--frame-step', type=int, default=2)
     parser.add_argument('--max-offset-steps', type=int, default=2)
+    parser.add_argument('--latch-count-evidence', action='store_true',
+                        help='Require full private C++ OBJ latch-count sidecar series')
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     try:
@@ -285,6 +289,19 @@ def main(argv=None):
         # Their changes and end-marker slots cannot prove VBlank age.
         report['obj_buffer_evidence'] = obj_buffer_diagnostic(
             render, obj_frames, args.first_frame, args.frame_step)
+        if args.latch_count_evidence:
+            report['obj_latch_count_evidence'] = latch_counter_diagnostic(
+                args.capture_dir, args.first_frame, args.frame_count,
+                args.frame_step,
+                report['obj_buffer_evidence']['changed_obj_slots_per_interval'])
+        else:
+            report['obj_latch_count_evidence'] = {
+                'status': 'NOT_REQUESTED',
+                'diagnostic_only': True,
+                'obj_latch_age_verified': False,
+                'frame_sync_verified': False,
+                'pixel_parity_eligible': False,
+            }
         report['transition_stability'] = transition_leave_one_out(
             render, lua, args.frame_step, args.max_offset_steps)
         # Three diagnostics from the same register data, not independent

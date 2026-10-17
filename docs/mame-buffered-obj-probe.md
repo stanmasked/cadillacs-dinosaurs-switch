@@ -258,3 +258,65 @@ Stage 42 probe decoder. All **17/17** tests passed, including same-size
 register corruption, file swapping, null/invalid manifest CRCs, and
 the strict CLI flag. Full GitHub Actions test execution and live MAME
 C++/Lua synchronization remain unverified (issue #20).
+
+## Stage 56 — opt-in latch callback event counter (not hardware VBlank)
+
+The MAME 0.289 Git blob was independently re-checked against the exact
+upstream `mamedev/mame` tag `mame0289`: upstream
+`src/mame/capcom/cps1_v.cpp` still has SHA-1
+`c1b5e3867824d0d1877b981142db7741346d2c55`.
+Its `cps1_objram_latch(int state)` copies the mutable OBJ into
+`m_buffered_obj` on a true `state` call.
+
+The source generator now adds a diagnostic-only
+`std::atomic<unsigned long long>` **emulator callback counter** after
+the original memcpy statement (guarded to `dino`), and records a
+single snapshot of its value at the beginning of
+`screen_update_cps1`. Alongside the existing 2048-byte OBJ and
+128-byte render-register files it writes a third small text sidecar:
+
+```text
+frame-00000900.obj-latch-count.txt
+CPS1_DINO_LATCH_V1 401
+```
+
+The example number `401` is **illustrative only**, not a real MAME
+measurement. The probe checks for pre-existing output names of all
+three files before writing any new ones; the source is still generated
+only into a separate opt-in copy and never overwrites its input.
+
+The multi-frame CLI defaults to the original behavior, labeling
+`obj_latch_count_evidence.status=NOT_REQUESTED` when no optional
+counter trace was requested. With an actual private instrumented MAME
+run that emitted all sidecars, the user may opt in:
+
+```sh
+python3 tools/mame_obj_sequence_alignment.py cps1-captures \
+  --latch-count-evidence --out local_outputs/latch-audit.json
+```
+
+This option **requires every** corresponding
+`frame-XXXXXXXX.obj-latch-count.txt` file. The parser enforces a
+bounded 64-byte line, version tag, canonical unsigned decimal uint64
+and monotone counts without gaps. It rejects missing, malformed,
+oversized, reset/decreasing or overflowed values. It reports only
+nominal frame labels, per-sample counts, differences between samples,
+intervals with zero or multiple recorded callbacks, and intervals
+where sampled OBJ bytes changed despite zero observed callback count
+difference. The probe never publishes original OBJ bytes in JSON.
+
+**Critical scope:** A `state == true` emulator latch **callback**
+is not an independently observed physical VBlank signal. A counter
+difference over `--frame-step=2` says only that callbacks happened
+between two video-update samples; it cannot identify the timing of
+the displayed frame or whether a particular buffered OBJ came from
+the preceding original arcade VBlank. Counts are process-local and
+may reset if MAME restarts. No new artifact proves original dino
+pixel parity or native Switch gameplay.
+
+The original-source probe is verified by exact anchor/SHA matching
+and ROM-free unit tests, **not** by compiling a private modified MAME
+0.289 executable or reading authentic original-game captures. All
+new results remain `diagnostic_only:true`,
+`obj_latch_age_verified:false`, `frame_sync_verified:false`,
+`pixel_parity_eligible:false`.
