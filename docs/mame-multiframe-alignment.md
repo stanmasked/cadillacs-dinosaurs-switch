@@ -654,3 +654,60 @@ CRC32 and bounded reads do not independently authenticate the
 provenance, frame synchronization, VBlank-latched sprite buffer or
 pixel parity of any original game capture. No private capture
 payloads or original game files are committed.
+
+
+## Stage 55 — raw buffered OBJ temporal changes (private diagnostic only)
+
+The existing MAME 0.289 C++ probe writes a 2,048-byte
+`frame-XXXXXXXX.buffered-obj-be.bin` for the **video-update**
+callback. Earlier multi-frame alignment checked that file's size but
+did **not** analyze the temporal behavior of the latched OBJ buffer.
+
+The new `tools/mame_obj_buffer_evidence.py` computes **diagnostic
+metadata only**, using the 2,048-byte C++ OBJ probes and 128-byte
+register probes already checked and read by the CLI. The CLI passes
+`include_obj=True` to the existing reader; other Python callers still
+receive the original `(render, lua)` two-tuple unchanged.
+
+Under `obj_buffer_evidence`, the JSON report now includes:
+
+- The **SHA-256** of each private buffered OBJ sidecar, plus the count
+  of distinct buffer states. No sprite words or image content are
+  embedded in the JSON.
+- `changed_obj_slots_per_interval`: the number of 8-byte (four-word)
+  sprite entries differing between successive nominal frame labels.
+  These are raw changed *slots*, **not active sprite counts**.
+- `changed_register_words_per_interval`, observed from the very same
+  source-probe C++ register sidecars, for comparison without asserting
+  independence or causation.
+- The first detected sprite-list end-marker slot for every sample
+  (fourth 16-bit word's high byte = `ff`), or JSON `null` when no
+  marker is found. Missing markers are reported, **not silently
+  replaced** by an inferred sprite count.
+- Intervals where the buffered OBJ stays identical while the C++
+  register probes change, and counts of observed co-changes. Neither
+  phenomenon proves callback ordering, VBlank age or temporal parity.
+
+All samples must be exactly 2,048 OBJ bytes and 128 register bytes;
+the series must have 4–24 entries with valid frame labels and step
+bounds. Frame-step labels are only **nominal**. The standalone
+`obj_buffer_diagnostic()` rejects malformed or conflicting arrays.
+The CLI does not publish raw OBJ data, and all output includes:
+
+```json
+{
+  "diagnostic_only": true,
+  "obj_latch_age_verified": false,
+  "frame_sync_verified": false,
+  "pixel_parity_eligible": false
+}
+```
+
+The added ROM-free unit tests verify zero/unchanged buffers, first
+and last marker slots, raw changed-slot counts, hash identity,
+non-sync flags, malformed inputs, backward-compatible reader output,
+and real on-disk synthetic CLI reports with deliberate OBJ changes.
+They cannot confirm the actual CPS-1 sprite age. A real MAME 0.289
+capture with a controlled sprite-motion sequence, independent
+VBlank event evidence, and reference pixels is still required before
+making any parity claim.
