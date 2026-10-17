@@ -28,16 +28,25 @@ def validate_dino_xml(data):
         raise ValueError('MAME -listxml dino produced invalid XML') from exc
     if root.tag != 'mame' or not root.get('build', '').startswith('0.289'):
         raise ValueError('Unexpected MAME version or listxml root')
+    # Actual MAME -listxml includes additional *non-runnable* device
+    # entries after the selected driver. Reject other runnable games or
+    # malformed device entries, but do not mistake legitimate sound/video
+    # device metadata for a second original arcade game.
     machines = root.findall('machine')
-    if len(machines) != 1 or machines[0].get('name') != EXPECTED_DRIVER:
-        raise ValueError('Expected exactly one original dino driver')
-    machine = machines[0]
+    games = [m for m in machines if m.get('isdevice') != 'yes']
+    devices = [m for m in machines if m.get('isdevice') == 'yes']
+    if len(games) != 1 or games[0].get('name') != EXPECTED_DRIVER:
+        raise ValueError('Expected exactly one original dino game driver')
+    if any(d.get('runnable') != 'no' or not d.get('name') or
+           not d.get('sourcefile') for d in devices):
+        raise ValueError('Unexpected runnable or malformed MAME device')
+    machine = games[0]
     if (machine.get('sourcefile') != EXPECTED_SOURCE or
-            machine.get('runnable') != 'yes' or
-            machine.get('isbios') == 'yes' or
-            machine.get('isdevice') == 'yes'):
+            machine.get('runnable', 'yes') != 'yes' or
+            machine.get('isbios', 'no') != 'no'):
         raise ValueError('dino metadata missing original runnable CPS-1 driver')
-    if machine.find('description') is None:
+    description = machine.find('description')
+    if description is None or not (description.text or '').strip():
         raise ValueError('dino driver metadata lacks a description')
     return {
         'mame_build': root.get('build'),
@@ -45,6 +54,7 @@ def validate_dino_xml(data):
         'driver_sourcefile': EXPECTED_SOURCE,
         'runnable': True,
         'listxml_validated': True,
+        'auxiliary_device_entries': len(devices),
         'real_game_run': False,
         'frame_sync_verified': False,
         'pixel_parity_eligible': False,
