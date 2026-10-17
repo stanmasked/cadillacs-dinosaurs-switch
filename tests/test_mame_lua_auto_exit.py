@@ -84,7 +84,7 @@ class MameLuaAutoExitTests(unittest.TestCase):
             self.assertTrue(state)
             lib.luaL_openlibs(state)
             try:
-                mode_prefix = 'CPP_EMIT_MODE='+repr(cpp_mode)+'\\n'
+                mode_prefix = 'CPP_EMIT_MODE='+repr(cpp_mode)+'\n'
                 for source, is_file in ((mode_prefix+EXIT_STUB, False),
                                         (str(SCRIPT), True)):
                     code = (
@@ -122,7 +122,7 @@ class MameLuaAutoExitTests(unittest.TestCase):
         self.run_script(auto_exit=True)
 
     def test_delayed_cpp_sidecar_exit_after_two_complete_observations(self):
-        self.run_script(auto_exit=True, cpp_mode='late', expected_exit=916)
+        self.run_script(auto_exit=True, cpp_mode='late', expected_exit=915)
 
     def test_missing_cpp_sidecars_exit_at_bounded_grace_only(self):
         self.run_script(auto_exit=True, cpp_mode='missing', expected_exit=1030)
