@@ -13,6 +13,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 MAX_XML_BYTES = 2 * 1024 * 1024
+MAX_OBJECT_BYTES = 64 * 1024 * 1024
+PROBE_COMPILED_MARKER = b'CPS1_DINO_LATCH_V2'
 OBJECT_BASENAME = 'cps1_v.o'
 EXPECTED_DRIVER = 'dino'
 EXPECTED_SOURCE = 'capcom/cps1.cpp'
@@ -26,7 +28,9 @@ def validate_dino_xml(data):
         root = ET.fromstring(data)
     except ET.ParseError as exc:
         raise ValueError('MAME -listxml dino produced invalid XML') from exc
-    if root.tag != 'mame' or not root.get('build', '').startswith('0.289'):
+    build = root.get('build', '')
+    if (root.tag != 'mame' or
+            not (build == '0.289' or build.startswith('0.289 '))):
         raise ValueError('Unexpected MAME version or listxml root')
     # Actual MAME -listxml includes additional *non-runnable* device
     # entries after the selected driver. Reject other runnable games or
@@ -71,13 +75,18 @@ def verify_compiled_cps1_video_object(directory):
     if len(objects) != 1:
         raise ValueError('Expected exactly one real cps1_v.o in MAME build tree')
     path = objects[0]
-    if path.stat().st_size < 64:
-        raise ValueError('Compiled cps1_v.o is empty or truncated')
+    size = path.stat().st_size
+    if size < 64 or size > MAX_OBJECT_BYTES:
+        raise ValueError('Compiled cps1_v.o is truncated or oversized')
     with path.open('rb') as file:
-        if file.read(4) != b'\x7fELF':
-            raise ValueError('Compiled cps1_v.o is not a Linux ELF object')
+        data = file.read(MAX_OBJECT_BYTES + 1)
+    if not data.startswith(b'\x7fELF'):
+        raise ValueError('Compiled cps1_v.o is not a Linux ELF object')
+    if PROBE_COMPILED_MARKER not in data:
+        raise ValueError('Compiled cps1_v.o lacks the generated latch V2 format')
     return {
         'compiled_cps1_video_object': True,
+        'compiled_instrumented_latch_v2_format': True,
         'compiled_cps1_video_object_bytes': path.stat().st_size,
         'compiled_cps1_video_object_relative_path': path.relative_to(root).as_posix(),
         'instrumentation_runtime_verified': False,
