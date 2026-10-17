@@ -14,6 +14,7 @@
 #include "cps1_scene.h"
 #include "cps1_sequence.h"
 #include "dino_arena.h"
+#include "dino_switch_sound.h"
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
        GRID_COLS = 16, GRID_ROWS = 8, PAGE_TILES = GRID_COLS * GRID_ROWS,
@@ -440,6 +441,9 @@ int main(int argc, char **argv) {
     bool arena_active=(gfx==NULL);
     DinoArena arena;
     dino_arena_reset(&arena);
+    /* Optional platform audio. A service failure leaves the arena fully
+     * playable with silence; never tie simulation to audio scheduling. */
+    (void)dino_switch_sound_open();
     uint32_t pending_actions=0;
     u64 arena_clock_carry=0;
     if (gfx) cache_page(gfx,page);
@@ -478,6 +482,9 @@ int main(int argc, char **argv) {
             for (uint32_t i=0;i<arena_ticks;++i) {
                 dino_arena_step(&arena,held_arena,
                                 i==0 ? pending_actions : 0);
+                /* Consume the event during this exact tick, before the
+                 * simulation clears it on the following tick. */
+                dino_switch_sound_step(arena.events);
             }
             if (arena_ticks) pending_actions=0;
             clock_carry=0;
@@ -550,6 +557,7 @@ int main(int argc, char **argv) {
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
     }
+    dino_switch_sound_close();
     framebufferClose(&fb);
     free(scene_rgba);
     free(scene);
