@@ -1574,3 +1574,33 @@ continue to be omitted.
 These changes improve the accuracy and privacy of local diagnosis.
 They do **not** prove a successful real MAME ROM audit, game boot,
 VBlank latch, gameplay pixels, or Nintendo Switch framebuffer parity.
+
+## Stage 111 — verify the QSound ROM SHA-1 as well as CRC32
+
+The exact MAME 0.289 QSound HLE device definition in
+[`src/devices/sound/qsoundhle.cpp`](https://github.com/mamedev/mame/blob/mame0289/src/devices/sound/qsoundhle.cpp)
+pins both `CRC(d6cf5ef5)` and
+`SHA1(555f50fe5cdf127619da7d854c03f4a244a0c501)` for
+the complete `dl-1425.bin` ROM (24,576 bytes including the
+`ROM_IGNORE` portion).
+
+The user-authorized local ROM payload auditor now independently
+streams the complete device member through **both CRC32 and SHA-1**.
+A matching device CRC header and even a matching CRC32 recomputation
+will no longer certify the QSound file when its SHA-1 differs from
+the fixed MAME catalog. The private calculated SHA-1 digest is held
+only in process memory; the safe JSON report publishes only
+`qsound_sha1_checked_locally` and
+`qsound_sha1_matches_pinned_mame_catalog` booleans.
+Missing or mismatching sound members cannot produce a catalog-match
+status. This does not alter the original game ROM byte data.
+
+New ROM-free regressions cover a **CRC-correct but SHA-1-mismatched**
+synthetic QSound file and rejection of malformed SHA-1 catalog
+entries before ZIP content reads. The original 28 game entries
+continue to receive the already implemented bounded independent
+CRC32/ZIP verification; this stage does not claim SHA-1 checks for
+those entries or replace genuine MAME `-verifyroms`.
+
+No commercial ROM is distributed and no original gameplay, VBlank,
+sound parity or Switch framebuffer comparison is implied.
