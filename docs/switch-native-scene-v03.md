@@ -133,3 +133,37 @@ runtime palette, tilemap VRAM, row-scroll timings, sprite buffering,
 VBlank, MAME game execution or Nintendo Switch hardware pixel parity.
 Original ROM contents and any raw derived sprites/scenes are not
 included in the public repository or CI.
+
+## Stage 100 — compare the actual native Switch compositor with controlled video state
+
+The first private **scene-level** parity tool is now available:
+
+~~~sh
+python3 tools/cps1_private_scene_compositor_parity.py /private/owned/dino.zip
+~~~
+
+It reads the eight original, privately held CPS-1 graphics ROM lanes
+**locally and in RAM**, builds the same `source/cps1_scene.c` plus
+`source/cps1_tile.c` used in the technical Nintendo Switch NRO as a
+temporary host library, and compares complete **384×224 RGBA frames**
+with the separately implemented Python `tools/cps1_frame.py` compositor.
+Four completely **synthetic control states** exercise layer ordering,
+Scroll1/2/3 tilemap placement, RGB palette pages and sprite colors,
+priority-mask sprite occlusion, transparency, horizontal/vertical flips,
+composite and overlapping sprites, viewport clipping and Scroll2
+rowscroll near a 1024-entry wrap.
+
+The original game contributes **only its graphics tile data**, never
+original video state, palette RAM or an emulator-captured frame.
+No private game pixels, screenshots, ROM contents, raw CRC/SHA values,
+user paths or generated RGBA frames are written out or sent to GitHub.
+The JSON includes fixed statuses and per-scenario aggregate mismatch
+counts only; public Actions run on fabricated eight-lane ZIP fixtures.
+An intentionally corrupted reference renderer is required to fail,
+guarding against accidental always-pass comparisons.
+
+Successful parity therefore supports *internal C/Python compositing
+consistency for these controlled scenes*, **not** reproduction of an
+original `dino` frame, MAME gameplay/VBlank accuracy, real palette
+history or Switch hardware framebuffer equivalence. The current
+MAME 0.289 ROM audit limitations remain unchanged.
