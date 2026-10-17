@@ -25,11 +25,36 @@ void dino_arena_reset(DinoArena *a) {
     };
 }
 
+/* Read-only presentation state: KO > hit reaction > strike >
+ * aerial motion > movement > idle. Do not conflate graphical state
+ * with collision, AI or combat decisions. */
+DinoArenaPose dino_arena_player_pose(const DinoArena *a) {
+    if (!a || !a->player_hp) return DINO_POSE_KO;
+    if (a->player_hitstun) return DINO_POSE_HURT;
+    if (a->attack_frames) return DINO_POSE_ATTACK;
+    if (a->z || a->vz) return DINO_POSE_JUMP;
+    if (a->player_moving) return DINO_POSE_WALK;
+    return DINO_POSE_IDLE;
+}
+DinoArenaPose dino_arena_dummy_pose(const DinoArena *a) {
+    if (!a || !a->dummy_hp) return DINO_POSE_KO;
+    if (a->dummy_hitstun) return DINO_POSE_HURT;
+    if (a->dummy_windup) return DINO_POSE_WINDUP;
+    if (a->dummy_attack_frames) return DINO_POSE_ATTACK;
+    if (a->dummy_moving) return DINO_POSE_WALK;
+    return DINO_POSE_IDLE;
+}
+uint8_t dino_arena_pose_phase(const DinoArena *a) {
+    return a ? (uint8_t)((a->ticks/6u)&1u) : 0u;
+}
+
 void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if (!a) return;
     held &= (DINO_ARENA_LEFT|DINO_ARENA_RIGHT|
              DINO_ARENA_UP|DINO_ARENA_DOWN);
     pressed &= (DINO_ARENA_ATTACK|DINO_ARENA_JUMP|DINO_ARENA_TOGGLE_SPAR);
+    a->player_moving=0;
+    a->dummy_moving=0;
 
     if (pressed&DINO_ARENA_TOGGLE_SPAR) {
         a->sparring=(uint8_t)!a->sparring;
@@ -73,6 +98,7 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
             if (a->x>a->dummy_x && target_x<a->dummy_x+14)
                 target_x=a->dummy_x+14;
         }
+        a->player_moving=(uint8_t)(a->x!=target_x || a->y!=target_y);
         a->x=clamp(target_x,16,DINO_ARENA_WIDTH-16);
         a->y=target_y;
         if (dx) a->facing_right=(uint8_t)(dx>0);
@@ -101,6 +127,8 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     }
 
     if (a->sparring && a->dummy_hp && a->player_hp) {
+        const int32_t dummy_x_before=a->dummy_x;
+        const int32_t dummy_y_before=a->dummy_y;
         a->dummy_facing_right=(uint8_t)(a->x>a->dummy_x);
         if (stunned || a->dummy_hitstun) {
             a->dummy_windup=0;
@@ -139,6 +167,8 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
                 a->dummy_windup=12;
             }
         }
+        a->dummy_moving=(uint8_t)(a->dummy_x!=dummy_x_before ||
+                                   a->dummy_y!=dummy_y_before);
     }
     ++a->ticks;
 }
