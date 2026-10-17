@@ -167,8 +167,14 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         path.write_bytes(contents)
         with self.assertRaises(zipfile.BadZipFile):
             self._audit()
+        # CLI must see the same synthetic catalog as the direct call;
+        # otherwise a mismatch against the genuine 28-file catalog
+        # prevents the deliberately corrupted member from being opened.
         text = io.StringIO()
-        with contextlib.redirect_stderr(text):
+        with patch.object(audit, 'EXPECTED', self.game_catalog), \
+             patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
+             patch.object(audit, 'DEVICE_HEADER', self.sound_header), \
+             contextlib.redirect_stderr(text):
             self.assertEqual(audit.main([
                 '--rom-dir', str(self.root),
                 '--verify-private-payloads']), 2)
