@@ -1257,3 +1257,15 @@ Synthetic Lua 5.4 MAME API regressions create artificial C++ files
 covering immediate completion, delayed final sidecar, permanently
 missing sidecars and incorrect final sidecar size. No commercial ROM
 or game frame is used in the public repository.
+
+
+## Stage 93 — local Lua auto-exit markers without exposing MAME logs
+
+Stage 92 may end the emulator once two subsequent frame_done callbacks find all 54 Lua/C++ capture entries at acceptable sizes, or after the 120-frame grace limit if sidecars never become ready. Stage 93 distinguishes those Lua *reported reasons* in the existing private session log with exact fixed lines:
+
+- `CPS1_DINO_AUTO_EXIT_V1_READY_54_SIZE_ONLY` — size-ready condition observed twice;
+- `CPS1_DINO_AUTO_EXIT_V1_GRACE_INCOMPLETE_SIZE_ONLY` — grace interval exhausted.
+
+The opt-in `tools/mame_private_auto_exit_evidence.py` scanner observes the local game log only after MAME has ended, only when the operator requested `--auto-exit-after-capture`. It limits scanning to 16 MiB, rejects symlinks, hardlinks and changing file metadata, and requires a unique, complete marker line. It returns safe, enumerated status codes for ready, grace, ambiguous, absent or unsafe logs. It never includes local paths, ROM names, session identifiers, hashes, original frame bytes or any raw log text in its output. The success report stores `auto_exit_log_observation` as safe diagnostic metadata; the opt-in `--diagnose-failed-capture` stderr JSON can also include the same code after a failed game run. Default manual sessions do not read the private log.
+
+**Caution:** This is the Lua callback's logged message, not an independent verification of why the MAME process ended, original-game authenticity, VBlank timing, buffered OBJ age, file-content integrity or Nintendo Switch parity. Even the ready code cannot bypass strict private CRC/FNV/ROM stability checks or turn a failed/incomplete capture into success. Public tests use only synthetic log lines and fake game processes; no original ROM or private game log is uploaded to GitHub.
