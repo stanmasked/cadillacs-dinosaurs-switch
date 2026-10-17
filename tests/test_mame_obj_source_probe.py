@@ -102,7 +102,7 @@ class MameObjSourceProbeTests(unittest.TestCase):
         self.assertIn('m_cps_b_regs[index - 32]', patched)
         self.assertIn('index < 64', patched)
         self.assertIn('std::FILE *existing_registers', patched)
-        self.assertIn('if (existing || existing_registers)', patched)
+        self.assertIn('if (existing || existing_registers || existing_latch)', patched)
         self.assertLess(patched.index('m_buffered_obj[index]'),
                         patched.index('m_cps_a_regs[index]'))
         self.assertLess(patched.index('m_cps_b_regs[index - 32]'),
