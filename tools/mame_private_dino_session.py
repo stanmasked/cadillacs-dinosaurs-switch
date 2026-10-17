@@ -35,6 +35,7 @@ try:
     from tools.mame_private_rom_content import (snapshot_private_dino_rom_content,
                                                 require_stable_private_dino_rom_content)
     from tools.mame_private_cli_errors import write_private_failure
+    from tools.mame_private_capture_failure_summary import safe_capture_failure_report
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -51,6 +52,7 @@ except ModuleNotFoundError:
     from mame_private_rom_content import (snapshot_private_dino_rom_content,
                                           require_stable_private_dino_rom_content)
     from mame_private_cli_errors import write_private_failure
+    from mame_private_capture_failure_summary import safe_capture_failure_report
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -471,6 +473,9 @@ def main(argv=None):
     p.add_argument('--workspace', type=Path,
                    help='Required for game capture and filesystem-only preflight')
     p.add_argument('--timeout-seconds', type=int, default=1800)
+    p.add_argument(
+        '--diagnose-failed-capture', action='store_true',
+        help='On failed game launch, show only safe filename/size coverage counts')
     preflight_options = p.add_mutually_exclusive_group()
     preflight_options.add_argument(
         '--preflight-only', action='store_true',
@@ -489,6 +494,10 @@ def main(argv=None):
         help='Audit original dino ROMs using local MAME, then capture only if audit passes')
     args = p.parse_args(argv)
     try:
+        if args.diagnose_failed_capture and (
+                args.preflight_only or args.verify_build_only or
+                args.check_launch_readiness or args.verify_private_romset_only):
+            raise ValueError('Invalid private diagnostics and preflight mode combination')
         result = execute_private_capture(
             args.mame, args.mame_tree, args.rom_dir, args.workspace,
             timeout_seconds=args.timeout_seconds,
@@ -505,7 +514,13 @@ def main(argv=None):
         # disclose absolute private ROM/capture paths in str(exc).
         # Avoid printing exception text or a traceback to the console.
         # Keep local output files for investigation when they exist.
-        write_private_failure(exc, sys.stderr)
+        if args.diagnose_failed_capture:
+            # One self-contained safe JSON object only: no filesystem
+            # errors, filenames, ROM bytes or capture raw values on stderr.
+            print(json.dumps(safe_capture_failure_report(
+                exc, args.workspace, include_progress=True)), file=sys.stderr)
+        else:
+            write_private_failure(exc, sys.stderr)
         return 2
 
 

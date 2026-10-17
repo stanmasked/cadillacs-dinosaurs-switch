@@ -1124,3 +1124,52 @@ nor prove game ownership, official provenance, physical CPS-1 VBlank,
 buffered OBJ sprite age or Switch image parity. Public CI exercises
 only fabricated synthetic byte strings and never checks genuine
 commercial game files or uploads any game material.
+
+
+## Stage 90 — safe inline metadata diagnosis after the first failed local capture
+
+Before Stage 90 a local `dino` session failure gave only a fixed refusal
+reason, requiring a second manual
+`tools/mame_private_capture_progress.py --workspace ...` invocation
+to learn which of the six nominal frame groups was incomplete.
+The private launcher now offers an **opt-in** single-command
+read-only error summary:
+
+```sh
+python3 tools/mame_private_dino_session.py \
+  --mame /private/mame0289/dino \
+  --mame-tree /private/mame0289 \
+  --rom-dir /private/owned-mame-roms \
+  --workspace /private/new-empty-dino-workspace \
+  --verify-private-romset-before-capture \
+  --diagnose-failed-capture
+```
+
+On success the existing full verified-private-diagnostic path is
+unchanged. On failure, one machine-readable stderr JSON object
+contains the existing **safe fixed reason code** plus an optional
+`capture_progress` section. That section is derived from the
+Stage 81–84 metadata-only progress scanner and then projected through
+strictly enumerated fixed status/action codes, bounded aggregate
+counts and six nominal Lua/C++ name-and-size availability rows.
+Unknown freeform keys, exception messages, local ROM paths, original
+filenames, SHA digests, and session IDs are **never copied out**.
+If the progress scan itself refuses a symlink, invalid workspace,
+unexpected shape or oversized directory, the entire progress section
+falls back to fixed `PRIVATE_CAPTURE_PROGRESS_REFUSED`. A failed
+emulator subprocess with an empty capture directory reports zeros and
+the safe MAME startup-log investigation code.
+
+The additional diagnostic is only allowed with a real game-capture
+attempt, never with ROM-free preflight, build verification or standalone
+ROM verification. It never opens captured file **bytes**, ROM bytes,
+MAME logs or manifests; these remain in the isolated workspace.
+The opt-in guarded launcher still hashes user-owned ROM bytes
+privately for Stage 89 **before** this postmortem step when requested.
+Even a complete metadata-only file set never proves real gameplay,
+verified VBlank order or Switch pixel parity.
+
+ROM-free tests exercise interrupted original-MAME-style processes,
+absent/partial/synthetic-complete captures, unsafe symlinks and paths,
+malicious extra text fields, broken progress scans, unchanged CLI default
+and incompatible option combinations.
