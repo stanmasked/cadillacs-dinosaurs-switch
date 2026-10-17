@@ -1051,3 +1051,39 @@ remain local, outside public GitHub CI.
 
 Synthetic tests use fabricated miniature archive signatures and fake
 game filenames only. Approved cover artwork is untouched.
+
+
+## Stage 88 — guard original ROM entry metadata from audit through report publication
+
+A successful MAME `-verifyroms` exit followed by a later `dino` game
+launch did not previously detect when a local ROM archive was swapped or
+edited **between** those two subprocesses. Added a bounded, byte-free
+ROM metadata snapshot to the guarded Stage 86 launch path.
+
+`tools/mame_private_rom_metadata.py` inspects ordinary `dino.zip`
+archive metadata or the bounded top-level unpacked `dino/` entry set.
+It retains private filenames, inode identities, file lengths, link counts,
+modification/change timestamps and file types **in process memory only**.
+It does not open the ROM contents, compute or print ROM hashes, or store
+metadata in the final report. Links, replaced files, added/removed
+unpacked entries or nested unpacked directories are rejected in this
+guarded mode. A new snapshot is taken **before** the MAME ROM audit and
+compared after the audit (before allocating any game capture files),
+after the real local game process, and immediately before publication
+of the final private diagnostic report.
+
+If metadata differs, the operation fails closed, keeps the private audit
+and capture logs for local examination, and **never publishes a success
+report**. The protected-path private report fields
+`private_rom_entry_metadata_stable_during_capture` (true for completed
+guarded sessions, false for unguarded sessions) and
+`private_rom_metadata_stable_after_audit` (verify-only mode) are only
+statements about filesystem metadata; **no ROM bytes are hashed by
+Python**. This is not an atomic filesystem lock, tamperproof guarantee,
+proof of identical input bytes, independently authenticated game, physical
+CPS-1 VBlank or Nintendo Switch pixel parity.
+
+Synthetic regression tests cover overwritten ROM archives during MAME
+verification and during simulated gameplay, unchanged guarded sessions,
+and deliberately unguarded captures without false stability claims.
+The code and CI remain ROM-free; no actual commercial game runs on GitHub.

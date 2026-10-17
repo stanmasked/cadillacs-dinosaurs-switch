@@ -82,6 +82,7 @@ class GuardedCaptureTests(unittest.TestCase):
         self.assertIn('-noreadconfig', seen[1][0])
         self.assertEqual(len(seen[1][1]), 32)
         self.assertTrue(out['local_mame_verifyroms_exit_zero_before_capture'])
+        self.assertTrue(out['private_rom_entry_metadata_stable_during_capture'])
         self.assertFalse(out['original_game_authenticity_verified'])
         self.assertFalse(out['frame_sync_verified'])
         private_report = json.loads((self.workspace / REPORT_NAME).read_text())
@@ -91,6 +92,47 @@ class GuardedCaptureTests(unittest.TestCase):
         self.assertEqual((self.workspace / VERIFY_LOG_NAME).read_bytes(),
                          b'FAKE_PRIVATE_MAME_AUDIT')
         self.assertTrue((self.workspace / LOG_NAME).is_file())
+
+    def test_rom_mutation_during_verification_never_starts_game(self):
+        calls = []
+        def run(args, **kwargs):
+            calls.append(args)
+            (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_CHANGED_DURING_AUDIT')
+            return subprocess.CompletedProcess(args, 0)
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.fake_build), patch(
+                   'tools.mame_private_dino_session.subprocess.run',
+                   side_effect=run):
+            with self.assertRaisesRegex(ValueError, 'metadata changed'):
+                execute_private_capture(
+                    self.mame, self.tree, self.roms, self.workspace,
+                    verify_private_romset_before_capture=True)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('-verifyroms', calls[0])
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+
+    def test_rom_mutation_during_game_never_publishes_final_report(self):
+        calls = []
+        def run(args, **kwargs):
+            calls.append(args)
+            if '-verifyroms' in args:
+                return subprocess.CompletedProcess(args, 0)
+            result = self.fake_game(
+                args, kwargs['env']['CPS1_DINO_CAPTURE_SESSION'])
+            (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_CHANGED_DURING_GAME')
+            return result
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.fake_build), patch(
+                   'tools.mame_private_dino_session.subprocess.run',
+                   side_effect=run):
+            with self.assertRaisesRegex(ValueError, 'metadata changed'):
+                execute_private_capture(
+                    self.mame, self.tree, self.roms, self.workspace,
+                    verify_private_romset_before_capture=True)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertTrue((self.workspace / CAPTURE_DIR_NAME).exists())
 
     def test_nonzero_audit_never_starts_game(self):
         seen = []
@@ -181,6 +223,7 @@ class GuardedCaptureTests(unittest.TestCase):
             out = execute_private_capture(
                 self.mame, self.tree, self.roms, self.workspace)
         self.assertFalse(out['local_mame_verifyroms_exit_zero_before_capture'])
+        self.assertFalse(out['private_rom_entry_metadata_stable_during_capture'])
         self.assertFalse(json.loads((self.workspace / REPORT_NAME).read_text())[
             'private_capture_completion']['local_mame_verifyroms_exit_zero_before_capture'])
         self.assertFalse((self.workspace / VERIFY_LOG_NAME).exists())
