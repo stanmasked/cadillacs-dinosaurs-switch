@@ -23,11 +23,15 @@ try:
     from tools.mame_obj_sequence_alignment import main as alignment_main
     from tools.mame_reference_activity import reference_activity_diagnostic
     from tools.mame_multistream_interval_evidence import multistream_interval_evidence
+    from tools.mame_private_capture_stability import (private_capture_file_snapshot,
+                                                     require_stable_private_capture)
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
     from mame_reference_activity import reference_activity_diagnostic
     from mame_multistream_interval_evidence import multistream_interval_evidence
+    from mame_private_capture_stability import (private_capture_file_snapshot,
+                                               require_stable_private_capture)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -133,6 +137,12 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
     if proc.returncode != 0:
         raise ValueError('Local MAME exited unsuccessfully; check private log locally')
 
+    # First require the complete local 54-file Lua/C++ capture set.
+    # This stays entirely in process memory and stores no original-game
+    # SHA-256 digests in any eventual public or private report.
+    snapshot = private_capture_file_snapshot(
+        capture_dir, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+
     # The multi-frame CLI writes JSON before the later RGB and
     # multi-stream checks. Keep its result in a PRIVATE TEMPORARY
     # DIRECTORY so a late failure never leaves a final-looking report.
@@ -177,6 +187,8 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             result, activity, FIRST_FRAME, FRAME_STEP, FRAME_COUNT)
         result['reference_activity'] = activity
         result['multistream_interval_evidence'] = intervals
+        result['private_capture_source_stability'] = require_stable_private_capture(
+            capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
         result['private_capture_completion'] = {
             'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
             'full_check_sequence_completed': True,
@@ -197,6 +209,10 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             output.flush()
             os.fsync(output.fileno())
         os.chmod(complete, 0o600)
+        # Recheck after JSON formatting and fsync, as close as possible to
+        # publishing. This is not a filesystem lock or proof of origin.
+        require_stable_private_capture(
+            capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
         # Unlike os.replace(), hard-link creation refuses a concurrent
         # existing target; the finalized report can never be clobbered.
         os.link(complete, report)

@@ -193,6 +193,11 @@ class PrivateDinoSessionTests(unittest.TestCase):
             'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY')
         self.assertTrue(
             raw['private_capture_completion']['full_check_sequence_completed'])
+        self.assertEqual(
+            raw['private_capture_source_stability']['source_files_checked'], 54)
+        self.assertTrue(
+            raw['private_capture_source_stability']['source_files_unchanged_during_audit'])
+        self.assertNotIn('source_file_sha256', raw['private_capture_source_stability'])
         self.assertFalse(
             raw['private_capture_completion']['pixel_parity_eligible'])
         self.assertEqual(
@@ -211,8 +216,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_successful_process_without_complete_capture_fails_closed(self):
-        report, _ = None, None
-        with self.assertRaisesRegex(ValueError, 'incomplete or invalid'):
+        with self.assertRaisesRegex(ValueError, 'missing or unexpected files'):
             self.run_local(process=lambda args, **kwargs:
                            subprocess.CompletedProcess(args, 0))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
@@ -261,6 +265,54 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
 
+    def test_game_capture_mutation_during_interval_analysis_is_rejected(self):
+        from tools.mame_multistream_interval_evidence import multistream_interval_evidence
+        def mutate_after_valid_intervals(*args, **kwargs):
+            result = multistream_interval_evidence(*args, **kwargs)
+            target = (self.workspace / CAPTURE_DIR_NAME /
+                      'frame-00000904.buffered-obj-be.bin')
+            data = bytearray(target.read_bytes())
+            data[33] ^= 0x02
+            target.write_bytes(data)
+            return result
+        with patch('tools.mame_private_dino_session.multistream_interval_evidence',
+                   side_effect=mutate_after_valid_intervals):
+            with self.assertRaisesRegex(ValueError, 'changed during the audit'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+
+    def test_edit_after_json_serialization_before_publication_fails_closed(self):
+        import json as json_module
+        real_dump = json_module.dump
+        def write_then_change_input(obj, output, **kwargs):
+            real_dump(obj, output, **kwargs)
+            target = (self.workspace / CAPTURE_DIR_NAME /
+                      'frame-00000906.reference-rgb24.bin')
+            blob = bytearray(target.read_bytes())
+            blob[-1] ^= 0x08
+            target.write_bytes(blob)
+        with patch('tools.mame_private_dino_session.json.dump',
+                   side_effect=write_then_change_input):
+            with self.assertRaisesRegex(ValueError, 'changed during the audit'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+
+    def test_existing_uncounted_file_prevents_complete_audit(self):
+        def make_game_with_unexpected_file(args, **kwargs):
+            output = self.populate_fake_private_capture(args)
+            (self.workspace / CAPTURE_DIR_NAME /
+             'untracked-private-image.png').write_bytes(b'never serialize')
+            return output
+        with self.assertRaisesRegex(ValueError, 'missing or unexpected'):
+            self.run_local(process=make_game_with_unexpected_file)
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+
     def test_malformed_audit_json_does_not_publish_report(self):
         def write_malformed(argv):
             out = Path(argv[argv.index('--out') + 1])
@@ -270,7 +322,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
                    side_effect=write_malformed):
             with self.assertRaises(json.JSONDecodeError):
                 self.run_local(process=lambda args, **kw:
-                               subprocess.CompletedProcess(args, 0))
+                               self.populate_fake_private_capture(args))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
@@ -283,7 +335,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
                    side_effect=write_then_fail):
             with self.assertRaisesRegex(ValueError, 'incomplete or invalid'):
                 self.run_local(process=lambda args, **kw:
-                               subprocess.CompletedProcess(args, 0))
+                               self.populate_fake_private_capture(args))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))

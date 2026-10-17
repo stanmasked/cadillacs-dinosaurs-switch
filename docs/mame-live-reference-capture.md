@@ -367,3 +367,58 @@ analyzer output, a final filename collision after the
 emulator has run, and temporary-directory cleanup, while
 the prior end-to-end session test checks that all required
 sections appear only on a complete synthetic pass.
+
+
+## Stage 69 — private capture source stability across the audit
+
+The Stage 68 publication gate already protects the **final** JSON
+from being created before all checks complete. Yet a local raw
+capture could be edited, replaced or supplemented during the
+multi-step CRC/FNV/RGB inspection, leaving a completed JSON
+based on **outdated** source observations.
+
+Stage 69 adds `tools/mame_private_capture_stability.py`. Immediately
+after successful local MAME process exit and **before** any audit
+analysis, the private launcher requires exactly **54 regular files**:
+6 nominal frame labels (900, 902, 904, 906, 908, 910) and 9 inputs
+per frame (5 Lua binaries, 1 CRC32 manifest, 2 C++ binary probes,
+1 V2 latch-count sidecar). Missing or unexpected files, directories,
+symlinks and hardlinked files are rejected. File sizes are fixed or
+strictly bounded per the established capture schema.
+
+The checker hashes each source file with streamed SHA-256, retains
+its inode, device, byte length and nanosecond modification/change
+times **only in process memory**, and requires exact equality after
+the cross-stream audit. It scans again after the completed JSON is
+formatted and fsynced, **immediately before exclusive publication**
+under the final report name. Any file addition, deletion, inode
+replacement, same-length change or changed checksum rejects the
+session without publishing a final report. The staged temporary
+report is cleaned up. The original private files are never
+overwritten or uploaded.
+
+A successful final JSON includes only
+`private_capture_source_stability` metadata with
+`source_files_checked:54` and
+`source_files_unchanged_during_audit:true`, explicitly describing
+local SHA-256 source comparison **without disclosing the hashes**.
+This supplements, rather than replaces, Lua CRC32 and the C++
+OBJ/V2 FNV-1a binding.
+
+The check is a **best-effort consistency snapshot, not a filesystem
+lock, cryptographic proof of authentic ROM content or an independent
+frame-time reference**. Files could still be changed after report
+publication; matching bytes do not prove genuine playable game
+frames, hardware VBlank latch timing, active gameplay or Switch
+pixel parity. The tool is intended for private, nonadversarial
+single-user captures.
+
+Ten direct ROM-free regression methods cover complete 54-file
+snapshots, same-size mutations, manifest edits, added/missing
+files, symlink/hardlink and inode replacement rejection, size
+bounds, invalid frame intervals and metadata confidentiality.
+Three additional end-to-end synthetic session tests insert input
+mutations during cross-stream analysis, after JSON serialization,
+or add unexpected capture files. They verify **no final JSON**
+is published on any such failure. No actual commercial dino ROM
+was used or uploaded during this stage.
