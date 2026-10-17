@@ -439,6 +439,7 @@ class ArenaPrototypeTests(unittest.TestCase):
                 self.assertEqual(p.dummy_x,start)
                 for _ in range(14):self.step(p)
         self.assertEqual(p.dummy_x,start+18)
+        self.assertEqual(p.dummy_moving,1)
         self.assertEqual((p.combo_hits,p.finisher_flash,p.dummy_hitstun),
                          (3,10,14))
         self.assertEqual(p.successful_hits,3)
@@ -473,6 +474,10 @@ class ArenaPrototypeTests(unittest.TestCase):
         p.dummy_hp=7
         for index in range(4):
             self.step(p,pressed=ATTACK)
+            if index==2:
+                # Keep the opponent fixed between the finisher and the
+                # fourth hit to distinguish AI pursuit from knockback.
+                p.dummy_hitstun=40
             if index<3:
                 for _ in range(14):self.step(p)
         self.assertEqual(p.combo_hits,3)
