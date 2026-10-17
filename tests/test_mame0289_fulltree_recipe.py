@@ -49,7 +49,8 @@ class Mame0289BuildRecipeTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", self.recipe)
         self.assertNotIn("upload-artifact@", self.recipe)
         self.assertNotIn("ROM_START(", self.recipe)
-        self.assertIn("-listxml dino", self.recipe)
+        self.assertIn('mame_dino_binary_verify.py', self.recipe)
+        self.assertIn('"$binary" "$RUNNER_TEMP/mame0289"', self.recipe)
 
 
 if __name__ == "__main__":
