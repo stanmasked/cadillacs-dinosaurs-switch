@@ -62,8 +62,8 @@ def _words(layer, variation):
 def synthetic_scene(name):
     """Artificial test state, never sampled or reconstructed from gameplay."""
     options = {
-        'priority_sprite': (('scroll3', 'scroll2', 'sprites', 'scroll1'), 0),
-        'unmasked_sprite': (('scroll3', 'scroll2', 'sprites', 'scroll1'), 1),
+        'priority_sprite': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
+        'unmasked_sprite': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
         'rowscroll_flip': (('scroll1', 'scroll2', 'sprites', 'scroll3'), 2),
         'sprite_under_layers': (('sprites', 'scroll1', 'scroll2', 'scroll3'), 3),
     }
@@ -73,8 +73,12 @@ def synthetic_scene(name):
     palette = [[(i * 13 + 17) & 255, (i * 7 + 29) & 255,
                 (i * 3 + 41) & 255] for i in range(TOTAL_COLORS)]
     palette[0xbff] = [1, 2, 3]
-    regs = ([0x00a6, 0x0f0f, 0x1111, 0x8000]
-            if variant != 1 else [0, 0, 0, 0])
+    # The first pair is byte-for-byte identical except for hardware
+    # priority masks, so the resulting difference isolates occlusion.
+    regs = ([0x7fff, 0x7fff, 0x7fff, 0x7fff]
+            if name == 'priority_sprite' else
+            [0, 0, 0, 0] if name == 'unmasked_sprite' else
+            [0x00a6, 0x0f0f, 0x1111, 0x8000])
     # Visible sprites include two overlapping blocks, a flipped sprite,
     # and 16x16 cells crossing all four viewport edges.
     objs = [
@@ -159,6 +163,8 @@ def compare_private_native_scene_compositor(archive):
         scene_mem = ctypes.create_string_buffer(70000)
         frame_mem = ctypes.create_string_buffer(FRAME_BYTES)
         total_mismatches = 0
+        priority_frame = None
+        priority_mask_effect = 0
         cases = []
         for name in CASES:
             snap = synthetic_scene(name)
@@ -168,6 +174,12 @@ def compare_private_native_scene_compositor(archive):
             if not render(region, GFX_BYTES, scene_mem, frame_mem, FRAME_BYTES):
                 raise ValueError('Native synthetic CPS-1 frame render failed')
             actual = frame_mem.raw
+            if name == 'priority_sprite':
+                priority_frame = actual
+            if name == 'unmasked_sprite' and priority_frame is not None:
+                priority_mask_effect = sum(
+                    actual[i:i+4] != priority_frame[i:i+4]
+                    for i in range(0, FRAME_BYTES, 4))
             expected = render_frame(
                 gfx, [tuple(rgb) for rgb in snap['palette_rgb']], snap)
             if len(actual) != FRAME_BYTES or len(expected) != FRAME_BYTES:
@@ -189,6 +201,7 @@ def compare_private_native_scene_compositor(archive):
         'synthetic_cases': len(CASES),
         'pixels_compared': len(CASES) * PIXELS,
         'mismatching_pixels_total': total_mismatches,
+        'priority_mask_changed_rgba_pixels': priority_mask_effect,
         'scenario_results': cases,
     })
     return result
