@@ -1331,3 +1331,42 @@ or detailed diagnostic manifests to a public GitHub repository.
 Even a successful structural audit does not prove original-game
 authenticity, physical CPS-1 VBlank, framebuffer pixel parity or
 completed Nintendo Switch gameplay. Public CI only uses synthetic data.
+
+## Stage 98 — private real-ROM graphics parity against native Switch decoder
+
+The user-owned original dino ZIP now has a separate local-only validation
+path that does not depend on the blocked MAME qsound_hle device or
+incompatible ioc1.ic1 PLD. This is **graphics decode parity only**;
+no emulated gameplay, VRAM palette, VBlank ordering or Switch framebuffer
+pixel parity is claimed.
+
+On the operator machine, with gcc and the original ROM archive available
+outside the repository:
+
+~~~sh
+python3 tools/cps1_private_native_tile_parity.py /private/owned/dino.zip
+~~~
+
+This locally reads exactly eight 512-KiB graphics lanes from the ZIP
+and interleaves them into 4 MiB **in memory only**. It compiles the exact
+portable source/cps1_tile.c used by the technical Switch NRO into a
+temporary host shared library. A separate Python planar reference
+decoder checks 16x16 4-bit pen indices on a fixed beginning, ending,
+every-64th, and pseudorandom set covering both graphics banks.
+Native invalid-code and truncated-region refusals are also checked.
+Only bounded counters and fixed success/refusal codes appear in JSON.
+No raw game data, commercial ROM archive, pixel values, SHA digest,
+original filename or private path is emitted or committed to GitHub.
+
+On the original ZIP supplied for this project, an isolated private
+run sampled 1,510 tile codes (386,560 pen-index pixels) with zero
+C/Python mismatches; all 16 possible 4-bit pen values appeared and
+native error-path bounds checking refused invalid requests. This
+proves equivalence **on the tested tiles and indices**, not game
+authenticity, original runtime colors, sprites, CPS-1 VBlank,
+or a playable Nintendo Switch title.
+
+Public GitHub Actions runs new tests with fabricated eight-lane
+graphics archives only: complete synthetic parity, deliberately
+corrupted reference decoder, missing/duplicate/truncated ROM entries,
+failed compiler redaction, no private output data, and bounds.
