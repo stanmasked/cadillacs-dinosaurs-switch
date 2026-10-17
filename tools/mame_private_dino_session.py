@@ -13,6 +13,7 @@ import contextlib
 import io
 import json
 import os
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -25,6 +26,7 @@ try:
     from tools.mame_multistream_interval_evidence import multistream_interval_evidence
     from tools.mame_private_capture_stability import (private_capture_file_snapshot,
                                                      require_stable_private_capture)
+    from tools.mame_capture_session_binding import require_private_capture_session
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -32,6 +34,7 @@ except ModuleNotFoundError:
     from mame_multistream_interval_evidence import multistream_interval_evidence
     from mame_private_capture_stability import (private_capture_file_snapshot,
                                                require_stable_private_capture)
+    from mame_capture_session_binding import require_private_capture_session
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -111,6 +114,11 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             identity.get('compiled_instrumented_latch_v2_format') is not True):
         raise ValueError('MAME identity/compiled V2 probe verification failed')
 
+    # The sole launcher-issued random label is passed to both Lua and C++
+    # as process environment, never printed, logged or saved as a nonce.
+    session_id = secrets.token_hex(16)
+    launch_env = os.environ.copy()
+    launch_env['CPS1_DINO_CAPTURE_SESSION'] = session_id
     capture_dir = private / CAPTURE_DIR_NAME
     # Never create outputs until the real build identity passed.
     capture_dir.mkdir(mode=0o700, exist_ok=False)
@@ -128,7 +136,8 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         with os.fdopen(fd, 'wb') as log:
             proc = subprocess.run(
                 argv, cwd=private, stdout=log, stderr=subprocess.STDOUT,
-                stdin=None, timeout=timeout_seconds, check=False,
+                stdin=None, env=launch_env,
+                timeout=timeout_seconds, check=False,
             )
     except subprocess.TimeoutExpired as exc:
         raise ValueError('Local MAME session timed out; private files retained') from exc
@@ -187,6 +196,8 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             result, activity, FIRST_FRAME, FRAME_STEP, FRAME_COUNT)
         result['reference_activity'] = activity
         result['multistream_interval_evidence'] = intervals
+        result['capture_session_binding'] = require_private_capture_session(
+            capture_dir, session_id, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
         result['private_capture_source_stability'] = require_stable_private_capture(
             capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
         result['private_capture_completion'] = {
