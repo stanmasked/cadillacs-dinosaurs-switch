@@ -1010,3 +1010,44 @@ on audit, timeout/failure refusal before capture-folder creation,
 stale-audit rejection, lack of false claims in the unguarded path,
 CLI privacy and mutually exclusive modes. **No original ROM data is
 run in public GitHub CI.**
+
+
+## Stage 87 — public-repository guard against accidental original ROM upload
+
+**Never push original `dino.zip`, original CPS-1 assets, captures,
+private MAME logs or modified emulator binaries to the public GitHub repo.**
+A locally owned original image does not by itself grant permission to
+redistribute copyrighted arcade game data. Keep user-owned ROMs in a
+separate private directory and use the stage-86
+`--verify-private-romset-before-capture` command locally.
+
+The code-only repository now includes a privacy guard for Git's **staged
+index** (not the possibly different files in the working tree):
+```sh
+python3 tools/check_public_tree_rom_free.py
+```
+It rejects archived ROM/container extensions including `.zip`, `.bin`,
+`.chd`, `.gen`, `.iso`, console executables `.nro`/`.nsp`, emulator
+binaries, directories named `roms/` or `cps1-captures/`, non-source
+extensions, source blobs larger than 256 KiB, symlinks, obvious archive
+magic, NUL-filled non-source data and Git LFS pointers. A ROM archive
+forcibly staged through `git add -f` is still rejected. The fixed
+machine-readable report prints **only rejection counts**, never staged
+filenames, paths, ROM bytes or Git hashes.
+
+Optionally enable the included local pre-commit hook:
+```sh
+git config --local core.hooksPath .githooks
+```
+This prevents an accidental **local commit** (unless the hook is
+disabled/bypassed). The new `Public repository ROM-free privacy gate`
+GitHub Actions workflow runs for every push and pull request, including
+docs changes. Importantly, **CI runs only after GitHub already receives
+the pushed commit**, so it cannot prevent initial disclosure. The local
+hook and careful manual staging are essential; a scan cannot prove
+copyright licensing or the absence of cleverly disguised game data.
+Previously pushed history is not scanned or purged. Original ROM tests
+remain local, outside public GitHub CI.
+
+Synthetic tests use fabricated miniature archive signatures and fake
+game filenames only. Approved cover artwork is untouched.
