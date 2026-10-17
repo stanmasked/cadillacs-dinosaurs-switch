@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 try:
     from tools.mame_dino_binary_verify import inspect_binary
@@ -132,42 +133,74 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
     if proc.returncode != 0:
         raise ValueError('Local MAME exited unsuccessfully; check private log locally')
 
-    # Real audit output stays in the supplied private workspace. The
-    # multiframe CLI enforces all 5 CRC32 files, C++ probe size, and
-    # V2 OBJ-latch FNV binding. Never relax its diagnostic-only flags.
+    # The multi-frame CLI writes JSON before the later RGB and
+    # multi-stream checks. Keep its result in a PRIVATE TEMPORARY
+    # DIRECTORY so a late failure never leaves a final-looking report.
+    # The final report is published via hard-link (exclusive, atomic,
+    # same filesystem) ONLY after all checks have succeeded.
     report = private / REPORT_NAME
-    with contextlib.redirect_stdout(io.StringIO()), \
-            contextlib.redirect_stderr(io.StringIO()):
-        code = alignment_main([
-            str(capture_dir), '--first-frame', str(FIRST_FRAME),
-            '--frame-count', str(FRAME_COUNT),
-            '--frame-step', str(FRAME_STEP),
-            '--latch-count-evidence', '--out', str(report),
-        ])
-    if code != 0 or not report.is_file():
-        raise ValueError('Private capture is incomplete or invalid; no verified report')
-    # Reading our own small diagnostic metadata does not expose source data.
-    with report.open('rb') as source:
-        data = source.read(128 * 1024 + 1)
-    if len(data) > 128 * 1024:
-        raise ValueError('Unexpected oversized local diagnostic JSON')
-    os.chmod(report, 0o600)
-    result = json.loads(data)
-    latch = result.get('obj_latch_count_evidence', {})
-    if (latch.get('sidecar_format_version') != 2 or
-            latch.get('obj_byte_fingerprint_verified_count') != FRAME_COUNT or
-            latch.get('obj_byte_fingerprint_binding') != 'FNV1A64_ALL_SAMPLES_MATCHED' or
-            result.get('frame_sync_verified') is not False or
-            result.get('pixel_parity_eligible') is not False):
-        raise ValueError('Capture report does not satisfy conservative V2 requirements')
-    # Only after the CRC32 + per-frame source/V2 integrity check succeeds,
-    # inspect the private reference pixels. Never return actual RGB data.
-    activity = reference_activity_diagnostic(
-        capture_dir, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
-    # Cross-source co-change is a triage hint only, NEVER independent
-    # evidence of original VBlank, active gameplay or pixel parity.
-    intervals = multistream_interval_evidence(
-        result, activity, FIRST_FRAME, FRAME_STEP, FRAME_COUNT)
+    with tempfile.TemporaryDirectory(
+            prefix='.dino-audit-pending-', dir=private) as staging_dir:
+        staging = Path(staging_dir)
+        raw_audit = staging / 'alignment.json'
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code = alignment_main([
+                str(capture_dir), '--first-frame', str(FIRST_FRAME),
+                '--frame-count', str(FRAME_COUNT),
+                '--frame-step', str(FRAME_STEP),
+                '--latch-count-evidence', '--out', str(raw_audit),
+            ])
+        if code != 0 or not raw_audit.is_file():
+            raise ValueError('Private capture is incomplete or invalid; no verified report')
+        with raw_audit.open('rb') as source:
+            data = source.read(128 * 1024 + 1)
+        if len(data) > 128 * 1024:
+            raise ValueError('Unexpected oversized local diagnostic JSON')
+        result = json.loads(data)
+        if not isinstance(result, dict):
+            raise ValueError('Unexpected private diagnostic report structure')
+        latch = result.get('obj_latch_count_evidence')
+        if not isinstance(latch, dict) or (
+                latch.get('sidecar_format_version') != 2 or
+                latch.get('obj_byte_fingerprint_verified_count') != FRAME_COUNT or
+                latch.get('obj_byte_fingerprint_binding') != 'FNV1A64_ALL_SAMPLES_MATCHED' or
+                result.get('frame_sync_verified') is not False or
+                result.get('pixel_parity_eligible') is not False):
+            raise ValueError('Capture report does not satisfy conservative V2 requirements')
+
+        # These checks may fail independently of all earlier CRC/FNV
+        # checks; NO final report must be published until they pass.
+        activity = reference_activity_diagnostic(
+            capture_dir, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+        intervals = multistream_interval_evidence(
+            result, activity, FIRST_FRAME, FRAME_STEP, FRAME_COUNT)
+        result['reference_activity'] = activity
+        result['multistream_interval_evidence'] = intervals
+        result['private_capture_completion'] = {
+            'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
+            'full_check_sequence_completed': True,
+            'diagnostic_only': True,
+            'nominal_frame_count': FRAME_COUNT,
+            'crc32_lua_components_checked': FRAME_COUNT * 5,
+            'v2_bound_obj_samples': FRAME_COUNT,
+            'original_game_authenticity_verified': False,
+            'active_gameplay_verified': False,
+            'obj_latch_age_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
+        complete = staging / 'completed.json'
+        with complete.open('x', encoding='utf-8') as output:
+            json.dump(result, output, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(complete, 0o600)
+        # Unlike os.replace(), hard-link creation refuses a concurrent
+        # existing target; the finalized report can never be clobbered.
+        os.link(complete, report)
+
     return {
         'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
         'reference_activity': activity,
@@ -187,7 +220,6 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             'Nintendo Switch gameplay remain unverified.'
         ),
     }
-
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
