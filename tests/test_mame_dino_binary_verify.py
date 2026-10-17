@@ -7,8 +7,8 @@ import tempfile
 import unittest
 
 from tools.mame_dino_binary_verify import (
-    MAX_XML_BYTES, inspect_binary, main, validate_dino_xml,
-    verify_compiled_cps1_video_object,
+    MAX_XML_BYTES, PROBE_COMPILED_MARKER, inspect_binary, main,
+    validate_dino_xml, verify_compiled_cps1_video_object,
 )
 
 
@@ -28,7 +28,8 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         self.build = self.root / 'build' / 'some' / 'mame' / 'capcom'
         self.build.mkdir(parents=True)
         self.obj = self.build / 'cps1_v.o'
-        self.obj.write_bytes(b'\x7fELF' + bytes(124))
+        self.obj.write_bytes(b'\x7fELF' + bytes(124) +
+                             PROBE_COMPILED_MARKER)
 
     def test_valid_0289_dino_xml_keeps_game_parity_false(self):
         result = validate_dino_xml(fake_xml())
@@ -65,7 +66,9 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
     def test_compiled_elf_object_must_be_real_and_nonempty(self):
         meta = verify_compiled_cps1_video_object(self.root)
         self.assertTrue(meta['compiled_cps1_video_object'])
-        self.assertEqual(meta['compiled_cps1_video_object_bytes'], 128)
+        self.assertEqual(meta['compiled_cps1_video_object_bytes'],
+                         128 + len(PROBE_COMPILED_MARKER))
+        self.assertTrue(meta['compiled_instrumented_latch_v2_format'])
         self.assertFalse(meta['instrumentation_runtime_verified'])
 
     def test_rejects_missing_duplicate_invalid_or_symlinked_objects(self):
@@ -74,7 +77,8 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
             with self.subTest(case=len(payload)):
                 with self.assertRaises(ValueError):
                     verify_compiled_cps1_video_object(self.root)
-        self.obj.write_bytes(b'\x7fELF' + bytes(124))
+        self.obj.write_bytes(b'\x7fELF' + bytes(124) +
+                             PROBE_COMPILED_MARKER)
         duplicate = self.root / 'cps1_v.o'
         duplicate.write_bytes(self.obj.read_bytes())
         with self.assertRaisesRegex(ValueError, 'exactly one'):
@@ -84,6 +88,35 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         duplicate.symlink_to(self.root / 'missing.o')
         with self.assertRaises(ValueError):
             verify_compiled_cps1_video_object(self.root)
+
+    def test_rejects_mock_elf_without_compiled_v2_marker(self):
+        self.obj.write_bytes(b'\x7fELF' + bytes(300))
+        with self.assertRaisesRegex(ValueError, 'lacks the generated'):
+            verify_compiled_cps1_video_object(self.root)
+
+    def test_auxiliary_nonrunnable_mame_devices_are_valid(self):
+        devices = ('<machine name="ym2151" sourcefile="devices/sound/ymopm.cpp" '
+                   'isdevice="yes" runnable="no"><description>Yamaha</description></machine>'
+                   '<machine name="qsound" sourcefile="devices/sound/qsound.cpp" '
+                   'isdevice="yes" runnable="no"><description>QSound</description></machine>')
+        result = validate_dino_xml(fake_xml(extra=devices))
+        self.assertEqual(result['auxiliary_device_entries'], 2)
+        self.assertTrue(result['listxml_validated'])
+
+    def test_rejects_runnable_or_malformed_extra_device(self):
+        invalid = [
+            '<machine name="ym2151" sourcefile="devices/sound/ymopm.cpp" isdevice="yes" runnable="yes"/>',
+            '<machine name="ym2151" isdevice="yes" runnable="no"/>',
+            '<machine isdevice="yes" runnable="no" sourcefile="devices/sound/ymopm.cpp"/>',
+        ]
+        for device in invalid:
+            with self.subTest(device=device):
+                with self.assertRaisesRegex(ValueError, 'device'):
+                    validate_dino_xml(fake_xml(extra=device))
+
+    def test_rejects_spoofed_mame_0289_suffix(self):
+        with self.assertRaisesRegex(ValueError, 'MAME version'):
+            validate_dino_xml(fake_xml(build='0.289-malicious'))
 
     def test_rejects_missing_build_tree(self):
         with self.assertRaisesRegex(ValueError, 'missing'):
