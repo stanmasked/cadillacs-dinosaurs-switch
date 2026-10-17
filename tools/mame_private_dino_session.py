@@ -21,10 +21,12 @@ try:
     from tools.mame_dino_binary_verify import inspect_binary
     from tools.mame_obj_sequence_alignment import main as alignment_main
     from tools.mame_reference_activity import reference_activity_diagnostic
+    from tools.mame_multistream_interval_evidence import multistream_interval_evidence
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
     from mame_reference_activity import reference_activity_diagnostic
+    from mame_multistream_interval_evidence import multistream_interval_evidence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -162,9 +164,14 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
     # inspect the private reference pixels. Never return actual RGB data.
     activity = reference_activity_diagnostic(
         capture_dir, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+    # Cross-source co-change is a triage hint only, NEVER independent
+    # evidence of original VBlank, active gameplay or pixel parity.
+    intervals = multistream_interval_evidence(
+        result, activity, FIRST_FRAME, FRAME_STEP, FRAME_COUNT)
     return {
         'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
         'reference_activity': activity,
+        'multistream_interval_evidence': intervals,
         'nominal_frame_count': FRAME_COUNT,
         'crc32_lua_components_checked': FRAME_COUNT * 5,
         'bound_cpp_obj_samples': FRAME_COUNT,
