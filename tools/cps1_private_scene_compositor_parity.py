@@ -177,6 +177,54 @@ def _different_pixels(left, right):
                for i in range(0, FRAME_BYTES, 4))
 
 
+def pure_synthetic_pair(baseline, trial, scenario):
+    """Validate the intended one-factor edit before comparing RGBA frames.
+
+    This tests scene-input provenance, NOT game capture provenance: all
+    inputs here are fabricated. A matching native/Python frame cannot
+    certify a priority or palette metamorphic test with changed VRAM/OBJ.
+    """
+    if not isinstance(baseline, dict) or not isinstance(trial, dict):
+        return False
+    if set(baseline) != set(trial):
+        return False
+    palette_case = scenario in ('transparent_palette_unused',
+                                'palette_channels_shift')
+    field = 'palette_rgb' if palette_case else 'priority_masks'
+    if any(baseline[key] != trial[key] for key in baseline if key != field):
+        return False
+    before = baseline.get(field)
+    after = trial.get(field)
+
+    if palette_case:
+        if (not isinstance(before, list) or not isinstance(after, list)
+                or len(before) != TOTAL_COLORS or len(after) != TOTAL_COLORS):
+            return False
+        changed = [i for i, (old, new) in enumerate(zip(before, after))
+                   if old != new]
+        if not changed or 0xbff in changed:
+            return False
+        if scenario == 'transparent_palette_unused':
+            return all(index % 16 == 15 for index in changed)
+        return all(index % 16 != 15 for index in changed)
+
+    if (not isinstance(before, list) or not isinstance(after, list)
+            or len(before) != 4 or len(after) != 4):
+        return False
+    if before != [0x7fff] * 4:
+        return False
+    if scenario in ('unmasked_sprite', 'scroll1_unmasked'):
+        return after == [0] * 4
+    if scenario == 'priority_transparent_bit':
+        return after == [0xffff] * 4
+    if scenario == 'priority_group_selective':
+        return after == [0x5555, 0xaaaa, 0x0f0f, 0xf0f0]
+    if scenario in GROUP_UNMASKED_CASES:
+        group = GROUP_UNMASKED_CASES[scenario]
+        return after == [0 if i == group else 0x7fff for i in range(4)]
+    return False
+
+
 def _status(code):
     return {
         'schema': 'PRIVATE_DINO_NATIVE_SCENE_COMPOSITOR_PARITY_V1',
@@ -230,6 +278,8 @@ def compare_private_native_scene_compositor(archive):
         # Hold only three temporary in-RAM reference frames for pairwise
         # tests; neither C frames nor original graphics are saved to disk.
         baselines = {}
+        baseline_inputs = {}
+        differential_inputs_verified = True
         effects = {}
         paired_cases = {
             **{name: ('priority_sprite',
@@ -251,6 +301,12 @@ def compare_private_native_scene_compositor(archive):
         cases = []
         for name in CASES:
             snap = synthetic_scene(name)
+            if name in paired_cases:
+                baseline, _ = paired_cases[name]
+                if (baseline not in baseline_inputs or
+                        not pure_synthetic_pair(baseline_inputs[baseline], snap,
+                                                name)):
+                    differential_inputs_verified = False
             serialized = pack_scene(snap)
             if not decode(serialized, len(serialized), scene_mem):
                 raise ValueError('Native synthetic CPS-1 scene input refused')
@@ -260,6 +316,7 @@ def compare_private_native_scene_compositor(archive):
             if name in ('priority_sprite', 'unmasked_sprite',
                         'scroll1_priority'):
                 baselines[name] = actual
+                baseline_inputs[name] = snap
             if name in paired_cases:
                 baseline, metric = paired_cases[name]
                 effects[metric] = _different_pixels(baselines[baseline], actual)
@@ -274,7 +331,8 @@ def compare_private_native_scene_compositor(archive):
                 'compared_rgba_pixels': PIXELS,
                 'mismatching_rgba_pixels': mismatches,
             })
-    covered = (set(effects) == set(DIFFERENTIAL_EXPECTATIONS) and
+    covered = (differential_inputs_verified and
+               set(effects) == set(DIFFERENTIAL_EXPECTATIONS) and
                all((effects[key] > 0) == must_change
                    for key, must_change in DIFFERENTIAL_EXPECTATIONS.items()))
     result = _status(
@@ -287,6 +345,7 @@ def compare_private_native_scene_compositor(archive):
         'pixels_compared': len(CASES) * PIXELS,
         'mismatching_pixels_total': total_mismatches,
         **effects,
+        'differential_inputs_verified': differential_inputs_verified,
         'differential_coverage_verified': covered,
         'scenario_results': cases,
     })
