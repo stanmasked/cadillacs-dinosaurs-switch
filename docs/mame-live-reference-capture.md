@@ -1544,3 +1544,33 @@ A successful completed local synthetic scan sets
 tests exercise both classes of refusal, including deliberate failure
 after finishing the first archive. This is report-provenance hardening;
 it does **not** establish real MAME ROM acceptance or gameplay.
+
+## Stages 109–110 — fail the right test and isolate the ROM directory
+
+The first Stage 106 GitHub Python workflow completed with one
+regression failure out of 687 tests. The **implementation was
+not proven faulty by that result**: the test directly called the
+new payload auditor with a fabricated two-file catalog, but then
+invoked the CLI without applying the same synthetic catalog.
+The CLI legitimately saw 29 original MAME catalog entries missing
+and returned a conservative mismatch status, rather than opening
+the deliberately corrupted synthetic ZIP member and refusing its
+CRC. Stage 109 fixes the fixture and explicitly asserts that the
+synthetic corrupted ZIP member was actually opened when testing the
+CLI's failure path. The source test stays **entirely ROM-free**;
+no genuine original game data is uploaded.
+
+Stage 110 adds a separate guard before reading any ZIP member.
+The user's private ROM directory must be physically separate
+from the public project source checkout: neither directory may
+contain the other. This avoids accidentally auditing or staging
+commercial game files inside a public Git working tree. Local
+directory symlinks are already refused by the ordinary-directory
+check, and ZIP symlink/hardlink entries remain disallowed.
+Three synthetic directory-overlap cases confirm rejection
+**before any ROM payload is read**. Paths in diagnostic reports
+continue to be omitted.
+
+These changes improve the accuracy and privacy of local diagnosis.
+They do **not** prove a successful real MAME ROM audit, game boot,
+VBlank latch, gameplay pixels, or Nintendo Switch framebuffer parity.
