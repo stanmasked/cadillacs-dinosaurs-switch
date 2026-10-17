@@ -550,3 +550,40 @@ post-build step. A successful synthetic verifier test alone
 cannot establish a full original MAME build or working dino
 runtime. Full emulator compilation status must be kept separate
 from these additional automated safety checks.
+
+
+## Stage 62 — enable real-MAME post-build verification
+
+The first true full-tree MAME build **succeeded** in GitHub Actions
+run 39025950287, with the pinned original MAME 0.289 source:
+the CI log contains "Compiling src/mame/capcom/cps1_v.cpp...",
+"Linking dino...", "Instrumented real MAME built successfully: ./dino",
+and a successful ROM-free "./dino -listxml dino" invocation.
+
+This new stage integrates tools/mame_dino_binary_verify.py into the
+**same opt-in experimental full-tree workflow** after compilation,
+replacing a weak exit-code-only XML smoke test. Its criteria are:
+
+- Built MAME 0.289 reports exactly one original, runnable dino game
+  from capcom/cps1.cpp. The genuine upstream MAME XML writer can
+  legitimately add auxiliary device entries with isdevice="yes"
+  and runnable="no"; such devices are permitted and counted, while
+  any second game or runnable/malformed auxiliary entry fails.
+- A unique, nonempty, nonsymlink Linux ELF object named cps1_v.o is
+  found in the fresh upstream build tree, and the compiled object
+  must contain the literal "CPS1_DINO_LATCH_V2" output format.
+  This stronger check verifies that our specific instrumented C++
+  translation unit reached the object file, not merely that a
+  similarly named file exists. Its size is bounded to 64 MiB.
+- The actual -listxml command must complete successfully and return
+  bounded, valid MAME metadata XML. No game ROMs are passed to it.
+- Results explicitly keep original-game execution, actual runtime
+  latch sampling, VBlank age, and image parity *unverified*.
+
+The full-tree MAME build is deliberately opt-in and resource-intensive;
+modifying its workflow file triggers another build. Routine Python CI
+tests the standalone verifier and these workflow guards; they do
+not substitute for the separate expensive full-tree verification.
+
+No original arcade game assets, captured frames, modified MAME binary
+or full upstream source files are committed or distributed.
