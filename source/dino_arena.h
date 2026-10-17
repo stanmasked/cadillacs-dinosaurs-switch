@@ -34,6 +34,9 @@ typedef struct {
     uint8_t dummy_windup, dummy_cooldown, dummy_attack_frames;
     uint8_t dummy_facing_right, player_hits_taken;
     uint8_t player_moving, dummy_moving; /* displacement during most recent tick */
+    /* Original training combo: consecutive LANDED attacks, 24-tick window.
+     * 3rd hit triggers one knockback finisher in optional sparring mode. */
+    uint8_t combo_hits, combo_timer, finisher_flash;
 } DinoArena;
 
 /* Visual state is derived from 60 Hz simulation, not from art or MAME.
