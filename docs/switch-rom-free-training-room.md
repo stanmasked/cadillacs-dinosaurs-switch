@@ -147,3 +147,43 @@ expanded suite passes.
 The game still lacks original fighting system, characters, level
 assets, sound and verified actual console execution. Correct
 synthetic pose states do not imply MAME-original gameplay parity.
+
+## Stage 117 — three-hit chain and bounded sparring knockback
+
+The original, asset-free training sandbox now has a **three-hit
+combo counter**, not based on any CPS-1 gameplay or move data.
+Each distinct confirmed hit may advance the counter from 1 to 3
+if the next hit lands within **24 simulation ticks** of the
+previous one. Each hit also refreshes that 24-tick window.
+A miss or an attack button press during cooldown never advances
+or refreshes the combo; a timer expiry, switching sparring mode,
+or actually receiving damage clears it.
+
+The **third consecutive landed attack** has a short 10-tick
+finisher highlight and lengthens the dummy's stun from 9 to
+14 ticks. In optional sparring mode it **knocks the dummy 18
+world pixels** in the direction the player is facing, clamped
+to the training arena's horizontal bounds (16–368). The stationary
+practice dummy deliberately does not shift position when
+sparring is disabled, so earlier target-practice exercises still
+behave as expected. A fourth hit inside the same chain does not
+re-trigger the one-time third-hit finisher. A successful finisher
+also updates the opponent-displacement flag for presentation.
+
+The Nintendo Switch NRO displays the current **COMBO 0–3/3**
+state beside the two actors' pose/health and highlights the
+target briefly after a finisher. All effects use independently
+drawn rectangles; they do not contain copied arcade animations,
+character likenesses, original combat parameters or hitboxes.
+
+Twelve additional ROM-free C regression methods check exact timer
+expiry, misses, cooldown input rejection, three successful hits,
+left/right knockback, screen-edge clamping, fourth-hit behavior,
+stationary-mode preservation, mode resets, player-damage combo
+interruption, short finisher highlight expiration and identical
+results after a 1,000-tick deterministic replay.
+
+This stage does **not** reproduce the original Cadillacs and
+Dinosaurs combo system. It is an invented training mechanic
+and is not proof of original gameplay, original animations,
+physical Switch runtime, audio or MAME framebuffer parity.
