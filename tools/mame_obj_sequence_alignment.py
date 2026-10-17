@@ -86,7 +86,8 @@ def _read_exact_small(path, expected_size):
         data = source.read(expected_size + 1)
     if len(data) != expected_size:
         raise ValueError(
-            f'{path.name}: expected {expected_size} bytes, got at least {len(data)}')
+            f'{path.name}: incomplete or oversized capture; '
+            f'expected {expected_size} bytes, observed up to {len(data)}')
     return data
 
 
