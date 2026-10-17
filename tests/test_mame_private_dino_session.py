@@ -170,6 +170,16 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertTrue(activity['all_frames_single_color'])
         self.assertFalse(activity['active_gameplay_verified'])
         self.assertFalse(activity['frame_sync_verified'])
+        intervals = report['multistream_interval_evidence']
+        self.assertEqual(intervals['status'], 'LOW_INFORMATION_FOR_MULTISTREAM_STUDY')
+        self.assertEqual(intervals['nominal_frame_labels'], [900,902,904,906,908,910])
+        self.assertEqual(intervals['rgb_change_intervals'], 5)
+        self.assertEqual(intervals['obj_change_intervals'], 0)
+        self.assertEqual(intervals['latch_increment_intervals'], 5)
+        self.assertEqual(len(intervals['intervals']), 5)
+        self.assertIn('NO_OBJ_CHANGES_OBSERVED', intervals['observational_cautions'])
+        self.assertFalse(intervals['active_gameplay_verified'])
+        self.assertFalse(intervals['frame_sync_verified'])
         self.assertTrue((self.workspace / LOG_NAME).is_file())
         if os.name == 'posix':
             self.assertEqual((self.workspace / LOG_NAME).stat().st_mode & 0o777, 0o600)
