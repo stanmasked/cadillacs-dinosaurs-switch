@@ -587,3 +587,33 @@ not substitute for the separate expensive full-tree verification.
 
 No original arcade game assets, captured frames, modified MAME binary
 or full upstream source files are committed or distributed.
+
+
+## Stage 63 — bounded real MAME driver XML capture
+
+The Stage 62 post-build validator originally started a MAME
+`-listxml dino` process with stdout/stderr attached to Python
+`subprocess.PIPE`, then checked the resulting XML's 2-MiB limit
+**after the entire output was already held in memory**.
+
+The validator now sends stdout and stderr to disposable
+`tempfile.TemporaryFile` streams instead of unbounded in-memory
+PIPEs. It checks the captured stdout's exact size before reading
+and never loads more than `MAX_XML_BYTES + 1` into memory.
+Oversized and empty XML, nonzero command exit, malformed XML and
+timeouts continue to fail closed. Both temporary streams are
+closed on success and failure. No XML or emulator binary is
+published as a GitHub Actions artifact.
+
+Three new ROM-free subprocess tests execute local **synthetic**
+programs to exercise over-limit stdout, empty stdout and noisy
+multi-megabyte stderr. They verify resource-bounded capture and
+parser behavior, not real original MAME runtime operation.
+
+The earlier actual full MAME 0.289 compilation completed
+successfully in GitHub Actions #39025950287, including its
+`cps1_v.cpp` compilation, linking `dino` and ROM-free XML smoke
+test. The stronger Stage 62 real-binary validator's experimental
+run must still complete before full ELF/XML validation can be
+called proven. This stage does not alter the expensive
+MAME build workflow or request a new full rebuild.
