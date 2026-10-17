@@ -198,7 +198,10 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
                 a->dummy_windup=12;
             }
         }
-        a->dummy_moving=(uint8_t)(a->dummy_x!=dummy_x_before ||
+        /* A finisher can displace the opponent before AI processing.
+         * Preserve that event instead of clearing it after stun logic. */
+        a->dummy_moving=(uint8_t)(a->dummy_moving ||
+                                   a->dummy_x!=dummy_x_before ||
                                    a->dummy_y!=dummy_y_before);
     }
     ++a->ticks;
