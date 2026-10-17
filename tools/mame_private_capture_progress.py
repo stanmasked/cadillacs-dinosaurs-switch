@@ -92,7 +92,7 @@ def _with_stream_coverage(report):
         raise ValueError('Private stream coverage counters disagree')
     report['stream_coverage'] = summary
     report['nominal_coverage_shift_hypotheses'] = (
-        nominal_coverage_shift_hypotheses(rows))
+        nominal_coverage_shift_hypotheses(frames))
     if report['status'] == 'INCOMPLETE_PRIVATE_CAPTURE_FILE_SET':
         lua_present = sum(row['lua_valid_sized_files'] for row in frames)
         cpp_present = sum(row['cpp_valid_sized_files'] for row in frames)
