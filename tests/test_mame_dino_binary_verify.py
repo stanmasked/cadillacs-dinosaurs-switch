@@ -117,7 +117,7 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
 
     def test_linked_elf_scanner_accepts_all_markers_across_chunk_boundaries(self):
         elf = self.root / 'linked-dino'
-        elf.write_bytes(b'\\x7fELF' + bytes(124) +
+        elf.write_bytes(b'\x7fELF' + bytes(124) +
                         PROBE_COMPILED_MARKER + bytes(3) +
                         SESSION_COMPILED_MARKER + bytes(5) +
                         SESSION_ENV_COMPILED_MARKER)
@@ -132,7 +132,7 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         elf = self.root / 'linked-dino'
         for payload in (PROBE_COMPILED_MARKER,
                         PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER):
-            elf.write_bytes(b'\\x7fELF' + bytes(124) + payload)
+            elf.write_bytes(b'\x7fELF' + bytes(124) + payload)
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(ValueError, 'session-aware'):
                     verify_linked_probe_markers(elf)

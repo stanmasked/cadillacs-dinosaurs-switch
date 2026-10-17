@@ -86,9 +86,9 @@ jobs:
             exit 1
           fi
           echo "Instrumented real MAME built successfully: $binary"
-          # Verify the real MAME 0.289 driver XML AND that the freshly
-          # compiled CPS-1 video ELF contains V2 plus both session markers.
-          # An older V2-only emulator build is explicitly rejected.
+          # Require the original 0.289 dino XML, freshly compiled
+          # CPS-1 ELF .o AND all three probe markers in the final linked
+          # executable. A stale V2-only executable must fail closed.
           # No original game ROMs, screenshots or emulator binaries uploaded.
           python3 "$GITHUB_WORKSPACE/tools/mame_dino_binary_verify.py" \
             "$binary" "$RUNNER_TEMP/mame0289"

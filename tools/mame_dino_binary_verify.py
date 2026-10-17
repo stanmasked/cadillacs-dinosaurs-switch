@@ -123,7 +123,7 @@ def verify_linked_probe_markers(binary):
     overlap = b''
     carry = max(map(len, markers)) - 1
     with path.open('rb') as source:
-        if source.read(4) != b'\\x7fELF':
+        if source.read(4) != b'\x7fELF':
             raise ValueError('Linked MAME executable is not ELF')
         source.seek(0)
         while True:
