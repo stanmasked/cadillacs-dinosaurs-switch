@@ -31,6 +31,9 @@ class Arena(ctypes.Structure):
         ('player_hits_taken',ctypes.c_uint8),
         ('player_moving',ctypes.c_uint8),
         ('dummy_moving',ctypes.c_uint8),
+        ('combo_hits',ctypes.c_uint8),
+        ('combo_timer',ctypes.c_uint8),
+        ('finisher_flash',ctypes.c_uint8),
     ]
 
 
@@ -389,6 +392,149 @@ class ArenaPrototypeTests(unittest.TestCase):
         self.step(p,held=LEFT)
         self.assertEqual(p.player_moving,0)
         self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),5)
+
+    def test_combo_starts_only_after_confirmed_hit(self):
+        p=self.new()
+        self.assertEqual((p.combo_hits,p.combo_timer,p.finisher_flash),(0,0,0))
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.combo_hits,p.combo_timer),(0,0))
+        for _ in range(14):self.step(p)
+        p.x=230
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.combo_hits,p.combo_timer),(1,24))
+        self.assertEqual(p.dummy_hp,2)
+
+    def test_combo_cooldown_inputs_and_misses_do_not_refresh_window(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=ATTACK)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.combo_hits,p.combo_timer),(1,23))
+        p.x=100
+        for _ in range(13):self.step(p)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.combo_hits,p.combo_timer),(1,9))
+        self.assertEqual(p.dummy_hp,2)
+
+    def test_exact_twenty_four_tick_combo_expiry(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=ATTACK)
+        for i in range(23):
+            self.step(p)
+            self.assertEqual(p.combo_hits,1)
+        self.assertEqual(p.combo_timer,1)
+        self.step(p)
+        self.assertEqual((p.combo_hits,p.combo_timer),(0,0))
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.combo_hits,p.combo_timer),(1,24))
+
+    def test_three_landed_hits_trigger_single_sparring_knockback(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=SPAR)
+        p.dummy_hp=6
+        start=p.dummy_x
+        for index in range(3):
+            self.step(p,pressed=ATTACK)
+            self.assertEqual((p.combo_hits,p.dummy_hp),(index+1,5-index))
+            if index<2:
+                self.assertEqual(p.dummy_x,start)
+                for _ in range(14):self.step(p)
+        self.assertEqual(p.dummy_x,start+18)
+        self.assertEqual((p.combo_hits,p.finisher_flash,p.dummy_hitstun),
+                         (3,10,14))
+        self.assertEqual(p.successful_hits,3)
+
+    def test_left_facing_finisher_knocks_back_in_opposite_direction(self):
+        p=self.new();p.x=270;p.facing_right=0
+        self.step(p,pressed=SPAR)
+        p.dummy_hp=6
+        start=p.dummy_x
+        for index in range(3):
+            self.step(p,pressed=ATTACK)
+            if index<2:
+                for _ in range(14):self.step(p)
+        self.assertEqual(p.dummy_x,start-18)
+        self.assertEqual(p.combo_hits,3)
+        self.assertEqual(p.dummy_hp,3)
+
+    def test_finisher_knockback_clamps_to_arena_edge(self):
+        p=self.new();p.x=337
+        self.step(p,pressed=SPAR)
+        p.dummy_x=360
+        p.dummy_hp=6
+        p.combo_hits=2
+        p.combo_timer=10
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.dummy_x,p.combo_hits),(368,3))
+        self.assertLessEqual(p.dummy_x,368)
+
+    def test_fourth_hit_does_not_repeat_combo_finisher(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=SPAR)
+        p.dummy_hp=7
+        for index in range(4):
+            self.step(p,pressed=ATTACK)
+            if index<3:
+                for _ in range(14):self.step(p)
+        self.assertEqual(p.combo_hits,3)
+        self.assertEqual(p.dummy_hp,3)
+        self.assertEqual(p.dummy_x,268)
+        self.assertEqual(p.successful_hits,4)
+
+    def test_no_spar_mode_keeps_static_dummy_in_place(self):
+        p=self.new();p.x=230
+        for index in range(3):
+            self.step(p,pressed=ATTACK)
+            if index<2:
+                for _ in range(14):self.step(p)
+        self.assertEqual((p.combo_hits,p.dummy_hp,p.dummy_x),(3,0,250))
+        self.assertEqual(p.finisher_flash,10)
+
+    def test_sparring_toggle_discards_prior_combo(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.combo_hits,1)
+        self.step(p,pressed=SPAR)
+        self.assertEqual((p.combo_hits,p.combo_timer,p.finisher_flash),(0,0,0))
+        self.step(p,pressed=SPAR)
+        self.assertEqual((p.combo_hits,p.combo_timer,p.finisher_flash),(0,0,0))
+
+    def test_enemy_damage_breaks_player_combo(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.combo_hits,1)
+        # A synthetic short enemy cooldown independent of player attack.
+        p.dummy_hitstun=0
+        p.dummy_windup=1
+        self.step(p)
+        self.assertEqual((p.player_hp,p.player_hits_taken),(4,1))
+        self.assertEqual((p.combo_hits,p.combo_timer,p.finisher_flash),(0,0,0))
+
+    def test_finisher_flash_expires_without_mutating_combo_state(self):
+        p=self.new();p.x=230
+        for index in range(3):
+            self.step(p,pressed=ATTACK)
+            if index<2:
+                for _ in range(14):self.step(p)
+        self.assertEqual((p.finisher_flash,p.combo_hits),(10,3))
+        for _ in range(10):self.step(p)
+        self.assertEqual((p.finisher_flash,p.combo_hits),(0,3))
+        for _ in range(14):self.step(p)
+        self.assertEqual((p.finisher_flash,p.combo_hits,p.combo_timer),(0,0,0))
+
+    def test_combo_replay_1000_ticks_is_byte_identical(self):
+        a=self.new();b=self.new()
+        for tick in range(1000):
+            held=(RIGHT if tick%91<43 else LEFT) | (UP if tick%51<19 else DOWN)
+            pressed=(ATTACK if tick%16==0 else 0) | (
+                JUMP if tick%57==0 else 0) | (
+                SPAR if tick in (0,370,620,850) else 0)
+            self.step(a,held,pressed)
+            self.step(b,held,pressed)
+        fields=[name for name,_ in Arena._fields_]
+        self.assertEqual(tuple(getattr(a,k) for k in fields),
+                         tuple(getattr(b,k) for k in fields))
+        self.assertEqual(a.ticks,1000)
 
     def test_null_pointer_is_safe_for_both_native_functions(self):
         self.lib.dino_arena_reset(None)
