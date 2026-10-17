@@ -377,3 +377,45 @@ the instrumented original MAME 0.289 source has still not been compiled
 or executed on original dino gameplay as part of this stage. Outputs
 remain `diagnostic_only:true`, `obj_latch_age_verified:false`,
 `frame_sync_verified:false`, and `pixel_parity_eligible:false`.
+
+## Stage 58 — single OBJ snapshot and executable generated-C++ smoke test
+
+Stage 57's V2 C++ source generator computed an OBJ FNV-1a 64
+fingerprint from `m_buffered_obj[index]` and then **re-read that same
+mutable buffer** when serializing the 2,048-byte sidecar. If the
+buffer changed between those two loops, the V2 digest could disagree
+with the emitted file even though neither file had been substituted.
+
+The video-update instrumentation now copies the **1,024 16-bit OBJ
+words exactly once** into a private local 2-KiB stack array,
+`observed_obj_words[0x400]`. Its FNV-1a hash uses these sampled
+words in big-endian order and the file writer emits bytes from **the
+same local array**, never re-reading mutable `m_buffered_obj` for
+serialization. This guarantees consistency between the two
+representations of that captured local snapshot; it does **not**
+prove the buffer was latched at a particular VBlank or establish
+inter-thread atomicity at the point of sampling.
+
+Added `tests/test_mame_obj_probe_cpp_smoke.py`, which invokes
+`instrument()` on a carefully bounded **ROM-free mock** of MAME's
+`cps_state`, compiles the **actual generated C++** with
+`g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -pthread`,
+and executes the resulting mock executable. It checks:
+
+- Four actual on-disk 2,048-byte OBJ and 128-byte CPS-register probe
+  files plus four textual latch sidecars.
+- Counter deltas and unchanged-OBJ behavior across fake latch calls.
+- Real C++ V2 FNV values, independently checked against Python's
+  `obj_fnv1a64()` applied to the emitted bytes.
+- Presence guards preventing overwrite when one of three frame
+  sidecars already exists, and the `dino`-only scope.
+- The generated probe uses only **one** `m_buffered_obj[index]`
+  read per slot and emits the saved snapshot, not a second read.
+
+**Verification boundary:** This is a real C++ compilation and
+execution of the injected callback **inside fake MAME class stubs**.
+It is more meaningful than string-only instrumentation tests, but
+it is **not** compilation of upstream MAME 0.289 itself and it
+does not use actual game ROMs, game VBlank, original pixels, or
+physical Nintendo Switch hardware. All alignment and parity flags
+remain false, and original capture data stays outside GitHub.
