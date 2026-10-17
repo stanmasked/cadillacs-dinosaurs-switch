@@ -182,6 +182,10 @@ probe remains a private, opt-in MAME source experiment.
 it emitted 2048-byte OBJ files and 128-byte register files for
 frames 900 and 902, skipped frame 901, preserved the four sample
 register words in big-endian order, and did not overwrite frame 900.
-This does not compile the real MAME 0.289 source. Eight ROM-free Python
-audit test methods and an additional C++-probe source test are
-committed; full GitHub Actions execution is still blocked by issue #20.
+This does not compile the real MAME 0.289 source. **The exact
+committed Python auditor and its eight-test module were copied into a
+local isolated test environment, their Git blob SHA-1 values checked
+against GitHub, and all 8/8 tests passed** (including strict output
+refusal, mismatched word positions, and permanently ineligible parity).
+An additional C++-probe source test is committed but has not run in
+GitHub CI. Full GitHub Actions execution remains blocked by issue #20.
