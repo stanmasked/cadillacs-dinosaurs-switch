@@ -152,3 +152,64 @@ validate the bundle with `--latch-count-evidence`. Real frame
 alignment is only a hypothesis until original runtime timing
 is independently established; captured buffers must **not**
 be promoted to Switch-authentic scene assets yet.
+
+
+## Stage 65 — private full-MAME gameplay capture session
+
+The real MAME 0.289 dino subset **compiled and linked** with the
+experimentally instrumented CPS-1 video code; the strict ROM-free
+driver/XML and ELF V2 identity gates also passed GitHub Actions.
+The emulator executable is **not distributed** and original
+arcade ROMs must be legally held and kept entirely local.
+
+New local-only script: tools/mame_private_dino_session.py
+
+From a checkout of this repository, with the privately built
+instrumented MAME executable and its source tree present, run:
+
+    mkdir -p -m 700 /private/local-dino-session
+    python3 tools/mame_private_dino_session.py --mame /private/mame0289/dino --mame-tree /private/mame0289 --rom-dir /private/owned-mame-roms --workspace /private/local-dino-session --preflight-only
+
+Use your own actual paths. Preflight checks filesystem
+isolation/permissions only; it does not launch the game or
+read any ROM bytes. Then remove --preflight-only and run the
+same command to start local MAME after ROM-free ELF/driver
+verification. The runtime invokes the shipped Lua capture
+through the -autoboot_script option and keeps ROM paths, logs
+and original captures outside the repository.
+
+The instrumented MAME and Lua collector currently target exactly
+six nominal frames: 900, 902, 904, 906, 908 and 910. They are
+hardcoded in **both** the generated C++ and Lua probe. Launch
+the game privately, reach active gameplay by the capture range,
+and exit MAME normally after the six frames are saved. The
+local timeout defaults to 1800 seconds.
+
+The session creates an empty private cps1-captures subdirectory
+(mode 0700), and a mode-0600 private MAME log. After MAME exits
+successfully, the real multiframe analyzer validates all 30
+Lua binaries against five complete per-frame CRC32 manifests,
+all C++ register and 2048-byte buffered OBJ sidecars, and six
+strict V2 latch-count fingerprints. Its diagnostic-only JSON
+is stored privately, with mode 0600.
+
+A workspace must already exist, be mode 0700 on POSIX and be
+completely separate from the repo, ROM directory and MAME
+source tree. The launcher refuses existing log/capture/report
+paths and symlinked MAME executables. A timeout, failed MAME,
+absent frame, invalid CRC, legacy V1 sidecar or mismatched
+OBJ fingerprint refuses success; partial private files are
+kept for local inspection, never published. Start a new session
+in a **new empty private workspace** rather than overwriting
+old captures.
+
+Success is reported only as PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY.
+It does **not** prove real game frame/VBlank synchronization,
+that the captured original game was actively playing, pixel
+parity, original-game authenticity, or native Switch gameplay.
+
+The new regression tests exercise synthetic fake game execution
+and all local privacy/integrity failure paths. Actual original
+dino ROM gameplay has still **not** been executed and confirmed
+as part of this development stage. Never upload original ROMs,
+private game graphics, or raw capture files to GitHub.
