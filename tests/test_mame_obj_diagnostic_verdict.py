@@ -132,7 +132,21 @@ class DiagnosticVerdictTests(unittest.TestCase):
             parts = list(reports())
             parts[2][key] = value
             with self.subTest(key=key):
-                with self.assertRaisesRegex(ValueError, 'Stable label'):
+                with self.assertRaisesRegex(ValueError, 'Stable label|Inconsistent'):
+                    diagnostic_verdict(*parts)
+
+    def test_reject_unstable_trial_accounting_without_promotion(self):
+        for changed in (
+            {'leave_one_out_trial_count': 2},
+            {'leave_one_out_consistent_trials': 6},
+            {'leave_one_out_unstable_indices': [0, 0]},
+            {'leave_one_out_unstable_indices': [5, 6]},
+            {'leave_one_out_unstable_indices': 'none'},
+        ):
+            parts = list(reports(1, 1, False))
+            parts[2].update(changed)
+            with self.subTest(changed=changed):
+                with self.assertRaises(ValueError):
                     diagnostic_verdict(*parts)
 
     def test_reject_bogus_offsets_and_non_objects(self):
