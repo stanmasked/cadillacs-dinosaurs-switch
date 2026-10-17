@@ -37,13 +37,16 @@ PROBE = r'''
 			char path[128], registers_path[128], latch_path[128];
 			const unsigned long long observed_latch_count =
 				cps1_dino_obj_latch_events.load(std::memory_order_relaxed);
-			// FNV-1a over the same 2048 big-endian bytes later emitted by
-			// the OBJ sidecar. This binds local files against accidental
-			// cross-frame substitution, not against malicious tampering.
+			// Sample the 1024 buffered OBJ words ONCE, before any file I/O.
+			// FNV and the emitted 2048 bytes come from this one private
+			// stack snapshot, never a second read of mutable m_buffered_obj.
+			// This is local byte consistency, NOT proof of VBlank timing.
+			uint16_t observed_obj_words[0x400];
 			unsigned long long observed_obj_fnv1a64 = 14695981039346656037ULL;
 			for (unsigned index = 0; index < 0x400; ++index)
 			{
-				const unsigned word = m_buffered_obj[index];
+				const uint16_t word = m_buffered_obj[index];
+				observed_obj_words[index] = word;
 				observed_obj_fnv1a64 ^= (word >> 8) & 255U;
 				observed_obj_fnv1a64 *= 1099511628211ULL;
 				observed_obj_fnv1a64 ^= word & 255U;
@@ -77,7 +80,7 @@ PROBE = r'''
 					bool complete = true;
 					for (unsigned index = 0; index < 0x400; ++index)
 					{
-						const unsigned word = m_buffered_obj[index];
+						const unsigned word = observed_obj_words[index];
 						if (std::fputc((word >> 8) & 255, output) == EOF ||
 								std::fputc(word & 255, output) == EOF)
 						{
