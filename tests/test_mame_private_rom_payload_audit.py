@@ -170,14 +170,19 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         # CLI must see the same synthetic catalog as the direct call;
         # otherwise a mismatch against the genuine 28-file catalog
         # prevents the deliberately corrupted member from being opened.
+        # Assert the payload was actually opened in this CLI invocation.
         text = io.StringIO()
+        original_member_open = zipfile.ZipFile.open
         with patch.object(audit, 'EXPECTED', self.game_catalog), \
              patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
              patch.object(audit, 'DEVICE_HEADER', self.sound_header), \
+             patch.object(zipfile.ZipFile, 'open', autospec=True,
+                          side_effect=original_member_open) as member_open, \
              contextlib.redirect_stderr(text):
             self.assertEqual(audit.main([
                 '--rom-dir', str(self.root),
                 '--verify-private-payloads']), 2)
+        self.assertGreater(member_open.call_count, 0)
         refusal = json.loads(text.getvalue())
         self.assertEqual(refusal['status'],
                          'PRIVATE_DINO_ROM_PAYLOAD_CRC_AUDIT_REFUSED')
