@@ -219,3 +219,68 @@ CI and real MAME 0.289 sampling remain unverified due to the
 pre-runner Actions failure ([issue #20](https://github.com/stanmasked/cadillacs-dinosaurs-switch/issues/20)).
 No game ROMs, frame pixels, authentic OBJ buffers, native Switch builds
 or actual gameplay captures are committed.
+
+
+## Stage 47 — minimum real overlap for transition-offset hypotheses
+
+Earlier Stage 46 required at least three matching active transitions
+and two distinct change-mask patterns, but a candidate near the start
+or end of a short capture could still be ranked informative using
+**only three of the five transitions** from the default six frames.
+Three matching transitions may look like a perfect `3/3` candidate
+while discarding two entire transition observations.
+
+The transition scorer now requires **at least 75% overlap** between
+the two source transition series *before* returning an informative
+offset. This is checked using exact integer arithmetic
+`overlapping_transitions * 4 >= total_transitions * 3`; a nominal
+frame outside the overlapping window is never padded or wrapped.
+The threshold is deliberately conservative, not a physical
+measurement of VBlank-latch timing.
+
+New per-candidate fields:
+
+- `overlap_fraction`: real overlapping transition pairs divided by
+  all `frame_count-1` transitions in the source series.
+- `overlap_sufficient`: whether that fraction meets 0.75.
+- `transition_top_scoring_offset_steps`: leading candidate by the
+  existing active-change score, **whether or not** overlap suffices;
+  this field is only a troubleshooting clue.
+- `transition_assessment`: one of
+  `DIAGNOSTIC_HYPOTHESIS_ONLY`,
+  `INSUFFICIENT_OVERLAP`,
+  `INSUFFICIENT_ACTIVE_CHANGE_EVIDENCE`, or
+  `TIED_BEST_CANDIDATES`. A reason is provided even when the actual
+  best offset is null.
+- `transition_minimum_overlap_fraction`: currently `0.75`.
+
+Examples: with six sampled frames, the series contains five
+transitions. An offset of **two sample steps** matches at most
+`3/5=0.60`, so its `transition_best_offset_steps` is now
+`null`, even if all three transition masks agree. An offset of
+**one step** can cover `4/5=0.80` and remains eligible *for a
+diagnostic hypothesis* if the other diversity/uniqueness conditions
+hold. With ten sampled frames, a two-step shift covers `7/9≈0.78`
+and can also qualify. In every case, one must still inspect actual
+MAME timing, and both `frame_sync_verified` and
+`pixel_parity_eligible` stay **false**.
+
+### Exact source regression
+
+The updated `tools/mame_obj_transition_evidence.py` and
+`tests/test_mame_obj_transition_evidence.py` were copied
+**byte-for-byte** from this GitHub branch into an isolated Python test
+directory. Their local Git blob SHA-1 values were verified against
+GitHub: `e3a2f56a1dcc3eb7e2f2fa8c4fafa9726fa1fe44` and
+`52161c628337d96049473e0e393734542a658da2`.
+
+The **15/15 committed unittest methods passed** using
+`python -m unittest discover -s tests -p
+test_mame_obj_transition_evidence.py -v`, covering all original
+transition cases and five new edge-coverage regressions.
+
+This does not establish a full-repository test pass, successful
+MAME-native compile, real dino captures, original framebuffer parity,
+or Nintendo Switch hardware verification. GitHub Actions currently
+fails with `runner_id=0`, `steps=[]` before any tests can run
+(issue #20). No original game files or gameplay captures are committed.
