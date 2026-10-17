@@ -1490,3 +1490,28 @@ ZIP archives and exercise explicit consent, matching or wrong
 metadata, missing device, symlink/hardlink refusal, ZIP directory
 duplicates, path traversal, payload corruption with unchanged header
 CRC, decompression bounds and redacted error output.
+
+## Stage 107 — bind both private ZIP identities for an entire payload audit
+
+Each archive already had a strict descriptor-level metadata check before
+and after its own member CRC scan. That alone left a narrow blind spot:
+the scanned `dino.zip` could be changed or replaced *after* finishing
+its own scan, while the separate QSound archive was being processed.
+
+Stage 107 now takes a single **game+device filesystem metadata snapshot**
+before any payload reads and compares both entries again **after both**
+archive scans finish. It checks device/inode, type, hardlink count,
+file size and modification/change timestamps, with missing optional
+QSound archive represented explicitly. A changed/missing/replaced
+member, including a newly appearing external device ZIP, causes a
+fail-closed refusal and no successful CRC-catalog status. Both local
+paths and raw metadata values remain private; only fixed refusal
+codes can be exported. The gate is not an atomic filesystem lock and
+does not defeat an adversarial writer who can spoof metadata.
+
+ROM-free regression tests deliberately change the first ZIP after its
+individual audit and swap the second ZIP for a byte-identical new inode
+between scans; both must be rejected. A symlinked device archive must
+be rejected *before* any ROM member is read. This is preparation for
+a private actual MAME `-verifyroms` run, **not** evidence that it
+has run or that original gameplay has been observed.
