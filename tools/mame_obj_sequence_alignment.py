@@ -22,6 +22,17 @@ COMPONENTS = frozenset((
     'reference-rgb24.bin',
 ))
 HEX_CRC = re.compile(r'[0-9a-f]{8}')
+CAPTURE_SCHEMA = {
+    'gfxram_bytes': 196608,
+    'cps_a_bytes': 64,
+    'cps_b_bytes': 64,
+    'palette_bytes': 9216,
+    'reference_width': 384,
+    'reference_height': 224,
+    'reference_rgb_bytes': 258048,
+    'raw_word_endianness': 'big',
+    'palette_source': 'MAME_effective_pen_color',
+}
 
 
 def read_frames(directory, first_frame, frame_count, frame_step):
@@ -46,6 +57,10 @@ def read_frames(directory, first_frame, frame_count, frame_step):
                 manifest.get('pixel_parity_eligible') is not False or
                 manifest.get('obj_latch') != 'NOT_CAPTURED'):
             raise ValueError(f'{stem}: invalid frame provenance')
+        if any(type(manifest.get(key)) is not type(expected) or
+               manifest[key] != expected
+               for key, expected in CAPTURE_SCHEMA.items()):
+            raise ValueError(f'{stem}: invalid dino capture schema')
         crc = manifest.get('file_crc32')
         if not isinstance(crc, dict) or set(crc) != COMPONENTS:
             raise ValueError(f'{stem}: missing complete file_crc32 manifest')
