@@ -230,3 +230,27 @@ comparison remains historical evidence for four cases; it is **not**
 automatically upgraded to ten-case original-ROM evidence by these
 source changes. No actual original-game video frame, VBlank timing,
 Switch physical framebuffer parity or playable game is established.
+
+## Stage 102 — isolate all four sprite-priority register groups
+
+The controlled test matrix now contains **14 synthetic CPS-1 scenes**.
+Four extra variants start with the same Scroll2-before-sprites
+VRAM, sprite list, 3072 RGB colors and layer ordering, then clear
+**exactly one** mask register at a time. The other three register
+values remain 0x7fff. The native C renderer must produce a visibly
+different RGBA result from the all-groups-enabled baseline for
+**each** group 0, 1, 2 and 3. A ROM-free negative mutation test
+deliberately makes group 2's scenario identical to its baseline
+and confirms the run is **rejected**, even though both C and Python
+compositors still match pixel-for-pixel.
+
+This raises the complete frame comparison target to
+**1,204,224 pixels** (14 x 384 x 224) per input graphic region.
+It establishes only code-level test coverage on synthetic video
+states. Genuine user-owned ROM graphics must be tested separately
+in a private local execution environment to make any Stage 102
+real-graphics comparison claim. No private original game frames,
+source ROM data or emulator-side effects are stored on GitHub;
+runtime palette provenance, original buffered-OBJ timing, actual
+MAME game video and physical Nintendo Switch framebuffer parity
+remain unverified.
