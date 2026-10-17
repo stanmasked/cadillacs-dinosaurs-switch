@@ -20,9 +20,11 @@ import sys
 try:
     from tools.mame_dino_binary_verify import inspect_binary
     from tools.mame_obj_sequence_alignment import main as alignment_main
+    from tools.mame_reference_activity import reference_activity_diagnostic
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
+    from mame_reference_activity import reference_activity_diagnostic
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -55,6 +57,11 @@ def preflight(mame, mame_source_tree, rom_dir, workspace):
         raise ValueError('Full upstream MAME source directory is missing')
     if not roms.is_dir():
         raise ValueError('Private ROM directory is missing')
+    # On a public repository, even an accidentally added local ROM or
+    # modified upstream MAME source tree could be exposed. Keep BOTH out.
+    if (not _separate(roms, PROJECT_ROOT) or
+            not _separate(tree, PROJECT_ROOT)):
+        raise ValueError('ROM and full MAME source trees must stay outside the project')
     if not private.is_dir():
         raise ValueError('Private workspace directory must already exist')
     if any(not _separate(private, other) for other in
@@ -151,8 +158,13 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             result.get('frame_sync_verified') is not False or
             result.get('pixel_parity_eligible') is not False):
         raise ValueError('Capture report does not satisfy conservative V2 requirements')
+    # Only after the CRC32 + per-frame source/V2 integrity check succeeds,
+    # inspect the private reference pixels. Never return actual RGB data.
+    activity = reference_activity_diagnostic(
+        capture_dir, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
     return {
         'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
+        'reference_activity': activity,
         'nominal_frame_count': FRAME_COUNT,
         'crc32_lua_components_checked': FRAME_COUNT * 5,
         'bound_cpp_obj_samples': FRAME_COUNT,
@@ -163,8 +175,9 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         'pixel_parity_eligible': False,
         'warning': (
             'The locally started MAME game emitted internally consistent '
-            'files. The run itself, physical VBlank ordering, displayed '
-            'pixel parity and Nintendo Switch gameplay remain unverified.'
+            'files. Reference activity is structural and cannot prove active '
+            'gameplay. Physical VBlank ordering, displayed pixel parity and '
+            'Nintendo Switch gameplay remain unverified.'
         ),
     }
 

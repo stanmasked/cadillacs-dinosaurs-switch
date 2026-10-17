@@ -83,6 +83,10 @@ class PrivateDinoSessionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'separate'):
                     preflight(self.mame, self.build, self.roms, path)
 
+    def test_rom_directory_inside_public_project_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'outside the project'):
+            preflight(self.mame, self.build, PROJECT_ROOT, self.workspace)
+
     def test_existing_capture_report_or_log_never_overwritten(self):
         for name in (CAPTURE_DIR_NAME, REPORT_NAME, LOG_NAME):
             path = self.workspace / name
@@ -160,6 +164,12 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse(report['original_game_authenticity_verified'])
         self.assertFalse(report['obj_latch_age_verified'])
         self.assertFalse(report['pixel_parity_eligible'])
+        activity = report['reference_activity']
+        self.assertEqual(activity['status'], 'REFERENCE_BYTES_CHANGED_UNVERIFIED')
+        self.assertEqual(activity['changed_reference_intervals'], 5)
+        self.assertTrue(activity['all_frames_single_color'])
+        self.assertFalse(activity['active_gameplay_verified'])
+        self.assertFalse(activity['frame_sync_verified'])
         self.assertTrue((self.workspace / LOG_NAME).is_file())
         if os.name == 'posix':
             self.assertEqual((self.workspace / LOG_NAME).stat().st_mode & 0o777, 0o600)

@@ -213,3 +213,46 @@ and all local privacy/integrity failure paths. Actual original
 dino ROM gameplay has still **not** been executed and confirmed
 as part of this development stage. Never upload original ROMs,
 private game graphics, or raw capture files to GitHub.
+
+
+## Stage 66 — reference RGB activity, not gameplay certification
+
+An internally consistent six-frame capture is not automatically
+informative for reverse engineering: a black screen, title screen,
+static pause menu, or uniformly colored test image can have valid
+manifest checksums and perfectly matched V2 OBJ fingerprints.
+
+The private session now runs
+`tools/mame_reference_activity.py` **only after** its strict
+multiframe CRC32 and OBJ V2 validation. It examines six bounded
+384×224 RGB24 reference files, counting:
+
+- exact RGB color diversity and nonblack pixels in each frame;
+- exact changed RGB pixels between each adjacent nominal frame;
+- static or all-black reference sequences, and whether every
+  frame contains just one RGB color.
+
+These are **byte-level observations**, not gameplay detection.
+The status may be `ALL_BLACK_REFERENCE_SEQUENCE`,
+`STATIC_REFERENCE_SEQUENCE`, or
+`REFERENCE_BYTES_CHANGED_UNVERIFIED`. A solid screen that
+changes color still indicates only changed bytes, not genuine
+playable game footage; a static screen may be a valid frame.
+
+The local JSON printed at the end of the private session contains
+`reference_activity` with aggregate counts only. No raw image,
+sprite words, user ROM path or screenshots are published or
+added to the project. `active_gameplay_verified:false`,
+`frame_sync_verified:false` and `pixel_parity_eligible:false`
+are preserved independently of how much activity is observed.
+
+The launcher also refuses private ROM directories and full
+upstream source trees placed **inside the public project checkout**,
+to reduce the risk of a future accidental `git add` publishing
+someone's original commercial game files or complete MAME copy.
+
+Ten new ROM-free Python regressions cover all-black, static,
+color-changing-but-uninformative, one-pixel and two-color
+synthetic images, missing/truncated/oversized files, sample
+bounds, metadata privacy and the end-to-end local mock session.
+No true `dino` game frames were recorded during this stage.
