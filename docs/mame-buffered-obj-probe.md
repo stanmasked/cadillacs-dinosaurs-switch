@@ -125,3 +125,67 @@ single-process presence checks, not atomic multi-process file locking.
   genuine `dino` gameplay session, or full GitHub CI (issue #20).
 
 No copyrighted ROM graphics, game frames or derived assets are committed.
+
+
+## Stage 42 — compare CPS-A/B registers across two capture hooks
+
+The generated source probe now also writes a **128-byte sidecar** for
+each permitted dino frame:
+
+`frame-XXXXXXXX.render-regs-be.bin` consists of exactly 32 big-endian
+CPS-A words followed by 32 big-endian CPS-B words, read inside
+`screen_update_cps1` at the *same hook* as the buffered OBJ. If either
+the OBJ or register file for that frame already exists, the probe
+refuses to overwrite or create a half-new pair; the sidecar is written
+only after the OBJ output is closed successfully. Interrupted writes
+remain possible and are rejected by length validation.
+
+The original Lua capture independently writes the 64-byte
+`frame-XXXXXXXX.cps-a-be.bin` and `.cps-b-be.bin` after the screen
+has been rendered. Compare these independent copies:
+
+```sh
+python3 tools/mame_obj_register_audit.py \
+  local_outputs/mame-reference/frame-00000900.partial-snapshot.json \
+  cps1-captures/frame-00000900.buffered-obj-be.bin \
+  cps1-captures/frame-00000900.render-regs-be.bin \
+  cps1-captures/frame-00000900.cps-a-be.bin \
+  cps1-captures/frame-00000900.cps-b-be.bin \
+  --out local_outputs/mame-reference/frame-00000900.alignment-audit.json
+```
+
+The ROM-free auditor requires all input filenames to identify the same
+canonical frame, the OBJ to be exactly **2048 bytes**, the render
+register sidecar to be exactly **128 bytes**, and each Lua register
+block to be exactly **64 bytes**. It compares all 32 big-endian
+16-bit words separately for CPS-A and CPS-B, and reports the number
+of mismatches plus up to eight word indices for diagnosis. The output
+includes SHA-256 of the OBJ and 128-byte register probe data; it
+does **not** include or publish original game RAM.
+
+A successful audit can show that the **register values are equal** at
+both sampling points, but this is *necessary, not sufficient* evidence
+of frame alignment: neighboring frames often share unchanged register
+values, and framebuffer pixel timing and the VBlank sprite-latch age
+are still unverified. The audit therefore **always** reports
+`frame_sync_verified:false` and `pixel_parity_eligible:false`,
+even with 64/64 equal register words. A mismatch is a concrete
+difference between the two captures and should be investigated for
+midframe register writes, measurement time, wrong pairing, or errors.
+
+Do not use the report to bypass the native scene exporter's incomplete
+capture guard. The existing project `main` stays ROM-free and the
+probe remains a private, opt-in MAME source experiment.
+
+**Validation:** A locally compiled independent C++17 test stand with
+`-Wall -Wextra -Werror` exercised the register sidecar code pattern:
+it emitted 2048-byte OBJ files and 128-byte register files for
+frames 900 and 902, skipped frame 901, preserved the four sample
+register words in big-endian order, and did not overwrite frame 900.
+This does not compile the real MAME 0.289 source. **The exact
+committed Python auditor and its eight-test module were copied into a
+local isolated test environment, their Git blob SHA-1 values checked
+against GitHub, and all 8/8 tests passed** (including strict output
+refusal, mismatched word positions, and permanently ineligible parity).
+An additional C++-probe source test is committed but has not run in
+GitHub CI. Full GitHub Actions execution remains blocked by issue #20.

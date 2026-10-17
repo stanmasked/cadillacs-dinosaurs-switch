@@ -57,6 +57,19 @@ class MameObjSourceProbeTests(unittest.TestCase):
         self.assertIn('std::fputc(word & 255', probe)
         self.assertIn('index < 0x400', probe)
 
+    def test_register_sidecar_reads_same_hook_as_latched_obj(self):
+        patched = instrument(MINIMAL_SOURCE)
+        self.assertIn('frame-%08llu.render-regs-be.bin', patched)
+        self.assertIn('m_cps_a_regs[index]', patched)
+        self.assertIn('m_cps_b_regs[index - 32]', patched)
+        self.assertIn('index < 64', patched)
+        self.assertIn('std::FILE *existing_registers', patched)
+        self.assertIn('if (existing || existing_registers)', patched)
+        self.assertLess(patched.index('m_buffered_obj[index]'),
+                        patched.index('m_cps_a_regs[index]'))
+        self.assertLess(patched.index('m_cps_b_regs[index - 32]'),
+                        patched.index('cps1_update_transmasks();'))
+
     def test_existing_capture_file_causes_no_overwrite(self):
         probe = instrument(MINIMAL_SOURCE)
         self.assertIn('std::fopen(path, "rb")', probe)
