@@ -17,7 +17,7 @@ class PublicTreePrivacyTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         subprocess.run(['git', 'init', '-q', str(self.root)],
                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.put('README.md', b'# Synthetic source only\\n')
+        self.put('README.md', b'# Synthetic source only\n')
 
     def git(self, *args):
         subprocess.run(['git', '-C', str(self.root), *args],
@@ -30,7 +30,7 @@ class PublicTreePrivacyTests(unittest.TestCase):
         self.git('add', '-f', '--', name)
 
     def test_safe_source_index_is_accepted(self):
-        self.put('tools/safe.lua', b'-- synthetic code only\\n')
+        self.put('tools/safe.lua', b'-- synthetic code only\n')
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['status'],
                          'PUBLIC_CODE_TREE_ROM_FREE_METADATA_CHECK_PASSED')
@@ -39,7 +39,7 @@ class PublicTreePrivacyTests(unittest.TestCase):
         self.assertFalse(out['git_history_checked'])
 
     def test_zip_and_bin_forced_into_index_are_refused_without_paths(self):
-        self.put('dino.zip', b'PK\\x03\\x04SYNTHETIC NOT ORIGINAL')
+        self.put('dino.zip', b'PK\x03\x04SYNTHETIC NOT ORIGINAL')
         self.put('roms/gfx.bin', b'SYNTHETIC BYTES')
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['rejected_entry_count'], 2)
@@ -49,19 +49,19 @@ class PublicTreePrivacyTests(unittest.TestCase):
         self.assertNotIn('gfx.bin', report)
 
     def test_renamed_rom_archive_magic_is_rejected(self):
-        self.put('tools/disguised.txt', b'PK\\x03\\x04SYNTHETIC')
+        self.put('tools/disguised.txt', b'PK\x03\x04SYNTHETIC')
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['fixed_reason_counts']['non_source_content'], 1)
 
     def test_lfs_pointer_does_not_bypass_blocked_artifact_checks(self):
         self.put('docs/fake_pointer.md',
-                 b'version https://git-lfs.github.com/spec/v1\\n'
-                 b'oid sha256:00000000000000000000000000000000\\n')
+                 b'version https://git-lfs.github.com/spec/v1\n'
+                 b'oid sha256:00000000000000000000000000000000\n')
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['fixed_reason_counts']['non_source_content'], 1)
 
     def test_large_source_blob_is_refused(self):
-        self.put('tools/oversized.py', b'# synthetic\\n' * 30000)
+        self.put('tools/oversized.py', b'# synthetic\n' * 30000)
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['fixed_reason_counts']['oversized_source_blobs'], 1)
 
@@ -76,14 +76,14 @@ class PublicTreePrivacyTests(unittest.TestCase):
         self.assertEqual(out['fixed_reason_counts']['unsafe_git_entries'], 1)
 
     def test_index_is_authoritative_not_unstaged_working_copy(self):
-        self.put('tools/clean.py', b'# staged safe\\n')
-        (self.root / 'tools/clean.py').write_bytes(b'PK\\x03\\x04not-staged')
+        self.put('tools/clean.py', b'# staged safe\n')
+        (self.root / 'tools/clean.py').write_bytes(b'PK\x03\x04not-staged')
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['rejected_entry_count'], 0)
 
     def test_non_source_extension_and_binary_content_rejected(self):
         self.put('assets/custom.abc', b'SYNTHETIC DATA')
-        self.put('tools/nul.py', b'hello\\x00world')
+        self.put('tools/nul.py', b'hello\x00world')
         out = check_staged_git_tree(self.root)
         self.assertEqual(out['fixed_reason_counts']['forbidden_paths'], 1)
         self.assertEqual(out['fixed_reason_counts']['non_source_content'], 1)

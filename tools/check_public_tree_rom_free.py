@@ -30,9 +30,9 @@ FORBIDDEN_COMPONENTS = frozenset({
     'private-captures', 'build',
 })
 BINARY_HEADERS = (
-    b'PK\\x03\\x04', b'PK\\x05\\x06', b'Rar!\\x1a\\x07',
-    b'7z\\xbc\\xaf\\x27\\x1c', b'\\x7fELF', b'NES\\x1a',
-    b'MComprHD', b'\\x1f\\x8b',
+    b'PK\x03\x04', b'PK\x05\x06', b'Rar!\x1a\x07',
+    b'7z\xbc\xaf\x27\x1c', b'\x7fELF', b'NES\x1a',
+    b'MComprHD', b'\x1f\x8b',
 )
 LFS_HEADER = b'version https://git-lfs.github.com/spec/v1'
 
@@ -54,10 +54,10 @@ def check_staged_git_tree(repository):
         'unsafe_git_entries': 0,
     }
     examined = 0
-    for entry in filter(None, index.split(b'\\0')):
+    for entry in filter(None, index.split(b'\0')):
         examined += 1
         try:
-            metadata, raw_path = entry.split(b'\\t', 1)
+            metadata, raw_path = entry.split(b'\t', 1)
             mode, blob_id, stage = metadata.decode('ascii').split()
             path = raw_path.decode('utf-8', 'surrogateescape')
             parts = PurePosixPath(path).parts
@@ -84,7 +84,7 @@ def check_staged_git_tree(repository):
                 subprocess.TimeoutExpired):
             problems['unsafe_git_entries'] += 1
             continue
-        if (len(blob) != size or b'\\0' in blob or
+        if (len(blob) != size or b'\0' in blob or
                 blob.startswith(LFS_HEADER) or
                 any(blob.startswith(header) for header in BINARY_HEADERS)):
             problems['non_source_content'] += 1
