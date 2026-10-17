@@ -210,6 +210,12 @@ class MultiframeAlignmentTests(unittest.TestCase):
             self.assertTrue(doc['transition_analysis']['transition_diagnostic_only'])
             self.assertFalse(doc['transition_analysis']['frame_sync_verified'])
             self.assertFalse(doc['transition_analysis']['pixel_parity_eligible'])
+            self.assertIn('transition_stability', doc)
+            self.assertTrue(doc['transition_stability']['leave_one_out_diagnostic_only'])
+            self.assertFalse(doc['transition_stability']['frame_sync_verified'])
+            self.assertFalse(doc['transition_stability']['pixel_parity_eligible'])
+            # Repeating all-register changes have no unique transition hypothesis.
+            self.assertFalse(doc['transition_stability']['leave_one_out_applicable'])
             # This fixture changes every register word on every frame;
             # recurring all-register changes are not unique timing evidence.
             self.assertFalse(doc['transition_analysis']['transition_hypothesis_informative'])
