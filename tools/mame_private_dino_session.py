@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Launch a user-owned dino game in a locally built, instrumented MAME 0.289.
 
-No ROMs or captured game data are bundled, uploaded or printed. This program
-never accesses ROM contents directly. It requires an existing private
-workspace outside the project, ROM directory and upstream MAME build tree.
+No ROMs or captured game data are bundled, uploaded or printed. Guarded
+and verify-only modes locally hash original ROM bytes; no hashes escape.
+The private workspace, ROM directory and MAME tree stay outside this repo.
 
 The real game must be operated/closed locally by the user. Success is only
 a complete, locally verified 6-frame diagnostic capture; NEVER frame parity.
@@ -250,8 +250,9 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         }
 
     # Verify *privately held* real game assets with the official MAME
-    # frontend without ever starting an emulated game. MAME, not Python,
-    # reads the ROM contents; its verbose output stays in a 0600 local log.
+    # frontend without ever starting an emulated game. Python also
+    # locally computes byte digests for stability; these stay in memory.
+    # MAME's verbose output stays in a 0600 local log.
     if verify_private_romset_only:
         _require_session_aware_build(binary, tree)
         rom_before = snapshot_private_dino_rom_content(roms)

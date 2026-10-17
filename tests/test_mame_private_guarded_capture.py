@@ -107,7 +107,7 @@ class GuardedCaptureTests(unittest.TestCase):
                    side_effect=self.fake_build), patch(
                    'tools.mame_private_dino_session.subprocess.run',
                    side_effect=run):
-            with self.assertRaisesRegex(ValueError, 'metadata changed'):
+            with self.assertRaisesRegex(ValueError, 'content changed'):
                 execute_private_capture(
                     self.mame, self.tree, self.roms, self.workspace,
                     verify_private_romset_before_capture=True)
@@ -130,7 +130,7 @@ class GuardedCaptureTests(unittest.TestCase):
                    side_effect=self.fake_build), patch(
                    'tools.mame_private_dino_session.subprocess.run',
                    side_effect=run):
-            with self.assertRaisesRegex(ValueError, 'metadata changed'):
+            with self.assertRaisesRegex(ValueError, 'content changed'):
                 execute_private_capture(
                     self.mame, self.tree, self.roms, self.workspace,
                     verify_private_romset_before_capture=True)
