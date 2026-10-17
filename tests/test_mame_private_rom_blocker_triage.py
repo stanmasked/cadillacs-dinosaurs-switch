@@ -14,7 +14,7 @@ from zipfile import ZipInfo
 
 from tools.verify_rom import EXPECTED
 from tools.mame_private_rom_blocker_triage import (
-    triage_private_dino_rom_blockers, main,
+    DEVICE_HEADER, triage_private_dino_rom_blockers, main,
 )
 
 
@@ -45,8 +45,7 @@ class PrivateDinoRomBlockerTriageTests(unittest.TestCase):
         else:
             name = 'dl-1425.bin'
         item = ZipInfo(name)
-        item.file_size = 17
-        item.CRC = 1234
+        item.file_size, item.CRC = DEVICE_HEADER
         return [item]
 
     def run_fake(self, *, game=None, device=None, add_device=True):
@@ -83,6 +82,8 @@ class PrivateDinoRomBlockerTriageTests(unittest.TestCase):
         self.assertEqual(out['game_catalog_mismatching_headers'], 0)
         self.assertTrue(out['pld_catalog_header_matches'])
         self.assertTrue(out['qsound_hle_device_member_observed'])
+        self.assertTrue(out['qsound_hle_device_header_matches'])
+        self.assertEqual(DEVICE_HEADER, (24576, 0xd6cf5ef5))
         self.assertEqual(out['next_local_action_code'],
                          'RUN_GENUINE_LOCAL_MAME_VERIFYROMS')
         self.assertFalse(out['mame_verifyroms_executed'])
@@ -100,6 +101,7 @@ class PrivateDinoRomBlockerTriageTests(unittest.TestCase):
         self.assertFalse(out['other_game_catalog_issues_observed'])
         self.assertFalse(out['separate_qsound_hle_archive_observed'])
         self.assertFalse(out['qsound_hle_device_member_observed'])
+        self.assertFalse(out['qsound_hle_device_header_matches'])
         self.assertEqual(out['next_local_action_code'],
                          'REVIEW_PRIVATE_PLD_AND_QSOUND_DEPENDENCIES')
         self.assertTrue(out['known_dependency_layout_requires_attention'])
@@ -114,8 +116,42 @@ class PrivateDinoRomBlockerTriageTests(unittest.TestCase):
         self.assertTrue(sound['pld_catalog_header_matches'])
         self.assertTrue(sound['separate_qsound_hle_archive_observed'])
         self.assertFalse(sound['qsound_hle_device_member_observed'])
+        self.assertFalse(sound['qsound_hle_device_header_matches'])
         self.assertEqual(sound['next_local_action_code'],
                          'CHECK_PRIVATE_QSOUND_DEVICE_ARCHIVE')
+
+    def test_qsound_present_but_wrong_length_is_distinct_from_missing(self):
+        member = self.device_headers()[0]
+        member.file_size = 0x2000  # ROM_LOAD alone; ignores ROM_IGNORE 0x4000.
+        out = self.run_fake(device=[member])
+        self.assertTrue(out['qsound_hle_device_member_observed'])
+        self.assertFalse(out['qsound_hle_device_header_matches'])
+        self.assertTrue(out['known_dependency_layout_requires_attention'])
+        self.assertEqual(
+            out['next_local_action_code'],
+            'REVIEW_PRIVATE_QSOUND_DEVICE_CATALOG_HEADER')
+
+    def test_qsound_present_but_wrong_crc_is_not_a_pass(self):
+        member = self.device_headers()[0]
+        member.CRC ^= 1
+        out = self.run_fake(device=[member])
+        self.assertTrue(out['qsound_hle_device_member_observed'])
+        self.assertFalse(out['qsound_hle_device_header_matches'])
+        self.assertEqual(
+            out['status'],
+            'PRIVATE_KNOWN_MAME_ROM_BLOCKERS_OBSERVED_METADATA_ONLY')
+
+    def test_bad_pld_and_wrong_qsound_header_need_both_repairs(self):
+        member = self.device_headers()[0]
+        member.file_size -= 1
+        out = self.run_fake(
+            game=self.headers(changes={'ioc1.ic1': (279, 0x0d182081)}),
+            device=[member])
+        self.assertEqual(out['game_catalog_matching_headers'], 27)
+        self.assertTrue(out['qsound_hle_device_member_observed'])
+        self.assertFalse(out['qsound_hle_device_header_matches'])
+        self.assertEqual(out['next_local_action_code'],
+                         'REVIEW_PRIVATE_PLD_AND_QSOUND_DEPENDENCIES')
 
     def test_non_pld_program_issue_is_not_mislabeled_as_pld_only(self):
         out = self.run_fake(game=self.headers(
@@ -141,6 +177,7 @@ class PrivateDinoRomBlockerTriageTests(unittest.TestCase):
         self.assertEqual(report['game_catalog_missing_entries'], 27)
         self.assertEqual(report['game_catalog_mismatching_headers'], 1)
         self.assertTrue(report['qsound_hle_device_member_observed'])
+        self.assertFalse(report['qsound_hle_device_header_matches'])
         self.assertFalse(report['rom_payload_crc_independently_verified'])
         self.assertFalse(report['individual_game_rom_payload_bytes_read'])
 
