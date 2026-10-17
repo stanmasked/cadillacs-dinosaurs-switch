@@ -216,8 +216,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_successful_process_without_complete_capture_fails_closed(self):
-        report, _ = None, None
-        with self.assertRaisesRegex(ValueError, 'incomplete or invalid'):
+        with self.assertRaisesRegex(ValueError, 'missing or unexpected files'):
             self.run_local(process=lambda args, **kwargs:
                            subprocess.CompletedProcess(args, 0))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
@@ -323,7 +322,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
                    side_effect=write_malformed):
             with self.assertRaises(json.JSONDecodeError):
                 self.run_local(process=lambda args, **kw:
-                               subprocess.CompletedProcess(args, 0))
+                               self.populate_fake_private_capture(args))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
@@ -336,7 +335,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
                    side_effect=write_then_fail):
             with self.assertRaisesRegex(ValueError, 'incomplete or invalid'):
                 self.run_local(process=lambda args, **kw:
-                               subprocess.CompletedProcess(args, 0))
+                               self.populate_fake_private_capture(args))
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
