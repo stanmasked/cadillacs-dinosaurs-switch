@@ -191,3 +191,42 @@ full-frame image, original palette, or frame data was uploaded to the
 GitHub repo or CI; only a compact local numeric/Boolean result was
 retained. The code-only CI artifact is explicitly allowlisted and
 expires after three days.
+
+## Stage 101 — explicit palette, transparent-pen and multi-layer differential coverage
+
+The local private-native scene parity tool now runs **ten synthetic
+video-state scenarios** against the identical native Switch compositor
+and independent Python renderer. Only the graphic tile data may come
+from a privately owned original ROM; all scene registers, palette,
+OBJ lists and tilemap VRAM are generated, not captured from MAME.
+
+Six paired differential checks augment full-frame C/Python equality:
+
+- Mask changes must visibly alter sprite occlusion with Scroll2
+  immediately before sprites, as in Stage 100.
+- Setting *only* mask bit 15 for each of the four priority groups must
+  leave output unchanged: pen 15 is transparent, even if masked.
+- Selective masks with different pen patterns for each priority group
+  must visibly differ from the all-opaque-pen mask.
+- Changing only transparent-pen RGB entries (except explicit backdrop
+  entry 0xbff) must leave the whole frame unchanged.
+- Changing only the RGB palette channels for opaque pens must visibly
+  change the resulting frame.
+- Reordering Scroll1 and Scroll2 and then changing *only* the priority
+  masks must produce a visible sprite-occlusion difference with
+  **Scroll1** immediately before sprites. This guards against a
+  compositor that only works for one scroll-layer priority position.
+
+Coverage now fails closed when a required positive stimulus makes no
+observable change, when an invariant unexpectedly changes, or when
+any C/Python RGBA pixel comparison differs. It does not treat
+C/Python agreement alone as sufficient evidence.
+
+All extra cases and negative tests in public CI use **fabricated
+graphics only**. No original ROM files, reconstructed sprites,
+palette images, original game frames, or MAME captures are committed
+or exported. The earlier **344,064 zero-mismatch** Stage 100 private
+comparison remains historical evidence for four cases; it is **not**
+automatically upgraded to ten-case original-ROM evidence by these
+source changes. No actual original-game video frame, VBlank timing,
+Switch physical framebuffer parity or playable game is established.
