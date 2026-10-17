@@ -711,3 +711,23 @@ They cannot confirm the actual CPS-1 sprite age. A real MAME 0.289
 capture with a controlled sprite-motion sequence, independent
 VBlank event evidence, and reference pixels is still required before
 making any parity claim.
+
+
+## Stage 64 — Lua capture and five-file CRC32 compatibility
+
+The shipped private Lua recorder originally lacked the
+`file_crc32` field required by the Stage 40+ multiframe
+validator. It now computes CRC32 on each of the five exact
+serialized blobs and adds the complete checksum map to its
+manifest, written after all five files. It also checks for
+existing output names before any write to protect prior
+private captures.
+
+The Stage 64 Lua 5.4 fixture uses six synthetic frame callbacks,
+verifies **all thirty** binary files using independent Python
+CRC32, and passes the generated capture manifests through
+the existing strict multiframe CLI with fabricated in-memory
+C++ OBJ and V2 latch sidecars. Those sidecars are test
+fixtures, **not real MAME measurements**. Neither CRC equality
+nor a synthetic CLI pass proves VBlank age, exact callback
+alignment or pixel parity.
