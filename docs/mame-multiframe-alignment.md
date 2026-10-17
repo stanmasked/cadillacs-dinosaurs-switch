@@ -595,7 +595,10 @@ raw payload fields in successful diagnostic JSON.
 with an eight-test isolated Python suite using genuine on-disk synthetic
 five-file frames. **8/8 tests passed**, including corruption, truncation,
 oversizing, missing files and swapped equal-size graphics-RAM
-components. The added GitHub end-to-end test module and updated
+components. Two additional local interoperability tests exercised the
+exact PR #25 `validate_capture_checksums()` implementation against the
+same synthetic manifests and corruption, bringing the focused results
+to **10/10 local tests passed**. The added GitHub end-to-end test module and updated
 original suite **have not yet been executed as a full checked-out
 repository**; CI runner allocation remains blocked under issue #20.
 
