@@ -1370,3 +1370,46 @@ Public GitHub Actions runs new tests with fabricated eight-lane
 graphics archives only: complete synthetic parity, deliberately
 corrupted reference decoder, missing/duplicate/truncated ROM entries,
 failed compiler redaction, no private output data, and bounds.
+
+## Stage 104 — inspect the known original-ROM MAME blockers locally
+
+The new opt-in tool gives a **fixed-schema, path-free and hash-free**
+diagnosis of the two specific blockers previously observed while
+attempting to launch the privately held World 930201 set with MAME
+0.289: the `ioc1.ic1` catalog size/CRC mismatch and absence of a
+separately supplied `qsound_hle.zip` archive containing a
+`dl-1425.bin` member. This status is not evidence of an original
+game boot or a new -verifyroms result.
+
+Run in your own private machine with a standard MAME ROM directory,
+outside the public checkout:
+
+~~~sh
+python3 tools/mame_private_rom_blocker_triage.py --rom-dir /private/owned-mame-roms
+~~~
+
+It reads **ZIP central-directory entries only**, comparing the
+size/CRC headers of all 28 expected game members with the pinned
+MAME 0.289 World 930201 catalog and checking for the named QSound
+device member in the separate archive. It does not extract or read
+game ROM member payloads, or create files. Results include only
+aggregate counts, conservative booleans and static action codes,
+never private paths, ROM member names, ZIP CRCs, extracted sprites,
+original game data or hashes.
+
+Caution: ZIP central-directory CRCs can be fabricated and do not
+prove that the compressed payload is correct. Even a full
+28/28 header match and observed QSound member does **not**
+establish archive validity, device ROM authenticity, a complete
+MAME clone/BIOS dependency layout or actual MAME acceptance.
+MAME can also support alternative set layouts that this deliberately
+narrow, conventional two-ZIP check does not enumerate. A returned
+success classification means only that these **particular known
+metadata blockers were not observed**. Before real capture, run
+genuine MAME `dino -verifyroms` on the privately held set and
+require its exit code 0; do not share ROM files or emulator dumps.
+
+Public CI tests this CLI against *fabricated ZIP central-directory
+metadata* and deliberate corrupt/missing/linked entries only. It
+never checks in or runs a real original game ROM, and does not
+claim VBlank, game video capture or Switch gameplay parity.
