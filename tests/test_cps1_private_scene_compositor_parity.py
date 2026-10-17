@@ -11,7 +11,8 @@ import zipfile
 
 from tools.cps1_gfx import LANES, ROM_SIZE
 from tools.cps1_private_scene_compositor_parity import (
-    CASES, PIXELS, DIFFERENTIAL_EXPECTATIONS, synthetic_scene,
+    CASES, PIXELS, DIFFERENTIAL_EXPECTATIONS, GROUP_UNMASKED_CASES,
+    synthetic_scene,
     compare_private_native_scene_compositor,
     main,
 )
@@ -37,7 +38,7 @@ class NativeSceneCompositorParityTests(unittest.TestCase):
                 out.writestr(name, (pattern*((length+511)//512))[:length])
 
     def test_synthetic_priority_and_palette_scenarios_are_distinct(self):
-        self.assertEqual(len(CASES), 10)
+        self.assertEqual(len(CASES), 14)
         a = synthetic_scene('priority_sprite')
         b = synthetic_scene('unmasked_sprite')
         c = synthetic_scene('rowscroll_flip')
@@ -104,6 +105,39 @@ class NativeSceneCompositorParityTests(unittest.TestCase):
         unmasked['priority_masks'] = masked['priority_masks']
         self.assertEqual(masked, unmasked)
 
+    def test_each_priority_register_is_independently_exercised(self):
+        full = synthetic_scene('priority_sprite')
+        self.assertEqual(tuple(GROUP_UNMASKED_CASES.values()), (0, 1, 2, 3))
+        self.assertEqual(len(set(GROUP_UNMASKED_CASES)), 4)
+        for name, group in GROUP_UNMASKED_CASES.items():
+            with self.subTest(group=group):
+                changed = synthetic_scene(name)
+                self.assertEqual(changed['priority_masks'],
+                                 [0 if g == group else 0x7fff
+                                  for g in range(4)])
+                changed['priority_masks'] = full['priority_masks']
+                self.assertEqual(changed, full)
+
+    def test_one_group_mutation_failure_cannot_claim_full_coverage(self):
+        self.write_fake_archive()
+        from tools import cps1_private_scene_compositor_parity as mod
+        original = mod.synthetic_scene
+
+        def disable_distinction(name):
+            scene = original(name)
+            if name == 'priority_group2_unmasked':
+                scene['priority_masks'] = [0x7fff] * 4
+            return scene
+
+        with patch.object(mod, 'synthetic_scene', side_effect=disable_distinction):
+            result = compare_private_native_scene_compositor(self.archive)
+        self.assertEqual(result['mismatching_pixels_total'], 0)
+        self.assertEqual(
+            result['priority_group2_individual_changed_rgba_pixels'], 0)
+        self.assertFalse(result['differential_coverage_verified'])
+        self.assertEqual(result['status'],
+                         'PRIVATE_NATIVE_SCENE_DIFFERENTIAL_COVERAGE_REFUSED')
+
     def test_missing_pairwise_stimulus_cannot_claim_coverage(self):
         self.write_fake_archive()
         from tools import cps1_private_scene_compositor_parity as mod
@@ -119,8 +153,8 @@ class NativeSceneCompositorParityTests(unittest.TestCase):
         self.write_fake_archive()
         result = compare_private_native_scene_compositor(self.archive)
         self.assertEqual(result['status'], 'PRIVATE_NATIVE_SCENE_PARITY_PASSED')
-        self.assertEqual(result['synthetic_cases'], 10)
-        self.assertEqual(result['pixels_compared'], 10*PIXELS)
+        self.assertEqual(result['synthetic_cases'], 14)
+        self.assertEqual(result['pixels_compared'], 14*PIXELS)
         self.assertEqual(result['mismatching_pixels_total'], 0)
         self.assertTrue(result['differential_coverage_verified'])
         for metric, must_change in DIFFERENTIAL_EXPECTATIONS.items():
@@ -144,7 +178,7 @@ class NativeSceneCompositorParityTests(unittest.TestCase):
         with patch.object(mod, 'render_frame', side_effect=wrong):
             report = compare_private_native_scene_compositor(self.archive)
         self.assertEqual(report['status'], 'PRIVATE_NATIVE_SCENE_PARITY_MISMATCH')
-        self.assertEqual(report['mismatching_pixels_total'], 10)
+        self.assertEqual(report['mismatching_pixels_total'], 14)
 
     def test_rom_not_persisted_as_extracted_scene_or_rgba(self):
         self.write_fake_archive()
