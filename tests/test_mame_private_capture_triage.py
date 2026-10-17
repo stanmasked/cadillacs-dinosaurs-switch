@@ -4,7 +4,7 @@ import json
 import unittest
 
 from test_mame_multistream_interval_evidence import synthetic_metadata
-from test_mame_private_nominal_interval_consistency import fixture
+from test_mame_private_interval_consistency import fixture
 from tools.mame_private_capture_triage import private_capture_triage
 from tools.mame_private_interval_consistency import private_nominal_interval_consistency
 
