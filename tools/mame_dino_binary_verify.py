@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 MAX_XML_BYTES = 2 * 1024 * 1024
@@ -101,18 +102,29 @@ def inspect_binary(binary, build_dir, timeout_seconds=90):
         raise ValueError('MAME dino executable path is missing or a symlink')
     if not Path(build_dir).is_dir():
         raise ValueError('MAME root directory is missing')
-    try:
-        process = subprocess.run(
-            [str(file.resolve()), '-listxml', EXPECTED_DRIVER],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, timeout=timeout_seconds,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ValueError('MAME ROM-free driver metadata command failed') from exc
-    if process.returncode != 0:
-        raise ValueError('MAME ROM-free driver metadata command exited nonzero')
-    result = validate_dino_xml(process.stdout)
+    # MAME may emit a large XML and verbose diagnostics. Keep both
+    # streams in disposable disk-backed files, *not* unbounded PIPEs.
+    # Read at most MAX_XML_BYTES + 1 into memory after process exit.
+    with tempfile.TemporaryFile(mode='w+b') as xml_output, \
+            tempfile.TemporaryFile(mode='w+b') as diagnostics:
+        try:
+            process = subprocess.run(
+                [str(file.resolve()), '-listxml', EXPECTED_DRIVER],
+                stdin=subprocess.DEVNULL, stdout=xml_output,
+                stderr=diagnostics, timeout=timeout_seconds,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError('MAME ROM-free driver metadata command failed') from exc
+        if process.returncode != 0:
+            raise ValueError('MAME ROM-free driver metadata command exited nonzero')
+        xml_output.seek(0, 2)
+        length = xml_output.tell()
+        if not 0 < length <= MAX_XML_BYTES:
+            raise ValueError('MAME ROM-free listxml exceeded the allowed size')
+        xml_output.seek(0)
+        data = xml_output.read(MAX_XML_BYTES + 1)
+    result = validate_dino_xml(data)
     result.update(verify_compiled_cps1_video_object(build_dir))
     return result
 
