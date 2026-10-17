@@ -115,7 +115,7 @@ class PublicTreePrivacyTests(unittest.TestCase):
     def test_git_error_never_displays_private_paths(self):
         console = io.StringIO()
         with contextlib.redirect_stdout(console):
-            code = main(['--repository', self.root / 'SECRET_NONEXISTENT_REPOSITORY'])
+            code = main(['--repository', str(self.root / 'SECRET_NONEXISTENT_REPOSITORY')])
         self.assertEqual(code, 2)
         self.assertNotIn('SECRET_NONEXISTENT_REPOSITORY', console.getvalue())
         self.assertEqual(json.loads(console.getvalue())['rejected_entry_count'], 1)
