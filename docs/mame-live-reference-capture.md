@@ -1413,3 +1413,32 @@ Public CI tests this CLI against *fabricated ZIP central-directory
 metadata* and deliberate corrupt/missing/linked entries only. It
 never checks in or runs a real original game ROM, and does not
 claim VBlank, game video capture or Switch gameplay parity.
+
+## Stage 105 — exact QSound HLE archive-header check for MAME 0.289
+
+Stage 104's presence-only QSound check was insufficient: a ZIP can contain
+`dl-1425.bin` but still fail MAME's mandatory ROM audit. Verified directly
+against the pinned **MAME 0.289** source
+[`src/devices/sound/qsoundhle.cpp`](https://github.com/mamedev/mame/blob/mame0289/src/devices/sound/qsoundhle.cpp),
+its `ROM_LOAD16_WORD` reads 0x2000 bytes followed by `ROM_IGNORE(0x4000)`.
+The **complete original ROM file** therefore occupies **0x6000 / 24,576
+bytes**, and its public catalog CRC is **d6cf5ef5**. Using only
+0x2000 bytes would give a false match for the loaded DSP subsection.
+
+The local tool now requires the **exact 24,576-byte length and CRC32**
+from `qsound_hle.zip` central-directory metadata before reporting the
+known QSound header blocker absent. It distinguishes three states
+without exposing ZIP contents or private hashes:
+
+- Archive or required member absent.
+- Member present, but size or CRC header differs.
+- Member header size and CRC both match the pinned catalog.
+
+An absent/bad PLD combined with a bad QSound header is explicitly reported
+as two simultaneous dependencies requiring local investigation.
+Tests replace the real game/device files with entirely **synthetic ZipInfo
+headers**, including a deliberately truncated 0x2000-byte device entry
+and altered CRC. A matching header is **not a trustworthy payload
+checksum**: ZIP directory CRC data is untrusted until genuine MAME
+`dino -verifyroms` has processed the privately held assets. No actual
+game launch, audio validation or MAME VBlank/pixel proof is claimed.
