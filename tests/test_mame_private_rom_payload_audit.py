@@ -59,6 +59,51 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
                          'PRIVATE_DINO_ROM_PAYLOAD_CRC_AUDIT_REFUSED')
         self.assertNotIn(str(self.root), stderr.getvalue())
 
+    def test_opt_in_refusal_does_not_falsely_claim_no_rom_read(self):
+        # A failure after the dino archive was processed has ambiguous
+        # partial-read history. Preserve the fact that permission was given.
+        error = io.StringIO()
+        original = audit._catalog_payload_check
+
+        def fail_after_first_zip(path, catalog):
+            if path.name == 'qsound_hle.zip':
+                raise OSError('PRIVATE_LOCAL_PATH_AND_SECRET_DATA')
+            return original(path, catalog)
+
+        with patch.object(audit, 'EXPECTED', self.game_catalog), \
+             patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
+             patch.object(audit, 'DEVICE_HEADER', self.sound_header), \
+             patch.object(audit, '_catalog_payload_check',
+                          side_effect=fail_after_first_zip), \
+             contextlib.redirect_stderr(error):
+            code = audit.main([
+                '--rom-dir', str(self.root), '--verify-private-payloads'])
+        self.assertEqual(code, 2)
+        refusal = json.loads(error.getvalue())
+        self.assertEqual(refusal['status'],
+                         'PRIVATE_DINO_ROM_PAYLOAD_CRC_AUDIT_REFUSED')
+        self.assertTrue(refusal['explicit_private_payload_read_authorized'])
+        self.assertIsNone(refusal['private_payload_bytes_read_locally'])
+        self.assertTrue(refusal['private_payload_bytes_may_have_been_read_locally'])
+        self.assertFalse(refusal['private_payload_read_completion_verified'])
+        self.assertFalse(refusal['private_payload_crc_matches_pinned_catalog'])
+        self.assertNotIn(str(self.root), error.getvalue())
+        self.assertNotIn('PRIVATE_LOCAL_PATH_AND_SECRET_DATA', error.getvalue())
+
+    def test_permission_refusal_still_confirms_no_private_reads(self):
+        error = io.StringIO()
+        with patch.object(audit, '_catalog_payload_check',
+                          side_effect=AssertionError('must never read')) as reader, \
+             contextlib.redirect_stderr(error):
+            code = audit.main(['--rom-dir', str(self.root)])
+        self.assertEqual(code, 2)
+        reader.assert_not_called()
+        refusal = json.loads(error.getvalue())
+        self.assertFalse(refusal['explicit_private_payload_read_authorized'])
+        self.assertFalse(refusal['private_payload_bytes_read_locally'])
+        self.assertFalse(refusal['private_payload_bytes_may_have_been_read_locally'])
+        self.assertFalse(refusal['private_payload_read_completion_verified'])
+
     def test_owned_synthetic_payloads_match_without_mame_authentication(self):
         result = self._audit()
         self.assertEqual(result['status'],
