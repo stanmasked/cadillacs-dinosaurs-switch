@@ -159,3 +159,63 @@ checks plus **7/7 previous scorer checks**. The full committed
 regression module and repository-wide CI remain unverified because
 GitHub Actions fails before runner assignment (issue #20). Neither
 test run involved original game ROMs, live MAME, or Switch hardware.
+
+
+## Stage 46 — register transition fingerprints (diagnostic only)
+
+A secondary analysis, `tools/mame_obj_transition_evidence.py`,
+compares **which of the 64 CPS-A/B 16-bit words changed between
+consecutive sampled frames**, independently of whether all their values
+match at either endpoint. It is invoked automatically by
+`mame_obj_sequence_alignment.py` for the **same** locally captured
+register sequences and bounded candidate offsets.
+
+For each pair of adjacent frames, the tool computes a 64-bit change
+mask internally. For offset `k`, it compares a render transition
+`i→i+1` with Lua transition `i+k→i+k+1`.
+A matching **nonzero** mask is counted; two unchanged transitions
+are reported as `matching_inactive_transitions_non_evidence`, never as
+supporting observations. Raw registers and change masks are **not**
+included in the JSON output.
+
+The new `transition_analysis` report contains one row per offset:
+actual overlapping transition count, number and fraction of matching
+*active* changes, count of distinct matching change patterns, and
+inactive-match count. A transition offset is displayed only when its
+match fraction is uniquely highest, at least **three active transitions**
+match, and at least **two distinct nonzero change masks** match.
+Flat or cyclic transition sequences with tied offsets produce a null
+best offset and a list of ambiguous candidates.
+
+`diagnostic_offset_metrics_agree` in the outer report is:
+`true` or `false` when both the Stage 44/45 exact-register score
+and the new transition-pattern score are independently *informative
+under their own criteria*; otherwise `null`. **Both calculations are
+derived from the same register captures**. Their agreement is NOT
+independent hardware timing evidence, and disagreement is only a
+reason to investigate the capture order, not proof of an error.
+
+Even if matching change masks are uniquely ranked, the register
+**values** may differ and another game frame may have undergone
+the same pattern of writes. Therefore every report preserves
+`transition_diagnostic_only:true`,
+`frame_sync_verified:false` and `pixel_parity_eligible:false`.
+The native Switch scene exporter is not bypassed.
+
+### Verification
+
+The exact GitHub-committed source for the transition helper
+(Git blob `fc8a8a9f6822b5bf0e6db1480d9b05e7778e24c3`)
+and ten-test module
+(`b995cfb033f44ae3bfa4ab4f87d167162906e8c2`)
+were reproduced byte-for-byte in a local Python environment; **all
+10/10 tests passed**. These cover one-step shifts, aligned changes,
+flat and recurring patterns, missing/change-poor evidence, wrong
+buffer lengths, unrelated register changes, and non-wrapping edge
+overlap. An additional CLI-regression assertion is committed to
+the existing sequence test but not yet executed in the full repo.
+
+CI and real MAME 0.289 sampling remain unverified due to the
+pre-runner Actions failure ([issue #20](https://github.com/stanmasked/cadillacs-dinosaurs-switch/issues/20)).
+No game ROMs, frame pixels, authentic OBJ buffers, native Switch builds
+or actual gameplay captures are committed.
