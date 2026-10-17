@@ -23,6 +23,8 @@ on:
       - 'source/cps1_sequence.h'
       - 'tests/**'
       - '.github/workflows/python-tests.yml'
+      - '.github/workflows/switch-bootstrap.yml'
+      - 'Makefile'
   workflow_dispatch:
 
 permissions:
