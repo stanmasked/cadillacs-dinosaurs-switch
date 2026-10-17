@@ -247,11 +247,27 @@ static uint8_t *load_sequence_image(const uint8_t *gfx,
 /* Fully ROM-free geometry preview: intentionally not original game art.
  * Placeholder actor and stationary dummy use independently written rules.
  */
+static const char *arena_pose_name(DinoArenaPose pose) {
+    switch (pose) {
+        case DINO_POSE_IDLE: return "IDLE";
+        case DINO_POSE_WALK: return "WALK";
+        case DINO_POSE_JUMP: return "JUMP";
+        case DINO_POSE_ATTACK: return "ATTACK";
+        case DINO_POSE_HURT: return "HURT";
+        case DINO_POSE_KO: return "KO";
+        case DINO_POSE_WINDUP: return "WINDUP";
+        default: return "UNKNOWN";
+    }
+}
+
 static void arena_frame(uint32_t *frame, unsigned pitch,
                         const DinoArena *arena, bool have_gfx) {
+    const DinoArenaPose player=dino_arena_player_pose(arena);
+    const DinoArenaPose enemy=dino_arena_dummy_pose(arena);
+    const unsigned phase=dino_arena_pose_phase(arena);
     rectangle(frame,pitch,0,0,FB_WIDTH,FB_HEIGHT,rgb(11,18,29));
-    /* Fit the complete 384x224 arena (including its bottom lane)
-     * within the 1280x720 framebuffer at an exact integer scale. */
+    /* Fully ROM-free placeholder sprites in original 384x224 coordinates.
+     * Visual poses derive solely from the 60Hz deterministic simulation. */
     const int ox=64, oy=24, scale=3;
     rectangle(frame,pitch,ox,oy,1152,672,rgb(30,61,70));
     rectangle(frame,pitch,ox,oy+240,1152,432,rgb(62,83,74));
@@ -263,54 +279,79 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
     label(frame,pitch,52,55,
           "PLACEHOLDER ACTOR AND DUMMY  -  NOT ORIGINAL GAMEPLAY",
           1,rgb(160,190,207));
-    if (arena->dummy_hp) {
-        const int x=ox+arena->dummy_x*scale;
-        const int y=oy+arena->dummy_y*scale;
+
+    const int x=ox+arena->dummy_x*scale;
+    const int y=oy+arena->dummy_y*scale;
+    if (enemy==DINO_POSE_KO) {
+        rectangle(frame,pitch,x-29,y-14,58,12,rgb(101,81,66));
+    } else {
+        const int walk_bob=enemy==DINO_POSE_WALK && phase ? 5 : 0;
+        const int crouch=enemy==DINO_POSE_WINDUP ? 9 : 0;
         rectangle(frame,pitch,x-17,y-7,34,8,rgb(26,37,40));
-        rectangle(frame,pitch,x-16,y-102,32,94,
-                  arena->dummy_hitstun?rgb(247,196,120):rgb(190,126,74));
-        if (arena->dummy_windup) {
-            /* Bright outline telegraphs an imminent sparring attack. */
+        rectangle(frame,pitch,x-16,y-102+walk_bob+crouch,32,
+                  94-crouch-walk_bob,
+                  enemy==DINO_POSE_HURT ? rgb(247,196,120):
+                  enemy==DINO_POSE_WINDUP ? rgb(224,149,65):
+                                           rgb(190,126,74));
+        if (enemy==DINO_POSE_WINDUP) {
             rectangle(frame,pitch,x-20,y-112,4,110,rgb(254,224,69));
             rectangle(frame,pitch,x+16,y-112,4,110,rgb(254,224,69));
         }
-        if (arena->dummy_attack_frames) {
+        if (enemy==DINO_POSE_ATTACK) {
             const int ax=x+(arena->dummy_facing_right?17:-77);
             rectangle(frame,pitch,ax,y-70,60,18,rgb(246,142,94));
         }
-        rectangle(frame,pitch,x-12,y-113,24,16,rgb(231,202,142));
-        /* Three neutral pips represent the dummy's remaining health. */
+        rectangle(frame,pitch,x-12,y-113+walk_bob+crouch,24,16,
+                  rgb(231,202,142));
         for (unsigned i=0;i<arena->dummy_hp;++i)
-            rectangle(frame,pitch,x-24+(int)i*17,y-133,12,6,rgb(250,196,87));
+            rectangle(frame,pitch,x-24+(int)i*17,y-133,12,6,
+                      rgb(250,196,87));
     }
+
     const int px=ox+arena->x*scale;
     const int py=oy+arena->y*scale;
     const int rise=arena->z*scale;
     rectangle(frame,pitch,px-16,py-7,32,7,rgb(27,39,43));
-    rectangle(frame,pitch,px-16,py-rise-74,32,67,
-              arena->player_hitstun?rgb(251,121,106):
-              arena->player_invuln?rgb(111,136,184):rgb(62,180,208));
-    rectangle(frame,pitch,px-12,py-rise-92,24,18,rgb(231,218,164));
-    rectangle(frame,pitch,px+(arena->facing_right?9:-15),
-              py-rise-63,6,13,rgb(238,233,210));
-    if (arena->attack_frames) {
-        const int hit_x=px+(arena->facing_right?16:-75);
-        rectangle(frame,pitch,hit_x,py-rise-63,60,18,rgb(249,214,100));
+    if (player==DINO_POSE_KO) {
+        rectangle(frame,pitch,px-34,py-15,68,12,rgb(91,112,140));
+        rectangle(frame,pitch,px+(arena->facing_right?17:-34),
+                  py-18,17,17,rgb(231,218,164));
+    } else {
+        const int bob=(player==DINO_POSE_WALK && phase)?5:0;
+        uint32_t body=player==DINO_POSE_HURT ? rgb(251,121,106):
+                      arena->player_invuln ? rgb(111,136,184):
+                      player==DINO_POSE_ATTACK ? rgb(86,210,207):
+                                                 rgb(62,180,208);
+        rectangle(frame,pitch,px-16,py-rise-74+bob,32,67-bob,body);
+        rectangle(frame,pitch,px-12,py-rise-92+bob,24,18,
+                  rgb(231,218,164));
+        rectangle(frame,pitch,px+(arena->facing_right?9:-15),
+                  py-rise-63+bob,6,13,rgb(238,233,210));
+        if (player==DINO_POSE_WALK)
+            rectangle(frame,pitch,px+(phase?7:-12),py-rise-9,
+                      9,8,rgb(237,238,216));
+        if (player==DINO_POSE_ATTACK) {
+            const int hit_x=px+(arena->facing_right?16:-75);
+            rectangle(frame,pitch,hit_x,py-rise-63,60,18,
+                      rgb(249,214,100));
+        }
     }
+
     rectangle(frame,pitch,0,661,1280,59,rgb(11,18,29));
-    char status[115];
+    char status[140];
     snprintf(status,sizeof(status),
-             "X %03d  DEPTH %03d  HITS %03u  PLAYER HP %u  DUMMY HP %u  %s",
-             (int)arena->x,(int)arena->y,
-             (unsigned)arena->successful_hits,(unsigned)arena->player_hp,
-             (unsigned)arena->dummy_hp,
+             "PLAYER %s HP %u  OPPONENT %s HP %u  HITS %03u  %s",
+             arena_pose_name(player),(unsigned)arena->player_hp,
+             arena_pose_name(enemy),(unsigned)arena->dummy_hp,
+             (unsigned)arena->successful_hits,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
     label(frame,pitch,52,698,
           "DPAD MOVE  A ATTACK  B JUMP  X SPAR  Y RESET  PLUS EXIT",
           1,rgb(182,207,219));
     if (have_gfx)
-        label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,rgb(169,210,182));
+        label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,
+              rgb(169,210,182));
 }
 
 static void fallback_text(PadState *pad) {
