@@ -4,7 +4,7 @@
 
 /* An ORIGINAL ROM-FREE training-room prototype, not Cadillacs gameplay.
  * Coordinates are integer world pixels in a 384x224 diagnostic viewport.
- * No arcade ROM, original sprite, enemy AI or copied game physics needed.
+ * No arcade ROM, original sprite or copied game physics needed.
  */
 #define DINO_ARENA_WIDTH 384
 #define DINO_ARENA_HEIGHT 224
@@ -15,7 +15,8 @@ enum {
     DINO_ARENA_UP = 4u,
     DINO_ARENA_DOWN = 8u,
     DINO_ARENA_ATTACK = 16u,
-    DINO_ARENA_JUMP = 32u
+    DINO_ARENA_JUMP = 32u,
+    DINO_ARENA_TOGGLE_SPAR = 64u /* explicitly invented training AI */
 };
 
 typedef struct {
@@ -27,6 +28,11 @@ typedef struct {
     uint8_t dummy_hp;
     uint8_t dummy_hitstun;
     uint8_t attack_frames, attack_cooldown;
+    /* Optional deterministic sparring: disabled after reset for original
+     * stationary-target regression compatibility. Never arcade AI. */
+    uint8_t sparring, player_hp, player_hitstun, player_invuln;
+    uint8_t dummy_windup, dummy_cooldown, dummy_attack_frames;
+    uint8_t dummy_facing_right, player_hits_taken;
 } DinoArena;
 
 /* Both routines use no heap, I/O, ROM or platform-specific types. */
