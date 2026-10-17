@@ -3,10 +3,23 @@
 Target: **Capcom CPS-1, World 930201, MAME dino**.
 
 ## Current status
-Initial Switch homebrew bootstrap and ROM auditing framework. **Not yet playable.** No original commercial assets are stored here.
+**ROM-free training-room prototype and CPS-1 diagnostic viewer.** The NRO
+contains a newly authored, playable placeholder movement/jump/attack sandbox
+that requires **no original game graphics**. It also retains user-local
+tile/scene/sequence viewers when personal CPS-1 graphics are supplied.
+**This is not the original Cadillacs and Dinosaurs game or a playable
+game-faithful remake.** There is no original character/level gameplay,
+emulated original AI, original audio or real Switch hardware runtime proof.
+No commercial assets are stored in the public repository.
+
+See [stage 114 training-room controls and limitations](docs/switch-rom-free-training-room.md).
 
 ## Build
-Install [devkitPro switch-dev](https://www.switchbrew.org/wiki/Setting_up_Development_Environment), export DEVKITPRO, then run `make`. Expected result: `cadillacs-dinosaurs-switch.nro`. Switch compilation is not yet verified.
+Install [devkitPro switch-dev](https://www.switchbrew.org/wiki/Setting_up_Development_Environment),
+export DEVKITPRO, then run `make`. Expected result:
+`cadillacs-dinosaurs-switch.nro`. ROM-free native Switch builds have
+passed GitHub Actions; a physical Switch gameplay test has not been
+confirmed. Without `gfx.bin` the technical sandbox opens automatically.
 
 ## ROM audit
 Run `python3 tools/verify_rom.py /path/to/your/dino.zip` using your own legitimately acquired files. Never commit ROM data.
