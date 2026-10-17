@@ -38,7 +38,7 @@ def _register_crc_evidence(snapshot, cps_a, cps_b):
     timing, origin, cryptographic authenticity or complete capture integrity.
     """
     declared = snapshot.get('capture_file_crc32')
-    if declared is None:
+    if 'capture_file_crc32' not in snapshot:
         return {
             'status': 'NO_CRC32_IN_PARTIAL_SNAPSHOT',
             'verified_register_files': 0,
