@@ -5,6 +5,12 @@ local OUTPUT_DIR='cps1-captures'
 local START_FRAME=900
 local FRAME_COUNT=6
 local FRAME_STEP=2
+-- Same-process source label; not physical VBlank provenance.
+local SESSION_ID=os.getenv('CPS1_DINO_CAPTURE_SESSION') or 'UNBOUND'
+if SESSION_ID~='UNBOUND' then
+    assert(#SESSION_ID==32 and SESSION_ID:match('^[0-9a-f]+$'),
+           'Invalid private MAME capture session label')
+end
 
 local machine=manager.machine
 local cpu=assert(machine.devices[':maincpu'],'Missing :maincpu')
@@ -133,6 +139,7 @@ local function capture(frame)
     -- private MAME sequence analyser. The manifest is written LAST.
     write_file(stem..'.manifest.json',string.format([=[{
   "game":"dino","frame":%d,"capture_hook":"frame_done",
+  "capture_session":"%s",
   "gfxram_bytes":196608,"cps_a_bytes":64,"cps_b_bytes":64,
   "palette_bytes":9216,"reference_width":384,"reference_height":224,
   "reference_rgb_bytes":258048,"raw_word_endianness":"big",
@@ -144,7 +151,7 @@ local function capture(frame)
   },
   "warning":"CRC32 validates Lua files, not callback synchronization or original pixel parity"
 }
-]=],frame,
+]=],frame,SESSION_ID,
         crc['gfxram-be.bin'],crc['cps-a-be.bin'],crc['cps-b-be.bin'],
         crc['palette-rgb24.bin'],crc['reference-rgb24.bin']))
     print('[cps1 capture] collected private MAME frame '..tostring(frame))
