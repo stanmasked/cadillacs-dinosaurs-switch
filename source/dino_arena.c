@@ -63,6 +63,10 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
         a->dummy_attack_frames=0;
         a->player_hitstun=0;
         a->player_invuln=0;
+        /* A new practice mode never inherits combo progress or VFX. */
+        a->combo_hits=0;
+        a->combo_timer=0;
+        a->finisher_flash=0;
         if (a->sparring) {
             /* Start every sparring attempt with a fresh opponent,
              * independent of previous target-practice hits. */
@@ -82,6 +86,11 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if (a->player_invuln) --a->player_invuln;
     if (a->dummy_cooldown) --a->dummy_cooldown;
     if (a->dummy_attack_frames) --a->dummy_attack_frames;
+    if (a->finisher_flash) --a->finisher_flash;
+    if (a->combo_timer) {
+        --a->combo_timer;
+        if (!a->combo_timer) a->combo_hits=0;
+    }
 
     if (!a->player_hitstun && a->player_hp) {
         int dx=((held&DINO_ARENA_RIGHT)!=0)-((held&DINO_ARENA_LEFT)!=0);
@@ -112,8 +121,26 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
             if (a->dummy_hp && front && distance(a->dummy_x,a->x)<=38 &&
                 distance(a->dummy_y,a->y)<=15 && a->z<=20) {
                 --a->dummy_hp;
-                a->dummy_hitstun=9;
                 ++a->successful_hits;
+                /* Only LANDED attacks advance the 24-tick, at-most-three
+                 * combo. Misses / cooldown button presses never refresh it.
+                 * The finisher fires once, exactly on the 2 -> 3 edge. */
+                const int finisher=(a->combo_timer && a->combo_hits==2);
+                if (!a->combo_timer) a->combo_hits=1;
+                else if (a->combo_hits<3) ++a->combo_hits;
+                a->combo_timer=24;
+                a->dummy_hitstun=(uint8_t)(finisher?14:9);
+                if (finisher) {
+                    a->finisher_flash=10;
+                    if (a->sparring) {
+                        /* Apply a bounded single knockback event even if
+                         * this finishing attack defeats the opponent. */
+                        const int direction=a->facing_right?1:-1;
+                        a->dummy_x=clamp(a->dummy_x+18*direction,
+                                         16,DINO_ARENA_WIDTH-16);
+                        a->dummy_moving=1;
+                    }
+                }
                 a->dummy_windup=0; /* successful hit interrupts attack */
                 if (!a->dummy_hp) a->dummy_attack_frames=0;
             }
@@ -145,6 +172,10 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
                     !a->player_invuln) {
                     --a->player_hp;
                     ++a->player_hits_taken;
+                    /* Taking an actual hit breaks active player combos. */
+                    a->combo_hits=0;
+                    a->combo_timer=0;
+                    a->finisher_flash=0;
                     a->player_hitstun=11;
                     a->player_invuln=30;
                 }
