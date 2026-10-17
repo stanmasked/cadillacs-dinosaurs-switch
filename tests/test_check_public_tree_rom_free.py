@@ -38,6 +38,15 @@ class PublicTreePrivacyTests(unittest.TestCase):
         self.assertEqual(out['rejected_entry_count'], 0)
         self.assertFalse(out['git_history_checked'])
 
+    def test_project_precommit_hook_is_allowed_but_other_extensionless_is_not(self):
+        self.put('.githooks/pre-commit',
+                 b'#!/bin/sh\nexec python3 tools/check_public_tree_rom_free.py\n')
+        result = check_staged_git_tree(self.root)
+        self.assertEqual(result['rejected_entry_count'], 0)
+        self.put('other/private-script', b'not-a-source-document')
+        result = check_staged_git_tree(self.root)
+        self.assertEqual(result['fixed_reason_counts']['forbidden_paths'], 1)
+
     def test_zip_and_bin_forced_into_index_are_refused_without_paths(self):
         self.put('dino.zip', b'PK\x03\x04SYNTHETIC NOT ORIGINAL')
         self.put('roms/gfx.bin', b'SYNTHETIC BYTES')

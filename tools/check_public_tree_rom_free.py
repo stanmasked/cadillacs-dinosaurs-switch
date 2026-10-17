@@ -71,7 +71,8 @@ def check_staged_git_tree(repository):
             continue
         if (any(part.lower() in FORBIDDEN_COMPONENTS for part in parts[:-1])
                 or suffix in FORBIDDEN_SUFFIXES or
-                (suffix not in TEXT_SUFFIXES and parts[-1] not in SPECIAL_FILENAMES)):
+                (suffix not in TEXT_SUFFIXES and parts[-1] not in SPECIAL_FILENAMES
+                 and path != '.githooks/pre-commit')):
             problems['forbidden_paths'] += 1
             continue
         try:
