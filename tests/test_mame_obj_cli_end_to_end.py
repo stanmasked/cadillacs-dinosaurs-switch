@@ -13,7 +13,7 @@ import tempfile
 import unittest
 import zlib
 
-from tools.mame_obj_sequence_alignment import main, COMPONENTS, CAPTURE_SCHEMA
+from tools.mame_obj_sequence_alignment import main, COMPONENTS, CAPTURE_SCHEMA, CAPTURE_SIZES
 
 
 def states(count):
@@ -39,16 +39,23 @@ def make_capture(root, *, count=6, shift=0, flat=False, cycle=False):
     for index, (probe, reference) in enumerate(zip(render, lua)):
         stem = f'frame-{900 + index * 2:08d}'
         a, b = reference[:64], reference[64:]
-        checksums = {name: '00000000' for name in COMPONENTS}
-        checksums['cps-a-be.bin'] = f'{zlib.crc32(a) & 0xffffffff:08x}'
-        checksums['cps-b-be.bin'] = f'{zlib.crc32(b) & 0xffffffff:08x}'
+        raw_files = {
+            'gfxram-be.bin': bytes([index % 251]) * CAPTURE_SIZES['gfxram-be.bin'],
+            'cps-a-be.bin': a, 'cps-b-be.bin': b,
+            'palette-rgb24.bin': bytes([index % 127]) * CAPTURE_SIZES['palette-rgb24.bin'],
+            'reference-rgb24.bin': bytes([index % 199]) * CAPTURE_SIZES['reference-rgb24.bin'],
+        }
+        checksums = {
+            name: f'{zlib.crc32(blob) & 0xffffffff:08x}'
+            for name, blob in raw_files.items()
+        }
         manifest = dict(
             game='dino', frame=900 + index * 2, capture_hook='frame_done',
             pixel_parity_eligible=False, obj_latch='NOT_CAPTURED',
             file_crc32=checksums, **CAPTURE_SCHEMA)
         (root / (stem + '.manifest.json')).write_text(json.dumps(manifest))
-        (root / (stem + '.cps-a-be.bin')).write_bytes(a)
-        (root / (stem + '.cps-b-be.bin')).write_bytes(b)
+        for filename, blob in raw_files.items():
+            (root / (stem + '.' + filename)).write_bytes(blob)
         (root / (stem + '.render-regs-be.bin')).write_bytes(probe)
         (root / (stem + '.buffered-obj-be.bin')).write_bytes(bytes(2048))
     return render, lua
