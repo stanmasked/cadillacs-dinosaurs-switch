@@ -22,6 +22,9 @@ jobs:
       - name: Check out our ROM-free probe tooling
         uses: actions/checkout@v4
 
+      - name: Run session-aware ROM-free verifier regressions
+        run: python3 -m unittest discover -s tests -p test_mame_dino_binary_verify.py -v
+
       - name: Install official Debian/Ubuntu MAME build prerequisites
         run: |
           set -euo pipefail
@@ -84,7 +87,8 @@ jobs:
           fi
           echo "Instrumented real MAME built successfully: $binary"
           # Verify the real MAME 0.289 driver XML AND that the freshly
-          # compiled CPS-1 video ELF includes our V2 latch-probe format.
+          # compiled CPS-1 video ELF contains V2 plus both session markers.
+          # An older V2-only emulator build is explicitly rejected.
           # No original game ROMs, screenshots or emulator binaries uploaded.
           python3 "$GITHUB_WORKSPACE/tools/mame_dino_binary_verify.py" \
             "$binary" "$RUNNER_TEMP/mame0289"

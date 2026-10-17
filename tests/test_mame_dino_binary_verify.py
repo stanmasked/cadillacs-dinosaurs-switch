@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from tools.mame_dino_binary_verify import (
-    MAX_XML_BYTES, PROBE_COMPILED_MARKER, inspect_binary, main,
+    MAX_XML_BYTES, PROBE_COMPILED_MARKER, SESSION_COMPILED_MARKER,
+    SESSION_ENV_COMPILED_MARKER, inspect_binary, main,
     validate_dino_xml, verify_compiled_cps1_video_object,
 )
 
@@ -29,7 +30,8 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         self.build.mkdir(parents=True)
         self.obj = self.build / 'cps1_v.o'
         self.obj.write_bytes(b'\x7fELF' + bytes(124) +
-                             PROBE_COMPILED_MARKER)
+                             PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER +
+                             SESSION_ENV_COMPILED_MARKER)
 
     def test_valid_0289_dino_xml_keeps_game_parity_false(self):
         result = validate_dino_xml(fake_xml())
@@ -67,8 +69,12 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         meta = verify_compiled_cps1_video_object(self.root)
         self.assertTrue(meta['compiled_cps1_video_object'])
         self.assertEqual(meta['compiled_cps1_video_object_bytes'],
-                         128 + len(PROBE_COMPILED_MARKER))
+                         128 + len(PROBE_COMPILED_MARKER) +
+                         len(SESSION_COMPILED_MARKER) +
+                         len(SESSION_ENV_COMPILED_MARKER))
         self.assertTrue(meta['compiled_instrumented_latch_v2_format'])
+        self.assertTrue(meta['compiled_session_label_probe_marker'])
+        self.assertTrue(meta['compiled_session_environment_probe_marker'])
         self.assertFalse(meta['instrumentation_runtime_verified'])
 
     def test_rejects_missing_duplicate_invalid_or_symlinked_objects(self):
@@ -78,7 +84,8 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_compiled_cps1_video_object(self.root)
         self.obj.write_bytes(b'\x7fELF' + bytes(124) +
-                             PROBE_COMPILED_MARKER)
+                             PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER +
+                             SESSION_ENV_COMPILED_MARKER)
         duplicate = self.root / 'cps1_v.o'
         duplicate.write_bytes(self.obj.read_bytes())
         with self.assertRaisesRegex(ValueError, 'exactly one'):
@@ -92,6 +99,18 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
     def test_rejects_mock_elf_without_compiled_v2_marker(self):
         self.obj.write_bytes(b'\x7fELF' + bytes(300))
         with self.assertRaisesRegex(ValueError, 'lacks the generated'):
+            verify_compiled_cps1_video_object(self.root)
+
+    def test_rejects_pre_session_v2_elf_even_with_latch_marker(self):
+        self.obj.write_bytes(b'\x7fELF' + bytes(124) +
+                             PROBE_COMPILED_MARKER)
+        with self.assertRaisesRegex(ValueError, 'session label sidecar'):
+            verify_compiled_cps1_video_object(self.root)
+
+    def test_rejects_session_sidecar_marker_without_environment_lookup(self):
+        self.obj.write_bytes(b'\x7fELF' + bytes(124) +
+                             PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER)
+        with self.assertRaisesRegex(ValueError, 'session environment lookup'):
             verify_compiled_cps1_video_object(self.root)
 
     def test_auxiliary_nonrunnable_mame_devices_are_valid(self):

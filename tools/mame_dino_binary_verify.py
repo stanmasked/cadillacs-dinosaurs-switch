@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 MAX_XML_BYTES = 2 * 1024 * 1024
 MAX_OBJECT_BYTES = 64 * 1024 * 1024
 PROBE_COMPILED_MARKER = b'CPS1_DINO_LATCH_V2'
+SESSION_COMPILED_MARKER = b'CPS1_DINO_SESSION'
+SESSION_ENV_COMPILED_MARKER = b'CPS1_DINO_CAPTURE_SESSION'
 OBJECT_BASENAME = 'cps1_v.o'
 EXPECTED_DRIVER = 'dino'
 EXPECTED_SOURCE = 'capcom/cps1.cpp'
@@ -85,9 +87,15 @@ def verify_compiled_cps1_video_object(directory):
         raise ValueError('Compiled cps1_v.o is not a Linux ELF object')
     if PROBE_COMPILED_MARKER not in data:
         raise ValueError('Compiled cps1_v.o lacks the generated latch V2 format')
+    if SESSION_COMPILED_MARKER not in data:
+        raise ValueError('Compiled cps1_v.o lacks the new session label sidecar format')
+    if SESSION_ENV_COMPILED_MARKER not in data:
+        raise ValueError('Compiled cps1_v.o lacks the session environment lookup')
     return {
         'compiled_cps1_video_object': True,
         'compiled_instrumented_latch_v2_format': True,
+        'compiled_session_label_probe_marker': True,
+        'compiled_session_environment_probe_marker': True,
         'compiled_cps1_video_object_bytes': path.stat().st_size,
         'compiled_cps1_video_object_relative_path': path.relative_to(root).as_posix(),
         'instrumentation_runtime_verified': False,
