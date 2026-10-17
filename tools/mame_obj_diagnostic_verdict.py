@@ -71,6 +71,61 @@ def diagnostic_verdict(exact, transition, stability):
     exact_offset = _offset(exact, 'best_offset_steps', exact_ok)
     transition_offset = _offset(
         transition, 'transition_best_offset_steps', transition_ok)
+    # A full Stage 49 CLI report supplies the original sample count, the
+    # nominal frame step, and per-offset candidate evidence. Recheck those
+    # relationships here so a stale or mixed diagnostic object cannot be
+    # promoted merely by setting its boolean conclusion fields to True.
+    if 'sample_count' in exact or 'frame_step' in exact:
+        count = exact.get('sample_count')
+        step = exact.get('frame_step')
+        if (type(count) is not int or not 4 <= count <= 24 or
+                type(step) is not int or not 1 <= step <= 120):
+            raise ValueError('Invalid or incomplete frame-series metadata')
+        if applicable and trials != count - 1:
+            raise ValueError('LOO trial count disagrees with source frame count')
+        if exact_ok and exact.get('best_offset_nominal_frames') != exact_offset * step:
+            raise ValueError('Exact offset uses inconsistent nominal frame units')
+        if (transition_ok and
+                transition.get('transition_best_offset_nominal_frames') !=
+                transition_offset * step):
+            raise ValueError('Transition offset uses inconsistent nominal frame units')
+
+    def require_support(report, key, offset, kind):
+        rows = report.get(key)
+        if rows is None:
+            return  # Legacy focused caller without candidate rows.
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise ValueError(f'Malformed {kind} candidate evidence')
+        selected = [row for row in rows if row.get('offset_steps') == offset]
+        if len(selected) != 1:
+            raise ValueError(f'{kind} candidate offset absent or ambiguous')
+        row = selected[0]
+        if kind == 'exact':
+            if (type(row.get('exact_equal_pairs')) is not int or
+                    row['exact_equal_pairs'] < 3 or
+                    type(row.get('distinct_equal_register_states')) is not int or
+                    row['distinct_equal_register_states'] < 2):
+                raise ValueError('Exact candidate lacks required register evidence')
+        else:
+            if (row.get('overlap_sufficient') is not True or
+                    type(row.get('matching_active_transitions')) is not int or
+                    row['matching_active_transitions'] < 3 or
+                    type(row.get('distinct_matching_change_masks')) is not int or
+                    row['distinct_matching_change_masks'] < 2):
+                raise ValueError('Transition candidate lacks required active evidence')
+
+    if exact_ok:
+        require_support(exact, 'candidates', exact_offset, 'exact')
+    if transition_ok:
+        require_support(transition, 'transition_candidates',
+                        transition_offset, 'transition')
+    if 'leave_one_out_reason' in stability:
+        expected = ('BASE_HYPOTHESIS_INCONCLUSIVE' if not applicable else
+                    'ALL_OMISSIONS_PRESERVE_DIAGNOSTIC_OFFSET' if stable else
+                    'SENSITIVE_TO_OMITTED_TRANSITIONS')
+        if stability['leave_one_out_reason'] != expected:
+            raise ValueError('LOO reason conflicts with trial results')
+
     both = exact_ok and transition_ok
     agreement = exact_offset == transition_offset if both else None
 
