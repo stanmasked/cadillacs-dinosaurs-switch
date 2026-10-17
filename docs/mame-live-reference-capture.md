@@ -422,3 +422,65 @@ mutations during cross-stream analysis, after JSON serialization,
 or add unexpected capture files. They verify **no final JSON**
 is published on any such failure. No actual commercial dino ROM
 was used or uploaded during this stage.
+
+
+## Stage 70 — same-launcher session labels across Lua and C++
+
+Even a fully CRC32-verified, SHA-256-stable 54-file set can
+contain **accidentally combined captures from separate MAME
+processes**. Such data may have valid frame numbers and sizes
+without sharing the same run.
+
+The private launcher now generates a **fresh random 128-bit
+lowercase hexadecimal session label** at runtime, passes it
+only in the local `CPS1_DINO_CAPTURE_SESSION` process environment,
+and keeps the label out of the completed diagnostic JSON.
+
+Two separate MAME capture hooks observe that label:
+
+- Lua writes `capture_session` into each original six-frame
+  CRC32 manifest. Standalone Lua tests without a launcher
+  explicitly write `UNBOUND`, which the private launcher rejects.
+- The generated MAME 0.289 C++ video hook still emits its
+  backwards-compatible `CPS1_DINO_LATCH_V2` header and buffered
+  OBJ FNV-1a 64 fingerprint. When a canonical label exists in
+  the process environment, the **same existing V2 text file**
+  gains a second line, `CPS1_DINO_SESSION <32-hex-label>`.
+  It does not create an extra captured file.
+
+The optional generic latch reader can consume both unstamped
+historical V2 records and stamped V2 records. It rejects mixed
+session labels or a series containing both stamped and unstamped
+records. The new strict local-only
+`tools/mame_capture_session_binding.py` checks the label in
+**all six Lua manifests and all six corresponding C++ sidecars**
+against the launcher's **original expected label**. The
+private session never publishes a completed report if any
+label is missing, malformed or different. The final JSON
+contains only safe `capture_session_binding` counts and
+`shared_session_label_consistent:true`, not the raw label.
+
+This is a **local run-consistency tag**, not cryptographic
+authentication. Both labels are produced in the *same emulator
+process* from one inherited environment and are not independent
+trusted observations. A modified emulator could forge them;
+they do not prove that the original game was playing, which
+hardware VBlank buffered OBJ, or which pixels were displayed.
+All real-game authenticity, active-gameplay, frame-sync and
+pixel-parity flags remain false.
+
+The new source generator modifies the real upstream C++ injection
+by reading `std::getenv` from the existing C++ video probe.
+Its original source must still pass the byte-for-byte
+unmodified MAME 0.289 patch/reconstruction gate; the generated
+C++ is additionally compiled and **executed in the ROM-free
+mock MAME harness with the session environment enabled**.
+This verifies the injected C++ source behavior but does not
+replace compilation or runtime testing of the updated code
+inside a fresh full upstream MAME build.
+
+No commercial ROM, captured RGB, OBJ or original sprite data
+is added to the public repository. For complete private
+session integrity, the label check is followed by the Stage
+69 file-stability check and Stage 68 exclusive final JSON
+publication; use a new empty private workspace per run.
