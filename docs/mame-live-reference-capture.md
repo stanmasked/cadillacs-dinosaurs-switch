@@ -752,3 +752,30 @@ Synthetic regressions verify zipped/unpacked layout, missing/empty/linked
 entries, no original-ROM read, conservative output, bad ELF before entry
 inspection, mutually exclusive modes and no filesystem side effects.
 These synthetic results are **not a live original-game capture**.
+
+
+## Stage 80 — path-safe failures for real private MAME sessions
+
+The private launcher previously caught `OSError`, `ValueError` and similar
+exceptions at its CLI boundary but **printed the original exception text**.
+Python `FileNotFoundError` and permission exceptions may contain the
+absolute pathname of a private original-game ROM, local MAME binary or
+capture. A late file/read failure could therefore disclose private
+machine paths to a copied console transcript or CI log.
+
+The launcher now uses `tools/mame_private_cli_errors.py` to emit
+**only fixed, path-free error codes and brief fixed guidance** on stderr.
+Known errors are classified as invalid input, unverified MAME build,
+invalid ROM layout, invalid workspace, failed MAME process, failed
+capture audit or local filesystem error. Unknown exceptions are handled
+at the CLI boundary without a traceback or exception string. The Python
+API still raises normally for local debugging, and existing private
+files/logs are retained. The CLI returns nonzero after any refusal
+and never marks VBlank, gameplay or pixel parity verified.
+
+ROM-free synthetic tests deliberately inject absolute private filenames,
+simulated secret session tokens, permission errors and unexpected
+runtime errors to verify the output does not echo original exception
+messages, local paths, ROM data, or tracebacks. This change does not
+run an original ROM or validate its integrity. For local inspection,
+look inside the 0700 private workspace, not public GitHub logs.

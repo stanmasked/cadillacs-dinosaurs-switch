@@ -678,6 +678,45 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertNotIn(str(self.workspace), output.getvalue())
         self.assertEqual(list(self.workspace.iterdir()), [])
 
+    def test_cli_filesystem_failure_never_prints_private_path_or_traceback(self):
+        err = io.StringIO()
+        hidden = str(self.roms / 'dino.zip')
+        with patch('tools.mame_private_dino_session.preflight',
+                   side_effect=FileNotFoundError(2, 'Missing', hidden)), \
+             contextlib.redirect_stderr(err):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--preflight-only',
+            ])
+        self.assertEqual(code, 2)
+        output = json.loads(err.getvalue())
+        self.assertEqual(output['status'], 'PRIVATE_MAME_CAPTURE_REFUSED')
+        self.assertEqual(output['reason_code'], 'PRIVATE_FILESYSTEM_ERROR')
+        self.assertNotIn(hidden, err.getvalue())
+        self.assertNotIn(str(self.roms), err.getvalue())
+        self.assertNotIn('Traceback', err.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_unknown_failure_never_prints_private_exception_data(self):
+        err = io.StringIO()
+        with patch('tools.mame_private_dino_session.preflight_mame_build',
+                   side_effect=RuntimeError('private original dino session secret')), \
+             contextlib.redirect_stderr(err):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--verify-build-only',
+            ])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(err.getvalue())['reason_code'],
+                         'UNEXPECTED_PRIVATE_LAUNCH_FAILURE')
+        self.assertNotIn('private original dino session secret', err.getvalue())
+        self.assertNotIn('Traceback', err.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
     def test_cli_preflight_hides_absolute_private_rom_path(self):
         text = io.StringIO()
         with contextlib.redirect_stdout(text):

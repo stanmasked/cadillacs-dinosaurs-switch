@@ -30,6 +30,7 @@ try:
     from tools.mame_private_interval_consistency import private_nominal_interval_consistency
     from tools.mame_private_capture_triage import private_capture_triage
     from tools.mame_private_rom_entry import require_private_dino_entry
+    from tools.mame_private_cli_errors import write_private_failure
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -41,6 +42,7 @@ except ModuleNotFoundError:
     from mame_private_interval_consistency import private_nominal_interval_consistency
     from mame_private_capture_triage import private_capture_triage
     from mame_private_rom_entry import require_private_dino_entry
+    from mame_private_cli_errors import write_private_failure
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -376,9 +378,12 @@ def main(argv=None):
             check_launch_readiness=args.check_launch_readiness)
         print(json.dumps(result, indent=2))
         return 0
-    except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:
-        # All raised messages are deliberately generic (no private file paths).
-        print('Private MAME capture refused:', exc, file=sys.stderr)
+    except Exception as exc:
+        # FileNotFoundError/OSError and even third-party ValueErrors can
+        # disclose absolute private ROM/capture paths in str(exc).
+        # Avoid printing exception text or a traceback to the console.
+        # Keep local output files for investigation when they exist.
+        write_private_failure(exc, sys.stderr)
         return 2
 
 
