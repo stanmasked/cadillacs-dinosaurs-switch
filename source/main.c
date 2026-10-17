@@ -282,6 +282,12 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
 
     const int x=ox+arena->dummy_x*scale;
     const int y=oy+arena->dummy_y*scale;
+    if (arena->finisher_flash) {
+        /* A short invented highlight after a three-hit knockback.
+         * The visual effect is driven by the fixed 60 Hz combat state. */
+        rectangle(frame,pitch,x-34,y-148,68,7,rgb(251,221,89));
+        rectangle(frame,pitch,x-29,y-138,58,4,rgb(241,162,73));
+    }
     if (enemy==DINO_POSE_KO) {
         rectangle(frame,pitch,x-29,y-14,58,12,rgb(101,81,66));
     } else {
@@ -340,9 +346,10 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
     rectangle(frame,pitch,0,661,1280,59,rgb(11,18,29));
     char status[140];
     snprintf(status,sizeof(status),
-             "PLAYER %s HP %u  OPPONENT %s HP %u  HITS %03u  %s",
+             "PLAYER %s HP %u  ENEMY %s HP %u  COMBO %u/3  HITS %03u  %s",
              arena_pose_name(player),(unsigned)arena->player_hp,
              arena_pose_name(enemy),(unsigned)arena->dummy_hp,
+             (unsigned)arena->combo_hits,
              (unsigned)arena->successful_hits,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
