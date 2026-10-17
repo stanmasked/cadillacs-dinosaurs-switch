@@ -309,3 +309,35 @@ fail-closed/no output mutation, and confirm all eight valid
 three-layer Boolean-enable combinations remain accepted.
 This does not prove original MAME frame timing, arcade game
 execution or physical Nintendo Switch framebuffer accuracy.
+
+## Stage 113 — refuse noncanonical embedded frames before sequence playback
+
+The native Nintendo Switch playback container `CPS1SEQ1` previously
+prevalidated each embedded `CPS1SCN1` scene magic, length, CRC32 and
+reserved byte, **but not the three layer-enable flag bytes**. Since
+Stage 112 made the stand-alone scene decoder reject flags other
+than `0` or `1`, a sequence with an altered, CRC-recomputed
+frame could pass `cps1_sequence_decode` and fail later only
+when that particular frame was selected.
+
+The native sequence loader now checks all three flags for every
+frame **at initial sequence load**, before it publishes the decoded
+sequence descriptor. The Python sequence exporter applies the
+same rule before writing a sequence. The input format remains
+unchanged and all valid Boolean layer configurations are supported.
+
+Two ROM-free regression tests compile the actual native Switch
+scene and sequence C sources on the host. They check 18 mutations
+across the first, middle and last frames, all three enable bytes,
+and two invalid values (`2` and `255`). Each mutation has
+**both the inner scene CRC and outer sequence CRC recomputed**
+to prove a rejection based on content semantics rather than
+a checksum mismatch. Tests also assert that failure leaves the
+caller-provided sequence descriptor untouched and that the
+Python exporter refuses the same frames. All eight valid layer
+enable combinations decode and replay through the sequence
+loader.
+
+This establishes stricter parsing of synthetic local replay data,
+not original MAME frame capture, game execution, emulator timing,
+or physical Switch hardware image parity.
