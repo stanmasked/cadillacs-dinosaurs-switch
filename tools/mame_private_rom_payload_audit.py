@@ -57,6 +57,26 @@ def _open_stable_private_zip(path):
         raise
 
 
+def _archive_pair_metadata(game, device):
+    """Bind game and device ZIP identities across the entire local audit.
+
+    File-specific descriptor checks alone cannot catch replacement of the
+    first archive while the second one is still being inspected.
+    """
+    observations = []
+    for path in (game, device):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            observations.append(None)
+            continue
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or not 0 < info.st_size <= MAX_ARCHIVE_BYTES):
+            raise ValueError('Private ROM archive pair entry unsafe')
+        observations.append(_safe_metadata(info))
+    return tuple(observations)
+
+
 def _catalog_payload_check(path, catalog):
     """Return (verified, missing, mismatch, read_count) without leaking bytes."""
     stream, original = _open_stable_private_zip(path)
@@ -141,13 +161,18 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
         raise ValueError('Private ROM root is not a real directory')
     game = root / 'dino.zip'
     device = root / 'qsound_hle.zip'
+    pair_before = _archive_pair_metadata(game, device)
+    if pair_before[0] is None:
+        raise ValueError('Private game archive missing')
     game_verified, game_missing, game_wrong, game_read = _catalog_payload_check(
         game, EXPECTED)
-    if device.exists() or device.is_symlink():
+    if pair_before[1] is not None:
         device_verified, device_missing, device_wrong, device_read = (
             _catalog_payload_check(device, {DEVICE_MEMBER: DEVICE_HEADER}))
     else:
         device_verified, device_missing, device_wrong, device_read = 0, 1, 0, 0
+    if _archive_pair_metadata(game, device) != pair_before:
+        raise ValueError('Private paired ROM archives changed during audit')
     all_verified = (game_verified == len(EXPECTED) and
                     device_verified == 1 and
                     game_missing == game_wrong == device_missing == device_wrong == 0)
