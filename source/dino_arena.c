@@ -53,10 +53,14 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     held &= (DINO_ARENA_LEFT|DINO_ARENA_RIGHT|
              DINO_ARENA_UP|DINO_ARENA_DOWN);
     pressed &= (DINO_ARENA_ATTACK|DINO_ARENA_JUMP|DINO_ARENA_TOGGLE_SPAR);
+    /* One-shot events are valid for exactly this 60 Hz simulation step.
+     * Short impact flashes persist independently of render frequency. */
+    a->events=0;
     a->player_moving=0;
     a->dummy_moving=0;
 
     if (pressed&DINO_ARENA_TOGGLE_SPAR) {
+        a->events|=DINO_EVT_SPAR_TOGGLE;
         a->sparring=(uint8_t)!a->sparring;
         a->dummy_windup=0;
         a->dummy_cooldown=0;
@@ -67,6 +71,8 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
         a->combo_hits=0;
         a->combo_timer=0;
         a->finisher_flash=0;
+        a->dummy_impact_flash=0;
+        a->player_impact_flash=0;
         if (a->sparring) {
             /* Start every sparring attempt with a fresh opponent,
              * independent of previous target-practice hits. */
@@ -87,6 +93,8 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if (a->dummy_cooldown) --a->dummy_cooldown;
     if (a->dummy_attack_frames) --a->dummy_attack_frames;
     if (a->finisher_flash) --a->finisher_flash;
+    if (a->dummy_impact_flash) --a->dummy_impact_flash;
+    if (a->player_impact_flash) --a->player_impact_flash;
     if (a->combo_timer) {
         --a->combo_timer;
         if (!a->combo_timer) a->combo_hits=0;
@@ -111,9 +119,12 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
         a->x=clamp(target_x,16,DINO_ARENA_WIDTH-16);
         a->y=target_y;
         if (dx) a->facing_right=(uint8_t)(dx>0);
-        if ((pressed&DINO_ARENA_JUMP) && a->z==0 && a->vz==0)
+        if ((pressed&DINO_ARENA_JUMP) && a->z==0 && a->vz==0) {
             a->vz=8;
+            a->events|=DINO_EVT_JUMP_START;
+        }
         if ((pressed&DINO_ARENA_ATTACK) && !a->attack_cooldown) {
+            a->events|=DINO_EVT_PLAYER_SWING;
             a->attack_frames=8;
             a->attack_cooldown=15;
             int32_t delta=a->dummy_x-a->x;
@@ -122,6 +133,9 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
                 distance(a->dummy_y,a->y)<=15 && a->z<=20) {
                 --a->dummy_hp;
                 ++a->successful_hits;
+                a->events|=DINO_EVT_DUMMY_HIT;
+                a->dummy_impact_flash=6;
+                if (!a->dummy_hp) a->events|=DINO_EVT_DUMMY_KO;
                 /* Only LANDED attacks advance the 24-tick, at-most-three
                  * combo. Misses / cooldown button presses never refresh it.
                  * The finisher fires once, exactly on the 2 -> 3 edge. */
@@ -131,6 +145,7 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
                 a->combo_timer=24;
                 a->dummy_hitstun=(uint8_t)(finisher?14:9);
                 if (finisher) {
+                    a->events|=DINO_EVT_FINISHER;
                     a->finisher_flash=10;
                     if (a->sparring) {
                         /* Apply a bounded single knockback event even if
@@ -150,7 +165,10 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if (a->z>0 || a->vz>0) {
         a->z+=a->vz;
         --a->vz;
-        if (a->z<=0) { a->z=0; a->vz=0; }
+        if (a->z<=0) {
+            a->z=0; a->vz=0;
+            a->events|=DINO_EVT_LAND;
+        }
     }
 
     if (a->sparring && a->dummy_hp && a->player_hp) {
@@ -164,6 +182,7 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
             if (!a->dummy_windup) {
                 a->dummy_cooldown=48;
                 a->dummy_attack_frames=7;
+                a->events|=DINO_EVT_DUMMY_SWING;
                 /* Telegraph must finish before damage. A late dodge
                  * across the lane, moving out of range or jumping high
                  * can avoid this single impact event. */
@@ -172,12 +191,19 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
                     !a->player_invuln) {
                     --a->player_hp;
                     ++a->player_hits_taken;
+                    a->events|=DINO_EVT_PLAYER_HIT;
+                    a->player_impact_flash=8;
+                    if (!a->player_hp) a->events|=DINO_EVT_PLAYER_KO;
                     /* Taking an actual hit breaks active player combos. */
                     a->combo_hits=0;
                     a->combo_timer=0;
                     a->finisher_flash=0;
                     a->player_hitstun=11;
                     a->player_invuln=30;
+                } else {
+                    /* Rechecked at the actual impact tick: a later dodge,
+                     * high jump or active invulnerability prevents damage. */
+                    a->events|=DINO_EVT_DODGE;
                 }
             }
         } else {
