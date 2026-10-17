@@ -82,7 +82,7 @@ def _archive_pair_metadata(game, device):
 
 
 def _catalog_payload_check(path, catalog, *, sha1_catalog=None):
-    """Return bounded verified/missing/mismatch/read counts, never ROM bytes."""
+    """Return verified/missing/mismatch/read/SHA1-only counts, never ROM bytes."""
     if sha1_catalog is None:
         sha1_catalog = {}
     if (not isinstance(sha1_catalog, dict) or
@@ -90,7 +90,7 @@ def _catalog_payload_check(path, catalog, *, sha1_catalog=None):
                 for name, digest in sha1_catalog.items())):
         raise ValueError('Private ROM SHA1 catalog invalid')
     stream, original = _open_stable_private_zip(path)
-    verified = missing = mismatch = read_count = 0
+    verified = missing = mismatch = read_count = sha1_only_mismatch = 0
     decoded_total = 0
     with stream:
         with zipfile.ZipFile(stream, 'r') as archive:
@@ -134,9 +134,12 @@ def _catalog_payload_check(path, catalog, *, sha1_catalog=None):
                     if payload.read(1):
                         raise ValueError('Private ZIP member exceeded expected size')
                 read_count += 1
-                if (digest != expected_crc or
-                        (sha1 is not None and
-                         sha1.digest() != sha1_catalog[name])):
+                if digest != expected_crc:
+                    mismatch += 1
+                elif sha1 is not None and sha1.digest() != sha1_catalog[name]:
+                    # A QSound SHA-1 failure must not be reported as a
+                    # failed CRC32 check when the CRC32 actually matched.
+                    sha1_only_mismatch += 1
                     mismatch += 1
                 else:
                     verified += 1
@@ -144,7 +147,7 @@ def _catalog_payload_check(path, catalog, *, sha1_catalog=None):
             raise ValueError('Private ZIP archive modified during scan')
     if _safe_metadata(path.lstat()) != original:
         raise ValueError('Private ZIP archive replaced during scan')
-    return verified, missing, mismatch, read_count
+    return verified, missing, mismatch, read_count, sha1_only_mismatch
 
 
 def _base(status):
@@ -157,6 +160,7 @@ def _base(status):
         'private_payload_bytes_may_have_been_read_locally': False,
         'private_payload_read_completion_verified': False,
         'private_payload_crc_matches_pinned_catalog': False,
+        'private_payload_all_required_catalog_checks_match': False,
         'qsound_sha1_checked_locally': False,
         'qsound_sha1_matches_pinned_mame_catalog': False,
         'mame_verifyroms_executed': False,
@@ -191,20 +195,26 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
     pair_before = _archive_pair_metadata(game, device)
     if pair_before[0] is None:
         raise ValueError('Private game archive missing')
-    game_verified, game_missing, game_wrong, game_read = _catalog_payload_check(
+    game_verified, game_missing, game_wrong, game_read, game_sha1_only = _catalog_payload_check(
         game, EXPECTED)
     if pair_before[1] is not None:
-        device_verified, device_missing, device_wrong, device_read = (
+        device_verified, device_missing, device_wrong, device_read, device_sha1_only = (
             _catalog_payload_check(
                 device, {DEVICE_MEMBER: DEVICE_HEADER},
                 sha1_catalog={DEVICE_MEMBER: DEVICE_SHA1}))
     else:
-        device_verified, device_missing, device_wrong, device_read = 0, 1, 0, 0
+        device_verified, device_missing, device_wrong, device_read, device_sha1_only = 0, 1, 0, 0, 0
     if _archive_pair_metadata(game, device) != pair_before:
         raise ValueError('Private paired ROM archives changed during audit')
     all_verified = (game_verified == len(EXPECTED) and
                     device_verified == 1 and
                     game_missing == game_wrong == device_missing == device_wrong == 0)
+    all_crc_matched = (
+        game_verified + game_sha1_only == len(EXPECTED) and
+        device_verified + device_sha1_only == 1 and
+        game_missing == device_missing == 0 and
+        game_wrong == game_sha1_only and
+        device_wrong == device_sha1_only)
     result = _base('PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MATCH_ONLY'
                    if all_verified else 'PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MISMATCH')
     result.update({
@@ -212,7 +222,8 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
         'private_payload_bytes_read_locally': (game_read + device_read) > 0,
         'private_payload_bytes_may_have_been_read_locally': (game_read + device_read) > 0,
         'private_payload_read_completion_verified': True,
-        'private_payload_crc_matches_pinned_catalog': all_verified,
+        'private_payload_crc_matches_pinned_catalog': all_crc_matched,
+        'private_payload_all_required_catalog_checks_match': all_verified,
         'qsound_sha1_checked_locally': device_read > 0,
         'qsound_sha1_matches_pinned_mame_catalog': device_verified == 1,
         'expected_member_count': len(EXPECTED) + 1,
