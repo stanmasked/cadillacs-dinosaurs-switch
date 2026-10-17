@@ -683,3 +683,29 @@ black/static/single-color frames, missing safeguards, malformed totals,
 privacy redaction and failure after earlier audit gates. This is a
 **decision aid**, not a substitute for actual private ROM gameplay or
 independently timed original CPS-1 video evidence.
+
+
+## Stage 78 — recompute every triage conclusion from detailed frame intervals
+
+The previous Stage 77 decision aid accepted all seven aggregated change
+counters as trusted inputs. A malformed report could change those totals
+without changing the underlying five nominal intervals and receive a
+different suggestion. Stage 78 closes this trust boundary: the triage module
+now independently checks the exact nominal frame-label sequence, every
+bounded RGB/OBJ/register/latch interval, the per-row derived boolean flags,
+and **recalculates all seven totals** from those detailed observations.
+It compares the RGB pixel series with per-row pixel counts and requires
+the source's static/black/single-color classifications to match actual
+per-frame color and nonblack-pixel counts. A contradictory cumulative-latch
+summary is also refused. No recommendation is created for inconsistent data.
+
+Regression fixtures now generate internally consistent synthetic RGB,
+OBJ and callback series for clean co-variation, black/static video and
+low-information captures instead of faking aggregate totals. Additional
+negative tests mutate each total, row, counter summary, nominal label,
+color classification or RGB series to verify fail-closed handling.
+The normal private launcher already publishes its report only *after*
+successful triage, so rejection leaves the final JSON unpublished.
+No game ROM, RGB/OBJ binary data or raw capture-session tokens are
+uploaded. The result remains a same-process diagnostic, **not** verified
+gameplay, physical VBlank timing or original/Switch frame parity.
