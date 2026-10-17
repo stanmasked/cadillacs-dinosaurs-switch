@@ -108,9 +108,6 @@ class LuaRegisterCrcEvidenceTests(unittest.TestCase):
         for bad in (None, {}, [], dict(complete['capture_file_crc32'], unknown='12345678')):
             snap = scene()
             snap['capture_file_crc32'] = bad
-            # An absent field is different from an explicit malformed field.
-            if bad is None:
-                snap['capture_file_crc32'] = []
             with self.subTest(digests=bad):
                 with self.assertRaisesRegex(ValueError, 'five capture_file_crc32'):
                     check(snap)
