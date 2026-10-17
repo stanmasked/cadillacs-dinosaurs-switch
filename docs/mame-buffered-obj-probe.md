@@ -189,3 +189,72 @@ against GitHub, and all 8/8 tests passed** (including strict output
 refusal, mismatched word positions, and permanently ineligible parity).
 An additional C++-probe source test is committed but has not run in
 GitHub CI. Full GitHub Actions execution remains blocked by issue #20.
+
+
+## Stage 43 — bind Lua register evidence to capture CRC32
+
+The Stage 42 register audit previously compared the private C++-probe
+CPS-A/CPS-B sidecar with the two raw Lua register files but did not
+verify whether those Lua bytes still matched their imported capture.
+An altered file of the same length could therefore generate a
+misleading `registers_match_exactly: true` result.
+
+`tools/mame_obj_register_audit.py` now uses the `capture_file_crc32`
+field supplied by the checksum-aware
+`tools/mame_capture_import.py` from [PR #25](https://github.com/stanmasked/cadillacs-dinosaurs-switch/pull/25):
+
+- When the field is present, require **exactly five** lowercase
+  eight-digit CRC32 hex entries with the expected file names.
+- Recalculate CPS-A and CPS-B CRC32 from the **actual 64-byte Lua input
+  files** and fail before writing the audit if either differs.
+- Identify two distinct facts in the JSON:
+  `registers_match_exactly` records byte-for-byte equality between
+  hooks, whereas `cross_hook_register_evidence_with_crc` is true
+  only when that equality **and** both Lua input-file CRC checks hold.
+- `lua_register_integrity.verified_register_files` is **2** for
+  accepted checksum-bearing input. The three other components are
+  *not reread or revalidated* by this cross-hook tool.
+- Older partial snapshots **without** `capture_file_crc32` remain
+  diagnostic: the raw register comparison still runs, but the CRC
+  evidence flag is false and the status is
+  `NO_CRC32_IN_PARTIAL_SNAPSHOT`. Explicitly malformed/empty/null
+  checksum fields fail closed.
+
+For stronger checks, supply `--require-register-crc` to the Stage 42
+command. With that flag, missing CRC evidence causes exit code 2 and
+**no audit output is created**. It does not weaken other file-identity,
+buffer-size or no-overwrite validation.
+
+For example:
+
+```sh
+python3 tools/mame_obj_register_audit.py \
+  local_outputs/mame-reference/frame-00000900.partial-snapshot.json \
+  cps1-captures/frame-00000900.buffered-obj-be.bin \
+  cps1-captures/frame-00000900.render-regs-be.bin \
+  cps1-captures/frame-00000900.cps-a-be.bin \
+  cps1-captures/frame-00000900.cps-b-be.bin \
+  --out local_outputs/mame-reference/frame-00000900.crc-audit.json \
+  --require-register-crc
+```
+
+**Requirements:** This audit is stacked on PR #27, and CRC-enriched
+Lua partial snapshots are supplied by the independently stacked
+PR #25 (which itself follows PR #24). Review those dependencies before
+treating the CRC report as available in a deployed toolset. Do not
+merge this PR while those prerequisites are unreviewed.
+
+**Crucial boundary:** CRC32 is not a cryptographic signature and does
+not prove *originality*, VBlank age, or temporal alignment. Even when
+all 64 CPS-A/B words agree and both CRC checks pass, the report
+continues to set `frame_sync_verified: false` and
+`pixel_parity_eligible: false`. No game assets, original frames or
+internal CPS-1 buffers are checked into GitHub.
+
+**Local reproducible validation:** The exact audit source and its
+two test modules were checked against their GitHub blob SHA values
+and executed locally in an isolated Python test tree together with the
+Stage 42 probe decoder. All **17/17** tests passed, including same-size
+register corruption, file swapping, null/invalid manifest CRCs, and
+the strict CLI flag. Full GitHub Actions test execution and live MAME
+C++/Lua synchronization remain unverified (issue #20).
