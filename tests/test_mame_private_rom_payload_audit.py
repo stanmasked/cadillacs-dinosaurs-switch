@@ -1,5 +1,6 @@
 """Synthetic-only tests for the opt-in local original-ROM payload CRC gate."""
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -30,6 +31,7 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         self.sound_header = (
             len(self.device_data['fake-qsound.bin']),
             zlib.crc32(self.device_data['fake-qsound.bin']))
+        self.sound_sha1 = hashlib.sha1(self.device_data['fake-qsound.bin']).digest()
         self._make_zip('dino.zip', self.game_data)
         self._make_zip('qsound_hle.zip', self.device_data)
 
@@ -42,7 +44,8 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
     def _audit(self, **kwargs):
         with patch.object(audit, 'EXPECTED', self.game_catalog), \
              patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
-             patch.object(audit, 'DEVICE_HEADER', self.sound_header):
+             patch.object(audit, 'DEVICE_HEADER', self.sound_header), \
+             patch.object(audit, 'DEVICE_SHA1', self.sound_sha1):
             return audit.audit_private_dino_rom_payloads(
                 self.root, allow_private_reads=True, **kwargs)
 
@@ -136,6 +139,8 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         self.assertEqual(result['missing_member_count'], 0)
         self.assertTrue(result['private_payload_bytes_read_locally'])
         self.assertTrue(result['private_payload_crc_matches_pinned_catalog'])
+        self.assertTrue(result['qsound_sha1_checked_locally'])
+        self.assertTrue(result['qsound_sha1_matches_pinned_mame_catalog'])
         for key in ('mame_verifyroms_executed', 'original_game_authenticity_verified',
                     'gameplay_executed', 'pixel_parity_eligible'):
             self.assertFalse(result[key])
@@ -146,12 +151,43 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         self.assertNotIn('SYNTHETIC', report)
         self.assertNotIn(str(self.game_catalog['fake-program.bin'][1]), report)
 
+    def test_qsound_sha1_mismatch_rejected_despite_valid_crc_headers(self):
+        # Independently reject a wrong pinned SHA-1 even though all ZIP
+        # headers and streamed CRC32 values match the synthetic catalog.
+        with patch.object(audit, 'DEVICE_SHA1', b'\\x00' * 20), \
+             patch.object(audit, 'EXPECTED', self.game_catalog), \
+             patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
+             patch.object(audit, 'DEVICE_HEADER', self.sound_header):
+            result = audit.audit_private_dino_rom_payloads(
+                self.root, allow_private_reads=True)
+        self.assertEqual(result['payload_catalog_verified_count'], 2)
+        self.assertEqual(result['mismatching_member_count'], 1)
+        self.assertTrue(result['qsound_sha1_checked_locally'])
+        self.assertFalse(result['qsound_sha1_matches_pinned_mame_catalog'])
+        self.assertFalse(result['private_payload_crc_matches_pinned_catalog'])
+        self.assertEqual(result['status'],
+                         'PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MISMATCH')
+
+    def test_invalid_qsound_sha1_catalog_refused_before_rom_reads(self):
+        game = self.root / 'qsound_hle.zip'
+        for invalid in ('not-bytes', b'x' * 19, b'x' * 21):
+            with self.subTest(invalid=invalid), \
+                 patch.object(audit, '_open_stable_private_zip',
+                              side_effect=AssertionError('must not open ZIP')) as opener:
+                with self.assertRaisesRegex(ValueError, 'SHA1 catalog invalid'):
+                    audit._catalog_payload_check(
+                        game, {'fake-qsound.bin': self.sound_header},
+                        sha1_catalog={'fake-qsound.bin': invalid})
+                opener.assert_not_called()
+
     def test_missing_device_is_a_mismatch_not_a_mame_pass(self):
         (self.root / 'qsound_hle.zip').unlink()
         out = self._audit()
         self.assertEqual(out['payload_catalog_verified_count'], 2)
         self.assertEqual(out['missing_member_count'], 1)
         self.assertFalse(out['private_payload_crc_matches_pinned_catalog'])
+        self.assertFalse(out['qsound_sha1_checked_locally'])
+        self.assertFalse(out['qsound_sha1_matches_pinned_mame_catalog'])
         self.assertEqual(out['status'],
                          'PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MISMATCH')
 
@@ -198,6 +234,7 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         with patch.object(audit, 'EXPECTED', self.game_catalog), \
              patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
              patch.object(audit, 'DEVICE_HEADER', self.sound_header), \
+             patch.object(audit, 'DEVICE_SHA1', self.sound_sha1), \
              patch.object(zipfile.ZipFile, 'open', autospec=True,
                           side_effect=original_member_open) as member_open, \
              contextlib.redirect_stderr(text):
@@ -240,8 +277,8 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
     def test_first_archive_changed_during_device_scan_refuses_result(self):
         original = audit._catalog_payload_check
 
-        def mutate_first_during_second(path, catalog):
-            counts = original(path, catalog)
+        def mutate_first_during_second(path, catalog, **kwargs):
+            counts = original(path, catalog, **kwargs)
             if path.name == 'qsound_hle.zip':
                 # Each per-file scan has finished; only the pair-wide
                 # follow-up gate can catch this later first-ZIP change.
@@ -257,8 +294,8 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
     def test_second_archive_swapped_after_game_scan_is_detected(self):
         original = audit._catalog_payload_check
 
-        def swap_device_between_scans(path, catalog):
-            counts = original(path, catalog)
+        def swap_device_between_scans(path, catalog, **kwargs):
+            counts = original(path, catalog, **kwargs)
             if path.name == 'dino.zip':
                 previous = self.root / 'qsound_hle.zip'
                 replacement = self.root / 'synthetic-replacement.zip'
