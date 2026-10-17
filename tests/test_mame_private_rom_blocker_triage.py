@@ -126,6 +126,24 @@ class PrivateDinoRomBlockerTriageTests(unittest.TestCase):
         self.assertEqual(out['next_local_action_code'],
                          'REVIEW_PRIVATE_GAME_CATALOG_THEN_LOCAL_MAME_VERIFYROMS')
 
+    def test_real_tiny_synthetic_zip_headers_need_no_member_reads(self):
+        # Exercise stdlib ZIP directory parsing, not just mocked ZipInfo.
+        import zipfile
+        (self.root / 'dino.zip').unlink()
+        with zipfile.ZipFile(self.root / 'dino.zip', 'w') as out:
+            out.writestr('ioc1.ic1', b'NOT_ORIGINAL_GAME_ROM')
+        with zipfile.ZipFile(self.device, 'w') as out:
+            out.writestr('dl-1425.bin', b'NOT_ORIGINAL_QSOUND_ROM')
+        with patch.object(zipfile.ZipFile, 'open',
+                          side_effect=AssertionError('ROM member payload opened')):
+            report = triage_private_dino_rom_blockers(self.root)
+        self.assertEqual(report['game_catalog_matching_headers'], 0)
+        self.assertEqual(report['game_catalog_missing_entries'], 27)
+        self.assertEqual(report['game_catalog_mismatching_headers'], 1)
+        self.assertTrue(report['qsound_hle_device_member_observed'])
+        self.assertFalse(report['rom_payload_crc_independently_verified'])
+        self.assertFalse(report['individual_game_rom_payload_bytes_read'])
+
     def test_missing_game_or_symlink_is_refused(self):
         (self.root / 'dino.zip').unlink()
         with self.assertRaises(ValueError):
