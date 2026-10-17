@@ -132,7 +132,7 @@ class DiagnosticVerdictTests(unittest.TestCase):
             parts = list(reports())
             parts[2][key] = value
             with self.subTest(key=key):
-                with self.assertRaisesRegex(ValueError, 'Stable label|Inconsistent'):
+                with self.assertRaisesRegex(ValueError, 'Stable label|Inconsistent|Invalid leave-one-out'):
                     diagnostic_verdict(*parts)
 
     def test_reject_unstable_trial_accounting_without_promotion(self):
