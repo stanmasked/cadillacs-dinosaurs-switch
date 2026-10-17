@@ -39,6 +39,11 @@ def public_failure_report(error):
             code = 'PRIVATE_WORKSPACE_INVALID'
             action = 'Use a new empty isolated private workspace with 0700 permissions.'
         elif any(marker in message for marker in (
+            'Private MAME ROM verification',
+        )):
+            code = 'PRIVATE_MAME_ROMSET_AUDIT_FAILED'
+            action = 'Review the private MAME ROM verification log locally.'
+        elif any(marker in message for marker in (
             'Local MAME session timed out', 'Local MAME exited unsuccessfully',
             'Unable to execute local MAME',
         )):

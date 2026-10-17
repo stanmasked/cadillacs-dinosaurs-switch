@@ -49,6 +49,7 @@ LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
 CAPTURE_DIR_NAME = 'cps1-captures'
 REPORT_NAME = 'dino-latch-diagnostic.json'
 LOG_NAME = 'dino-mame-private-session.log'
+VERIFY_LOG_NAME = 'dino-mame-private-rom-verification.log'
 FIRST_FRAME = 900
 FRAME_COUNT = 6
 FRAME_STEP = 2
@@ -130,7 +131,8 @@ def _require_session_aware_build(binary, tree):
 def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None,
                             *, timeout_seconds=1800, preflight_only=False,
                             verify_build_only=False,
-                            check_launch_readiness=False):
+                            check_launch_readiness=False,
+                            verify_private_romset_only=False):
     """Run full MAME locally, then audit all private files with strict checks."""
     if (type(timeout_seconds) is not int or
             not 30 <= timeout_seconds <= 3600):
@@ -141,7 +143,10 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         raise ValueError('verify_build_only must be boolean')
     if type(check_launch_readiness) is not bool:
         raise ValueError('check_launch_readiness must be boolean')
-    if sum((preflight_only, verify_build_only, check_launch_readiness)) > 1:
+    if type(verify_private_romset_only) is not bool:
+        raise ValueError('verify_private_romset_only must be boolean')
+    if sum((preflight_only, verify_build_only, check_launch_readiness,
+            verify_private_romset_only)) > 1:
         raise ValueError('Choose one ROM-free preflight mode')
     # A ROM-free build check must work before any owned ROM or private
     # capture workspace exists. Preserve the old four-path form, with its
@@ -189,6 +194,56 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
             'rom_file_bytes_read': False,
             'rom_integrity_verified': False,
             'rom_set_completeness_verified': False,
+            'game_executed': False,
+            'capture_verified': False,
+            'linked_probe_runtime_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
+    # Verify *privately held* real game assets with the official MAME
+    # frontend without ever starting an emulated game. MAME, not Python,
+    # reads the ROM contents; its verbose output stays in a 0600 local log.
+    if verify_private_romset_only:
+        _require_session_aware_build(binary, tree)
+        require_private_dino_entry(roms)
+        verify_log = private / VERIFY_LOG_NAME
+        if verify_log.exists() or verify_log.is_symlink():
+            raise ValueError('Private MAME ROM verification log already exists')
+        args = [
+            str(binary), 'dino', '-verifyroms',
+            '-rompath', str(roms), '-noreadconfig',
+        ]
+        # No game session token is needed for -verifyroms. Do not pass an
+        # inherited label accidentally across separate local invocations.
+        verify_env = os.environ.copy()
+        verify_env.pop('CPS1_DINO_CAPTURE_SESSION', None)
+        try:
+            fd = os.open(
+                verify_log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'wb') as log:
+                process = subprocess.run(
+                    args, cwd=private, stdout=log, stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL, env=verify_env,
+                    timeout=timeout_seconds, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(
+                'Private MAME ROM verification timed out; inspect private log') from exc
+        except OSError as exc:
+            raise ValueError(
+                'Private MAME ROM verification could not start; inspect private log') from exc
+        if process.returncode != 0:
+            raise ValueError(
+                'Private MAME ROM verification failed; inspect private log')
+        return {
+            'status': 'PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED',
+            'diagnostic_only': True,
+            'mame_verifyroms_exit_zero': True,
+            'game_set_entry_observed': True,
+            'rom_bytes_read_by_python': False,
+            'mame_reads_private_roms_locally': True,
+            'rom_authenticity_independently_verified': False,
+            'original_game_authenticity_verified': False,
             'game_executed': False,
             'capture_verified': False,
             'linked_probe_runtime_verified': False,
@@ -368,6 +423,9 @@ def main(argv=None):
     preflight_options.add_argument(
         '--check-launch-readiness', action='store_true',
         help='ROM-free build and private dino entry metadata; requires all paths')
+    preflight_options.add_argument(
+        '--verify-private-romset-only', action='store_true',
+        help='Run private MAME -verifyroms dino, no emulation; saves 0600 local log')
     args = p.parse_args(argv)
     try:
         result = execute_private_capture(
@@ -375,7 +433,8 @@ def main(argv=None):
             timeout_seconds=args.timeout_seconds,
             preflight_only=args.preflight_only,
             verify_build_only=args.verify_build_only,
-            check_launch_readiness=args.check_launch_readiness)
+            check_launch_readiness=args.check_launch_readiness,
+            verify_private_romset_only=args.verify_private_romset_only)
         print(json.dumps(result, indent=2))
         return 0
     except Exception as exc:

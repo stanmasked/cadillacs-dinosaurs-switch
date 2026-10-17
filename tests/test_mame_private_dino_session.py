@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from tools.mame_obj_latch_evidence import obj_fnv1a64
 from tools.mame_private_dino_session import (
-    CAPTURE_DIR_NAME, LOG_NAME, REPORT_NAME,
+    CAPTURE_DIR_NAME, LOG_NAME, REPORT_NAME, VERIFY_LOG_NAME,
     PROJECT_ROOT, execute_private_capture, main, preflight,
 )
 from test_mame_obj_cli_end_to_end import make_capture
@@ -236,6 +236,158 @@ class PrivateDinoSessionTests(unittest.TestCase):
             execute_private_capture(
                 self.mame, self.build, check_launch_readiness=True)
         self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_private_mame_verifyroms_is_local_only_and_never_starts_dino(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY_NOT_ROM')
+        observed = {}
+
+        def fake_mame(args, **kwargs):
+            observed['args'] = args
+            observed['kwargs'] = kwargs
+            # Content emitted by MAME itself must stay in the private log.
+            kwargs['stdout'].write(b'PRIVATE_DINO_ROM_FILENAME\n')
+            return subprocess.CompletedProcess(args, 0)
+
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity) as build, \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=fake_mame) as run:
+            result = execute_private_capture(
+                self.mame, self.build, self.roms, self.workspace,
+                verify_private_romset_only=True)
+        build.assert_called_once()
+        run.assert_called_once()
+        self.assertEqual(result['status'], 'PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED')
+        self.assertTrue(result['mame_verifyroms_exit_zero'])
+        self.assertFalse(result['game_executed'])
+        self.assertFalse(result['capture_verified'])
+        self.assertFalse(result['original_game_authenticity_verified'])
+        self.assertFalse(result['frame_sync_verified'])
+        self.assertEqual(observed['args'][1:3], ['dino', '-verifyroms'])
+        self.assertEqual(observed['args'][3:5], ['-rompath', str(self.roms)])
+        self.assertIn('-noreadconfig', observed['args'])
+        self.assertEqual(observed['kwargs']['stdin'], subprocess.DEVNULL)
+        self.assertEqual(observed['kwargs']['cwd'], self.workspace.resolve())
+        self.assertNotIn('CPS1_DINO_CAPTURE_SESSION', observed['kwargs']['env'])
+        log = self.workspace / VERIFY_LOG_NAME
+        self.assertEqual(log.read_bytes(), b'PRIVATE_DINO_ROM_FILENAME\n')
+        if os.name == 'posix':
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+        self.assertFalse((self.workspace / LOG_NAME).exists())
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        # No output clobber: normal full capture can still use this same
+        # private workspace after the standalone ROM verification.
+        preflight(self.mame, self.build, self.roms, self.workspace)
+
+    def test_private_mame_verifyroms_nonzero_is_not_success(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=lambda args, **kwargs:
+                       subprocess.CompletedProcess(args, 2)):
+            with self.assertRaisesRegex(ValueError, 'ROM verification failed'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+        self.assertTrue((self.workspace / VERIFY_LOG_NAME).exists())
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+
+    def test_private_mame_verifyroms_timeout_keeps_local_log(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        def fake_timeout(args, **kwargs):
+            raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=fake_timeout):
+            with self.assertRaisesRegex(ValueError, 'verification timed out'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True, timeout_seconds=60)
+        self.assertTrue((self.workspace / VERIFY_LOG_NAME).exists())
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+
+    def test_private_mame_verifyroms_unsafe_inputs_fail_before_outputs(self):
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'No private dino'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        bad = dict(self.compiled_dino_identity())
+        bad['linked_dino_executable_probe_markers'] = False
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   return_value=bad), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'verification failed'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_private_mame_verifyroms_does_not_overwrite_existing_log(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        log = self.workspace / VERIFY_LOG_NAME
+        log.write_bytes(b'DO_NOT_OVERWRITE')
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'verification log already exists'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+            game.assert_not_called()
+        self.assertEqual(log.read_bytes(), b'DO_NOT_OVERWRITE')
+
+    def test_private_mame_verifyroms_rejects_incompatible_mode_flags(self):
+        for options in (
+            {'verify_private_romset_only': 'yes'},
+            {'verify_private_romset_only': True, 'preflight_only': True},
+            {'verify_private_romset_only': True, 'verify_build_only': True},
+            {'verify_private_romset_only': True, 'check_launch_readiness': True},
+        ):
+            with self.subTest(options=options):
+                with self.assertRaisesRegex(ValueError, 'boolean|preflight mode'):
+                    execute_private_capture(
+                        self.mame, self.build, self.roms, self.workspace, **options)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_private_rom_verify_failure_redacts_original_mame_messages(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        stdout, stderr = io.StringIO(), io.StringIO()
+        def fake_failure(args, **kwargs):
+            kwargs['stdout'].write(b'PRIVATE_ROM_FILE /original/secret/path.zip\n')
+            return subprocess.CompletedProcess(args, 5)
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=fake_failure), \
+             contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--verify-private-romset-only',
+            ])
+        self.assertEqual(code, 2)
+        out = json.loads(stderr.getvalue())
+        self.assertEqual(out['reason_code'], 'PRIVATE_MAME_ROMSET_AUDIT_FAILED')
+        self.assertNotIn('PRIVATE_ROM_FILE', stderr.getvalue())
+        self.assertNotIn('/original/secret', stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), '')
+        self.assertIn(b'PRIVATE_ROM_FILE',
+                      (self.workspace / VERIFY_LOG_NAME).read_bytes())
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
 
     def test_workspace_inside_source_or_rom_or_project_is_rejected(self):
         for path in (self.build, self.roms, PROJECT_ROOT,

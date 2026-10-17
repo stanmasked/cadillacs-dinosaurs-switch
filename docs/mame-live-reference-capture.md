@@ -913,3 +913,51 @@ original pixel accuracy, or Switch parity. The test suite covers
 fragile and all-six-case-retained synthetic patterns, original cases with
 no candidate, integrated guidance changes and no disclosure of ROM/file
 paths, game pixels, metadata session secrets or hashes.
+
+
+## Stage 85 — local MAME 0.289 `-verifyroms` before first game launch
+
+Stage 79's metadata-only `dino.zip` presence check cannot tell whether
+an owned ROM set contains the correct data for MAME. The first-run launcher
+now offers an **opt-in private ROM-content verification** stage, backed
+by the official MAME 0.289 `-verifyroms` frontend:
+
+```sh
+python3 tools/mame_private_dino_session.py \
+  --mame /private/mame0289/dino \
+  --mame-tree /private/mame0289 \
+  --rom-dir /private/owned-mame-roms \
+  --workspace /private/empty-dino-capture \
+  --verify-private-romset-only
+```
+
+The 0700 workspace must already exist and be outside the public repo.
+The launcher checks the genuine linked instrumented `dino` MAME ELF
+and a nonempty `dino` game-set entry, then runs the **local binary**
+with `dino -verifyroms -rompath <private-dir> -noreadconfig`. MAME itself
+reads the ROM image locally and compares the set against its own known
+checksums. Unlike ROM-free preflight, **this opt-in mode reads private
+original game data inside the local MAME process**. Python never opens
+the archive, and neither game emulation nor the Lua/C++ frame capture
+runs. The verbose MAME audit output goes exclusively to
+`dino-mame-private-rom-verification.log` in the private workspace;
+the log is opened exclusively with 0600 permissions, never overwritten,
+never included in a public CI artifact and never printed to console.
+
+On a zero exit code, the conservative machine-readable status is
+`PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED`: this means the
+**local MAME subprocess** reported a successful exit, not that this
+project independently authenticated the user's original set or ran the
+game. A nonzero exit code, timeout, missing set or linked build failure
+is rejected without launching the game or producing a final capture.
+The CLI prints only a fixed safe reason code; details remain inside
+the local private log. The optional local audit log does not block the
+subsequent normal `dino` capture in the same workspace.
+
+Synthetic tests emulate MAME exit outcomes, timeout, sensitive error
+output, argv and environment separation, no game execution, log
+permissions/overwrite safety and failure isolation. Public CI has **no
+original commercial ROMs and does not execute an actual ROM audit**.
+Consult the [official MAME -verifyroms documentation](https://docs.mamedev.org/commandline/commandline-all.html)
+for more on what MAME checks. A successful ROM audit still cannot
+verify genuine gameplay, physical VBlank, OBJ age or Switch pixel parity.

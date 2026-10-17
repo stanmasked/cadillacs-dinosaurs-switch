@@ -19,6 +19,8 @@ class PrivateCliErrorTests(unittest.TestCase):
              'PRIVATE_ROM_LAYOUT_INVALID'),
             (ValueError('Local MAME session timed out; private files retained'),
              'LOCAL_MAME_PROCESS_FAILED'),
+            (ValueError('Private MAME ROM verification failed; inspect private log'),
+             'PRIVATE_MAME_ROMSET_AUDIT_FAILED'),
             (ValueError('Private capture is incomplete or invalid; no verified report'),
              'PRIVATE_CAPTURE_AUDIT_REFUSED'),
             (TypeError('preflight_only must be boolean'),
