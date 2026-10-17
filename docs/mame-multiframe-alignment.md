@@ -100,3 +100,62 @@ test. The exact MAME 0.289 driver and original arcade game have not
 been executed to validate timing; the first live captures remain pending.
 
 No original game assets are included in this repository.
+
+
+## Stage 45 — never invent an exact offset without exact evidence
+
+An issue in the original Stage 44 reporter was that **zero exact matches
+at every offset** still resulted in a nominally selected
+`best_offset_steps` (usually zero because of the overlap tie-break).
+That numeric result was misleading even with an unverified sync flag.
+
+The score now explicitly distinguishes two classes of evidence.
+
+**Whole-register-set exact matches:** When no 128-byte render/Lua
+register pairs match at *any* candidate offset,
+`no_exact_register_pairs: true` and
+`best_offset_steps`, `best_offset_nominal_frames`,
+`best_overlap_pairs` are **null**, not a guessed zero shift.
+When at least one pair matches, the original Stage 44 ranking and
+its conservative `offset_hypothesis_informative` guard are unchanged.
+
+**Weaker 16-bit word-distance diagnostic:** Each pair contains
+64 16-bit CPS-A/B register words. New per-offset metrics are:
+
+- `different_register_words`: number of unequal 16-bit words summed
+  across actual overlapping pairs, without padding or wraparound.
+- `compared_register_words`: exactly `64 × compared_pairs`.
+- `register_word_mismatch_fraction`: unequal words divided by compared
+  words; no individual CPS-A/B value or game data is emitted.
+- `closest_word_offset_steps` and
+  `closest_word_offset_nominal_frames`: a *unique* minimal word-error
+  candidate only when **both** register streams vary and some words
+  agree. Otherwise the offset is null.
+- `closest_word_mismatch_fraction` and
+  `ambiguous_closest_word_offsets`: the minimum fraction and all tied
+  candidates. A static or repeating state sequence is not silently
+  given a fabricated unique word-offset result.
+
+This can identify an **approximate** one-sample shift even if every
+overlapping pair has one changed register and therefore fails exact
+equality. It is a diagnostic hypothesis, not an additional
+`offset_hypothesis_informative` signal. The new
+`word_distance_diagnostic_only: true` is unconditional.
+
+Crucially, every report still has
+`frame_sync_verified: false` and `pixel_parity_eligible: false`.
+The observed best offset cannot be applied automatically to captured
+VRAM, sprites or frames. Genuine original-game captures and a verified
+MAME video timing build remain prerequisites for fidelity claims.
+
+### Validation boundary
+
+Eight new ROM-free regression test methods cover no-exact-result
+handling, single-word mutations under one/two sample offsets, exact
+pair behavior, repeated/constant states, word-count normalization and
+explicitly unverified provenance. A faithful isolated Python
+reproduction of the changed scoring function passed **8/8 new**
+checks plus **7/7 previous scorer checks**. The full committed
+regression module and repository-wide CI remain unverified because
+GitHub Actions fails before runner assignment (issue #20). Neither
+test run involved original game ROMs, live MAME, or Switch hardware.
