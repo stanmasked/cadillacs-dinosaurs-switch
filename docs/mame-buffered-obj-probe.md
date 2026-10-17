@@ -320,3 +320,60 @@ and ROM-free unit tests, **not** by compiling a private modified MAME
 new results remain `diagnostic_only:true`,
 `obj_latch_age_verified:false`, `frame_sync_verified:false`,
 `pixel_parity_eligible:false`.
+
+## Stage 57 — V2 OBJ byte fingerprint binding (synthetic/opt-in)
+
+Stage 56 wrote a latch callback count beside the 2048-byte OBJ dump,
+but those two local files were not explicitly bound to the **same**
+byte observation. A correctly sized OBJ sidecar accidentally swapped
+between captures could be combined with the wrong latch count without
+the old parser noticing.
+
+The experimental generator now writes `CPS1_DINO_LATCH_V2`:
+
+```text
+CPS1_DINO_LATCH_V2 401 28c31cf8df2ec325
+```
+
+The displayed value is an **illustrative** 64-bit FNV-1a fingerprint
+of 2048 zero bytes (not a real game capture). The generator reads the
+callback count at the start of the video-update probe and computes
+**FNV-1a 64** from all 1,024 buffered OBJ words in serialized
+**big-endian** order. It then independently dumps those words and
+stores the observed count plus the 16-character lowercase checksum in
+the small private `frame-XXXXXXXX.obj-latch-count.txt` file. All
+three probe outputs still refuse to overwrite existing files.
+
+With `--latch-count-evidence`, the analysis CLI loads the existing
+2048-byte OBJ probes in memory, recalculates FNV-1a and requires an
+exact fingerprint match for **every V2 sample**. Partial, mismatched,
+reset, overflowed, duplicate/malformed or mixed V1/V2 sidecars are
+rejected *before* publishing an audit JSON. FNV uses a 64-bit modulo
+counter and standard offset basis `14695981039346656037` and multiplier
+`1099511628211`. This is a fast accidental-file-integrity check,
+**not a cryptographic authenticator**.
+
+The legacy `CPS1_DINO_LATCH_V1 <count>` format remains readable. Its
+output explicitly reports `sidecar_format_version:1`,
+`obj_byte_fingerprint_binding:"LEGACY_V1_NOT_BOUND"` and a verified
+count of zero. All-V2 reports indicate
+`obj_byte_fingerprint_binding:"FNV1A64_ALL_SAMPLES_MATCHED"`
+and the number of locally matched sidecar files. A V2 report without
+the original OBJ sidecars is refused instead of presenting an
+unsupported binding claim.
+
+14 new ROM-free regression methods test numeric vectors, endian byte
+ordering, mismatched or swapped same-sized OBJ data, missing input,
+corrupted format, V1 backward compatibility, V1/V2 series mixing,
+counter resets, full synthetic CLI operation, and fail-closed JSON
+behavior; one extra existing source-generator test verifies FNV
+constants, byte order and placement before writing the OBJ file.
+
+**What this does not establish:** FNV-1a is not collision-resistant,
+and two files produced by the *same* instrumented MAME process are
+not independent evidence of arcade hardware VBlank timing, original
+raster synchronization or MAME authenticity. An emulator build with
+the instrumented original MAME 0.289 source has still not been compiled
+or executed on original dino gameplay as part of this stage. Outputs
+remain `diagnostic_only:true`, `obj_latch_age_verified:false`,
+`frame_sync_verified:false`, and `pixel_parity_eligible:false`.

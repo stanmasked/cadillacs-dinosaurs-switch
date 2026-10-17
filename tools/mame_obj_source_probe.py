@@ -37,6 +37,18 @@ PROBE = r'''
 			char path[128], registers_path[128], latch_path[128];
 			const unsigned long long observed_latch_count =
 				cps1_dino_obj_latch_events.load(std::memory_order_relaxed);
+			// FNV-1a over the same 2048 big-endian bytes later emitted by
+			// the OBJ sidecar. This binds local files against accidental
+			// cross-frame substitution, not against malicious tampering.
+			unsigned long long observed_obj_fnv1a64 = 14695981039346656037ULL;
+			for (unsigned index = 0; index < 0x400; ++index)
+			{
+				const unsigned word = m_buffered_obj[index];
+				observed_obj_fnv1a64 ^= (word >> 8) & 255U;
+				observed_obj_fnv1a64 *= 1099511628211ULL;
+				observed_obj_fnv1a64 ^= word & 255U;
+				observed_obj_fnv1a64 *= 1099511628211ULL;
+			}
 			std::snprintf(path, sizeof(path),
 				"cps1-captures/frame-%08llu.buffered-obj-be.bin", frame_number);
 			std::snprintf(registers_path, sizeof(registers_path),
@@ -114,7 +126,8 @@ PROBE = r'''
 								else
 								{
 									const bool wrote = std::fprintf(latch_output,
-										"CPS1_DINO_LATCH_V1 %llu\n", observed_latch_count) > 0;
+										"CPS1_DINO_LATCH_V2 %llu %016llx\n",
+										observed_latch_count, observed_obj_fnv1a64) > 0;
 									const bool closed = std::fclose(latch_output) == 0;
 									if (!wrote || !closed)
 										osd_printf_warning("OBJ probe: incomplete %s\n", latch_path);
