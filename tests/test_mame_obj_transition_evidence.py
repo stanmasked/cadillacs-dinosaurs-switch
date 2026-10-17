@@ -103,9 +103,69 @@ class TransitionEvidenceTests(unittest.TestCase):
         render = distinct_frames()
         lua = [bytes([100])*128, bytes([101])*128] + render[:4]
         report = transition_diagnostic(render, lua, 2, 2)
-        self.assertEqual(report['transition_best_offset_steps'], 2)
+        # Three perfect boundary matches cover only 3 of 5 transitions.
+        # Still worth investigating, but not an informative offset.
+        self.assertIsNone(report['transition_best_offset_steps'])
+        self.assertEqual(report['transition_top_scoring_offset_steps'], 2)
+        self.assertEqual(report['transition_assessment'], 'INSUFFICIENT_OVERLAP')
         self.assertEqual(report['transition_candidates'][-1]['overlapping_transitions'], 3)
         self.assertEqual(report['transition_candidates'][-1]['matching_active_transitions'], 3)
+        self.assertFalse(report['transition_candidates'][-1]['overlap_sufficient'])
+        self.assertAlmostEqual(report['transition_candidates'][-1]['overlap_fraction'], 3/5)
+
+    def test_four_of_five_transition_coverage_remains_informative(self):
+        render = distinct_frames()
+        lua = [bytes([0x9b])*128] + render[:-1]
+        result = transition_diagnostic(render, lua, 2, 2)
+        winning = result['transition_candidates'][3]
+        self.assertEqual(winning['overlapping_transitions'], 4)
+        self.assertAlmostEqual(winning['overlap_fraction'], 4/5)
+        self.assertTrue(winning['overlap_sufficient'])
+        self.assertTrue(result['transition_hypothesis_informative'])
+        self.assertEqual(result['transition_assessment'],
+                         'DIAGNOSTIC_HYPOTHESIS_ONLY')
+
+    def test_longer_run_with_two_step_offset_has_sufficient_coverage(self):
+        changes = [1 << i for i in range(9)]
+        render = frames_from_masks(changes)
+        lua = [bytes([101])*128, bytes([102])*128] + render[:-2]
+        result = transition_diagnostic(render, lua, 2, 2)
+        winner = result['transition_candidates'][-1]
+        self.assertEqual(winner['overlapping_transitions'], 7)
+        self.assertAlmostEqual(winner['overlap_fraction'], 7/9)
+        self.assertTrue(winner['overlap_sufficient'])
+        self.assertEqual(result['transition_best_offset_steps'], 2)
+        self.assertTrue(result['transition_hypothesis_informative'])
+        self.assertFalse(result['frame_sync_verified'])
+
+    def test_early_matches_cannot_override_lack_of_overlap(self):
+        changes = [1 << i for i in (0, 1, 2, 3, 4, 5, 6)]
+        render = frames_from_masks(changes)
+        lua = [bytes([88])*128, bytes([89])*128] + render[:-2]
+        result = transition_diagnostic(render, lua, 1, 2)
+        self.assertEqual(result['transition_top_scoring_offset_steps'], 2)
+        self.assertAlmostEqual(result['transition_candidates'][-1]['overlap_fraction'],
+                               5/7)
+        self.assertIsNone(result['transition_best_offset_steps'])
+        self.assertEqual(result['transition_assessment'], 'INSUFFICIENT_OVERLAP')
+        self.assertFalse(result['transition_hypothesis_informative'])
+
+    def test_exact_frame_alignment_reports_full_overlap(self):
+        render = distinct_frames()
+        result = transition_diagnostic(render, render, 2, 2)
+        winner = result['transition_candidates'][2]
+        self.assertEqual(winner['overlapping_transitions'], 5)
+        self.assertEqual(winner['overlap_fraction'], 1)
+        self.assertTrue(winner['overlap_sufficient'])
+        self.assertEqual(result['transition_minimum_overlap_fraction'], 0.75)
+
+    def test_static_scene_reason_is_ambiguous_not_low_coverage(self):
+        render = [bytes(128)]*6
+        result = transition_diagnostic(render, render, 2, 2)
+        self.assertEqual(result['transition_assessment'], 'TIED_BEST_CANDIDATES')
+        self.assertIsNone(result['transition_top_scoring_offset_steps'])
+        self.assertIsNone(result['transition_best_offset_steps'])
+        self.assertFalse(result['transition_hypothesis_informative'])
 
     def test_reject_wrong_types_lengths_and_offsets(self):
         frames = distinct_frames()
