@@ -20,7 +20,7 @@ OTHER_SIZES = {
     'manifest.json': 16 * 1024,   # maximum; JSON lengths vary
     'render-regs-be.bin': 128,
     'buffered-obj-be.bin': 2048,
-    'obj-latch-count.txt': 80,     # maximum; V2 text lengths vary
+    'obj-latch-count.txt': 128,    # bounded V2 plus optional session line
 }
 EXPECTED_SIZES = {**CAPTURE_SIZES, **OTHER_SIZES}
 VARIABLE_LENGTH = frozenset(('manifest.json', 'obj-latch-count.txt'))
