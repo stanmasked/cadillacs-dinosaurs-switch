@@ -180,7 +180,8 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
                             verify_build_only=False,
                             check_launch_readiness=False,
                             verify_private_romset_only=False,
-                            verify_private_romset_before_capture=False):
+                            verify_private_romset_before_capture=False,
+                            auto_exit_after_capture=False):
     """Run full MAME locally, then audit all private files with strict checks."""
     if (type(timeout_seconds) is not int or
             not 30 <= timeout_seconds <= 3600):
@@ -195,9 +196,15 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         raise ValueError('verify_private_romset_only must be boolean')
     if type(verify_private_romset_before_capture) is not bool:
         raise ValueError('verify_private_romset_before_capture must be boolean')
+    if type(auto_exit_after_capture) is not bool:
+        raise ValueError('auto_exit_after_capture must be boolean')
     if sum((preflight_only, verify_build_only, check_launch_readiness,
             verify_private_romset_only, verify_private_romset_before_capture)) > 1:
         raise ValueError('Choose one ROM-free preflight mode')
+    if auto_exit_after_capture and (
+            preflight_only or verify_build_only or
+            check_launch_readiness or verify_private_romset_only):
+        raise ValueError('Auto exit is only available during private game capture')
     # A ROM-free build check must work before any owned ROM or private
     # capture workspace exists. Preserve the old four-path form, with its
     # full isolation check, for callers that still supply both paths.
@@ -299,6 +306,11 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
     session_id = secrets.token_hex(16)
     launch_env = os.environ.copy()
     launch_env['CPS1_DINO_CAPTURE_SESSION'] = session_id
+    # Never allow an inherited environment variable to change the
+    # default interactive session into an automatic exit.
+    launch_env.pop('CPS1_DINO_AUTO_EXIT_AFTER_CAPTURE', None)
+    if auto_exit_after_capture:
+        launch_env['CPS1_DINO_AUTO_EXIT_AFTER_CAPTURE'] = '1'
     capture_dir = private / CAPTURE_DIR_NAME
     # Never create outputs until the real build identity passed.
     capture_dir.mkdir(mode=0o700, exist_ok=False)
@@ -406,6 +418,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
             'private_rom_content_sha256_stable_during_capture': (
                 verify_private_romset_before_capture),
             'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
+            'auto_exit_after_capture_requested': auto_exit_after_capture,
             'nominal_frame_count': FRAME_COUNT,
             'crc32_lua_components_checked': FRAME_COUNT * 5,
             'v2_bound_obj_samples': FRAME_COUNT,
@@ -452,6 +465,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         'private_rom_content_sha256_stable_during_capture': (
             verify_private_romset_before_capture),
         'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
+        'auto_exit_after_capture_requested': auto_exit_after_capture,
         'original_game_authenticity_verified': False,
         'obj_latch_age_verified': False,
         'frame_sync_verified': False,
@@ -476,6 +490,9 @@ def main(argv=None):
     p.add_argument(
         '--diagnose-failed-capture', action='store_true',
         help='On failed game launch, show only safe filename/size coverage counts')
+    p.add_argument(
+        '--auto-exit-after-capture', action='store_true',
+        help='Opt-in Lua scheduled MAME exit one frame after the six-frame capture')
     preflight_options = p.add_mutually_exclusive_group()
     preflight_options.add_argument(
         '--preflight-only', action='store_true',
@@ -506,7 +523,8 @@ def main(argv=None):
             check_launch_readiness=args.check_launch_readiness,
             verify_private_romset_only=args.verify_private_romset_only,
             verify_private_romset_before_capture=(
-                args.verify_private_romset_before_capture))
+                args.verify_private_romset_before_capture),
+            auto_exit_after_capture=args.auto_exit_after_capture)
         print(json.dumps(result, indent=2))
         return 0
     except Exception as exc:

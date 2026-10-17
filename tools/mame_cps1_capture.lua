@@ -7,6 +7,12 @@ local FRAME_COUNT=6
 local FRAME_STEP=2
 -- Same-process source label; not physical VBlank provenance.
 local SESSION_ID=os.getenv('CPS1_DINO_CAPTURE_SESSION') or 'UNBOUND'
+-- Explicit local opt-in only. The Python launcher strips inherited flags
+-- unless --auto-exit-after-capture was requested for the actual game run.
+local AUTO_EXIT_FLAG=os.getenv('CPS1_DINO_AUTO_EXIT_AFTER_CAPTURE')
+assert(AUTO_EXIT_FLAG==nil or AUTO_EXIT_FLAG=='1',
+       'Invalid private MAME auto-exit flag')
+local AUTO_EXIT_AFTER_CAPTURE=(AUTO_EXIT_FLAG=='1')
 if SESSION_ID~='UNBOUND' then
     assert(#SESSION_ID==32 and SESSION_ID:match('^[0-9a-f]+$'),
            'Invalid private MAME capture session label')
@@ -45,6 +51,8 @@ end
 
 local step=nil
 local captured,last_frame=0,-1
+local last_capture_frame=nil
+local exit_scheduled=false
 
 local function write_file(name, bytes)
     local file,err=io.open(OUTPUT_DIR..'/'..name,'wb')
@@ -159,14 +167,27 @@ end
 
 -- MAME docs: called after video update. Run from -autoboot_script.
 emu.register_frame_done(function()
-    if captured>=FRAME_COUNT then return end
     local frame=screen.frame_number
+    -- The final capture is nominal frame 910. Do not request a process
+    -- exit in that frame_done callback: let one later frame complete so
+    -- the instrumented C++ video-update hook can finish its own writes.
+    -- This is a safety margin, NOT evidence of callback/VBlank ordering.
+    if captured>=FRAME_COUNT then
+        if AUTO_EXIT_AFTER_CAPTURE and last_capture_frame and
+           frame>last_capture_frame and not exit_scheduled then
+            exit_scheduled=true
+            print('[cps1 capture] scheduled local exit after six frames')
+            machine:exit()
+        end
+        return
+    end
     if frame==last_frame or frame<START_FRAME then return end
     if (frame-START_FRAME)%FRAME_STEP~=0 then return end
     last_frame=frame
     if not step then step=detect_word_step() end
     capture(frame)
     captured=captured+1
+    if captured==FRAME_COUNT then last_capture_frame=frame end
 end,'frame')
 print('[cps1 capture] ready; create directory '..OUTPUT_DIR..
       ' before launching MAME. Requires active dino World 930201.')

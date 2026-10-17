@@ -1173,3 +1173,50 @@ ROM-free tests exercise interrupted original-MAME-style processes,
 absent/partial/synthetic-complete captures, unsafe symlinks and paths,
 malicious extra text fields, broken progress scans, unchanged CLI default
 and incompatible option combinations.
+
+
+## Stage 91 — optional automatic clean MAME exit after six private captures
+
+The Lua script previously stopped collecting once the six nominal
+samples (900, 902, 904, 906, 908, 910) were present but left MAME
+running until a person closed the application or the Python process
+timed out. A private first-run experiment therefore could not finish
+unattended even if the files had already been collected.
+
+Use **explicit opt-in** `--auto-exit-after-capture` with the guarded
+first-run command:
+
+```sh
+python3 tools/mame_private_dino_session.py \
+  --mame /private/mame0289/dino \
+  --mame-tree /private/mame0289 \
+  --rom-dir /private/owned-mame-roms \
+  --workspace /private/new-empty-dino-workspace \
+  --verify-private-romset-before-capture \
+  --diagnose-failed-capture \
+  --auto-exit-after-capture
+```
+
+Only the actual game subprocess receives
+`CPS1_DINO_AUTO_EXIT_AFTER_CAPTURE=1`. An inherited variable is
+**removed** for default interactive game runs, and no auto-exit flag
+is passed to the initial `-verifyroms` audit. The Lua script never
+calls `manager.machine:exit()` before collecting six successfully
+written five-component binary and manifest bundles. Once frame 910's
+manifest has been closed, it waits until a **subsequent** frame_done
+callback reports a strictly larger nominal frame number before
+scheduling exactly one exit. This leaves a conservative extra frame
+for the instrumented C++ source, but is NOT proof of callback order,
+buffered OBJ age or VBlank alignment. MAME 0.289 documents
+`running_machine:exit()` as a scheduled exit, not an immediate
+exception. Any nonzero exit or incomplete C++ set is still refused
+by the launcher, and no verified success report is created.
+
+The default behavior is unchanged: manual exit remains supported.
+Auto-exit is rejected in preflight-only, build-only, readiness and
+verify-ROM-only modes. The private success report records only the
+Boolean `auto_exit_after_capture_requested` and never claims that
+the emulated gameplay was authentic. No original ROMs or captures
+are placed in public GitHub Actions.
+
+MAME Lua API: https://docs.mamedev.org/luascript/ref-core.html
