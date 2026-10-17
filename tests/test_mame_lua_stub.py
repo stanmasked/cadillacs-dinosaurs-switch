@@ -11,8 +11,10 @@ import struct
 import tempfile
 import unittest
 import zlib
+import contextlib
+import io
 
-from tools.mame_obj_sequence_alignment import CAPTURE_SIZES, read_frames
+from tools.mame_obj_sequence_alignment import CAPTURE_SIZES, read_frames, main as audit_main
 from tools.mame_obj_latch_evidence import obj_fnv1a64
 
 LIB=ctypes.util.find_library('lua5.4')
@@ -124,11 +126,71 @@ class MameLuaCaptureStubTests(unittest.TestCase):
                     (root/(prefix+'render-regs-be.bin')).write_bytes(a+b)
                     (root/(prefix+'buffered-obj-be.bin')).write_bytes(obj)
                     (root/(prefix+'obj-latch-count.txt')).write_text(
-                        f'CPS1_DINO_LATCH_V2 {200+i*2} {obj_fnv1a64(obj)}\\n')
+                        f'CPS1_DINO_LATCH_V2 {200+i*2} {obj_fnv1a64(obj)}\n')
                 render,lua,objects=read_frames(root,900,6,2,include_obj=True)
                 self.assertEqual(len(objects),6)
                 self.assertEqual(render,lua)
 
+                # A real strict CLI invocation over six Lua-generated
+                # bundles plus mock C++ records must also succeed.
+                # Matching synthetic data is NOT original frame-sync proof.
+                output=root/'combined-audit.json'
+                with contextlib.redirect_stdout(io.StringIO()), \
+                     contextlib.redirect_stderr(io.StringIO()):
+                    status=audit_main([
+                        str(root),'--first-frame','900','--frame-count','6',
+                        '--frame-step','2','--latch-count-evidence',
+                        '--out',str(output)])
+                self.assertEqual(status,0)
+                report=json.loads(output.read_text())
+                self.assertEqual(
+                    report['obj_latch_count_evidence']['sidecar_format_version'],2)
+                self.assertEqual(
+                    report['obj_latch_count_evidence']['obj_byte_fingerprint_verified_count'],6)
+                self.assertFalse(report['frame_sync_verified'])
+                self.assertFalse(report['pixel_parity_eligible'])
+
+            finally:
+                os.chdir(old)
+
+    def test_preexisting_manifest_prevents_any_lua_capture_overwrite(self):
+        lib=ctypes.CDLL(LIB)
+        lib.luaL_newstate.restype=ctypes.c_void_p
+        lib.luaL_openlibs.argtypes=[ctypes.c_void_p]
+        lib.luaL_loadstring.argtypes=[ctypes.c_void_p,ctypes.c_char_p]
+        lib.luaL_loadstring.restype=ctypes.c_int
+        lib.luaL_loadfilex.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_char_p]
+        lib.luaL_loadfilex.restype=ctypes.c_int
+        lib.lua_pcallk.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int,
+                                  ctypes.c_longlong,ctypes.c_void_p]
+        lib.lua_pcallk.restype=ctypes.c_int
+        lib.lua_tolstring.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p]
+        lib.lua_tolstring.restype=ctypes.c_char_p
+        lib.lua_close.argtypes=[ctypes.c_void_p]
+        old=os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                out=Path('cps1-captures')
+                out.mkdir()
+                existing=out/'frame-00000900.manifest.json'
+                existing.write_bytes(b'PRIVATE_CAPTURE_MUST_STAY')
+                L=lib.luaL_newstate()
+                self.assertTrue(L)
+                lib.luaL_openlibs(L)
+                try:
+                    self.assertEqual(lib.luaL_loadstring(L,STUB.encode()),0)
+                    self.assertEqual(lib.lua_pcallk(L,0,0,0,0,None),0)
+                    self.assertEqual(lib.luaL_loadfilex(L,str(SCRIPT).encode(),None),0)
+                    rc=lib.lua_pcallk(L,0,0,0,0,None)
+                    self.assertNotEqual(rc,0)
+                    message=(lib.lua_tolstring(L,-1,None) or b'').decode()
+                    self.assertIn('Refusing to overwrite existing',message)
+                finally:
+                    lib.lua_close(L)
+                self.assertEqual(existing.read_bytes(),b'PRIVATE_CAPTURE_MUST_STAY')
+                self.assertEqual([f.name for f in out.iterdir()],
+                                 [existing.name])
             finally:
                 os.chdir(old)
 
