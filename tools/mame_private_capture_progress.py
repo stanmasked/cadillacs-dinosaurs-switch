@@ -16,8 +16,10 @@ try:
     from tools.mame_private_capture_stability import (
         EXPECTED_SIZES, VARIABLE_LENGTH,
     )
+    from tools.mame_private_coverage_shift import nominal_coverage_shift_hypotheses
 except ModuleNotFoundError:
     from mame_private_capture_stability import EXPECTED_SIZES, VARIABLE_LENGTH
+    from mame_private_coverage_shift import nominal_coverage_shift_hypotheses
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CAPTURE_DIR_NAME = 'cps1-captures'
@@ -89,6 +91,8 @@ def _with_stream_coverage(report):
             )) != FRAME_COUNT):
         raise ValueError('Private stream coverage counters disagree')
     report['stream_coverage'] = summary
+    report['nominal_coverage_shift_hypotheses'] = (
+        nominal_coverage_shift_hypotheses(rows))
     if report['status'] == 'INCOMPLETE_PRIVATE_CAPTURE_FILE_SET':
         lua_present = sum(row['lua_valid_sized_files'] for row in frames)
         cpp_present = sum(row['cpp_valid_sized_files'] for row in frames)
@@ -101,6 +105,10 @@ def _with_stream_coverage(report):
             report['next_local_investigation_code'] = 'COMPARE_LUA_CPP_NOMINAL_FRAME_COVERAGE'
         # Other incomplete combinations retain the original conservative
         # generic hook code; missing data alone never identifies a culprit.
+        if (report['nominal_coverage_shift_hypotheses']['status'] ==
+                'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY'):
+            report['next_local_investigation_code'] = (
+                'INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET')
     return report
 
 

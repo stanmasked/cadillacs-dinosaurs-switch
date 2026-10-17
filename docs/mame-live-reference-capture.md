@@ -849,3 +849,32 @@ The strict 54-file audit and the private runtime launch remain separate.
 New ROM-free regression tests cover Lua-only, C++-only, mixed/interleaved
 samples, partial sidecars, invalid-sized components and preservation
 of all conservative provenance flags.
+
+
+## Stage 83 — bounded nominal-label coverage displacement hypotheses
+
+A new ROM-free analysis component, `tools/mame_private_coverage_shift.py`,
+compares the **presence and size-only completeness** of six Lua file sets
+against six instrumented C++ file sets for nearby nominal labels. It
+recomputes shared complete-frame counts for five possible C++-relative-to-
+Lua sample-index offsets (-2, -1, 0, +1, +2). A candidate is presented
+only when each stream has at least three complete size-only frame sets,
+a single off-label offset matches at least three pairs, and its overlap
+strictly exceeds the same-label count. Sparse, tied/ambiguous and ordinary
+same-label distributions do not create a definitive offset.
+
+The read-only post-failure progress report now includes
+`nominal_coverage_shift_hypotheses` with bounded overlap scores,
+an optional relative sample/frame-label offset, and explicit
+`hypothesis_verified:false`. A strong, unambiguous off-label coverage
+pattern suggests `INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET` locally.
+File-size corruption, unexpected entries and other stronger integrity
+warnings always take precedence.
+
+These are **filename/file-size availability correlations**, NOT emulator
+callback timestamps. An apparent shift cannot establish the real
+CPS-1 VBlank, buffered sprite age, game execution, original pixel values,
+or Nintendo Switch parity. No ROM bytes, framebuffer, OBJ buffers, session
+tokens, local paths or private warnings are accessed or emitted.
+Synthetic tests exercise positive/negative shifts, complete/sparse
+coverage, forged metadata, inspection priority and privacy.

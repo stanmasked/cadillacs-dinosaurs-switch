@@ -139,6 +139,47 @@ class PrivateCaptureProgressTests(unittest.TestCase):
         self.assertEqual(out['next_local_investigation_code'],
                          'COMPARE_LUA_CPP_NOMINAL_FRAME_COVERAGE')
 
+    def test_offset_plus_one_in_directory_scan_is_not_vblank_proof(self):
+        lua = ('gfxram-be.bin', 'cps-a-be.bin', 'cps-b-be.bin',
+               'palette-rgb24.bin', 'reference-rgb24.bin', 'manifest.json')
+        cpp = ('render-regs-be.bin', 'buffered-obj-be.bin', 'obj-latch-count.txt')
+        for index in (0, 1, 2):
+            self.add_frame(900 + 2 * index, lua)
+        for index in (1, 2, 3):
+            self.add_frame(900 + 2 * index, cpp)
+        out = private_capture_progress(self.workspace)
+        hint = out['nominal_coverage_shift_hypotheses']
+        self.assertEqual(hint['status'], 'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY')
+        self.assertEqual(hint['candidate_cpp_relative_to_lua_shift_samples'], 1)
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET')
+        self.assertFalse(hint['hypothesis_verified'])
+        self.assertFalse(out['capture_validated'])
+
+    def test_offset_hypotheses_do_not_override_size_or_unexpected_errors(self):
+        lua = ('gfxram-be.bin', 'cps-a-be.bin', 'cps-b-be.bin',
+               'palette-rgb24.bin', 'reference-rgb24.bin', 'manifest.json')
+        cpp = ('render-regs-be.bin', 'buffered-obj-be.bin', 'obj-latch-count.txt')
+        for index in (0, 1, 2):
+            self.add_frame(900 + 2 * index, lua)
+        for index in (1, 2, 3):
+            self.add_frame(900 + 2 * index, cpp)
+        broken = self.captures / 'frame-00000900.reference-rgb24.bin'
+        broken.write_bytes(b'x')
+        out = private_capture_progress(self.workspace)
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_PRIVATE_CAPTURE_PARTIAL_WRITES')
+        self.assertEqual(out['nominal_coverage_shift_hypotheses']['status'],
+                         'INSUFFICIENT_COMPLETE_SOURCE_FRAMES')
+        broken.unlink()
+        self.add_frame(900, ('reference-rgb24.bin',))
+        (self.captures / 'sensitive-local-unexpected').write_bytes(b'secret')
+        out = private_capture_progress(self.workspace)
+        self.assertEqual(out['status'], 'UNEXPECTED_PRIVATE_CAPTURE_ENTRIES')
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_PRIVATE_CAPTURE_EXTRA_FILES')
+        self.assertNotIn('sensitive-local-unexpected', json.dumps(out))
+
     def test_latch_sidecar_present_without_cpp_pair_is_annotation_only(self):
         self.add_frame(900, ('obj-latch-count.txt',))
         out = private_capture_progress(self.workspace)
