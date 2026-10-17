@@ -139,6 +139,7 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         self.assertEqual(result['missing_member_count'], 0)
         self.assertTrue(result['private_payload_bytes_read_locally'])
         self.assertTrue(result['private_payload_crc_matches_pinned_catalog'])
+        self.assertTrue(result['private_payload_all_required_catalog_checks_match'])
         self.assertTrue(result['qsound_sha1_checked_locally'])
         self.assertTrue(result['qsound_sha1_matches_pinned_mame_catalog'])
         for key in ('mame_verifyroms_executed', 'original_game_authenticity_verified',
@@ -164,7 +165,8 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         self.assertEqual(result['mismatching_member_count'], 1)
         self.assertTrue(result['qsound_sha1_checked_locally'])
         self.assertFalse(result['qsound_sha1_matches_pinned_mame_catalog'])
-        self.assertFalse(result['private_payload_crc_matches_pinned_catalog'])
+        self.assertTrue(result['private_payload_crc_matches_pinned_catalog'])
+        self.assertFalse(result['private_payload_all_required_catalog_checks_match'])
         self.assertEqual(result['status'],
                          'PRIVATE_DINO_ROM_PAYLOAD_CRC_CATALOG_MISMATCH')
 
