@@ -1,0 +1,87 @@
+name: MAME 0.289 full-tree CPS-1 compile (experimental)
+
+# Intentionally NOT a required per-PR job: upstream emulator compilation
+# is resource-intensive and does not require or access commercial ROMs.
+on:
+  push:
+    paths:
+      - '.github/workflows/mame0289-cps1-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-instrumented-mame:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      MAME_COMMIT: f34f02505e32c1993c6a782b6814232cbfc74e36
+      MAME_TAG: mame0289
+    steps:
+      - name: Check out our ROM-free probe tooling
+        uses: actions/checkout@v4
+
+      - name: Install official Debian/Ubuntu MAME build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git build-essential python3 \
+            libsdl2-dev libsdl2-ttf-dev libfontconfig-dev libpulse-dev \
+            qt6-base-dev qt6-base-dev-tools qtchooser
+          c++ --version | head -n1
+          python3 --version
+
+      - name: Fetch pinned official MAME 0.289 source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --single-branch --branch "$MAME_TAG" \
+            --filter=blob:none https://github.com/mamedev/mame.git \
+            "$RUNNER_TEMP/mame0289"
+          test "$(git -C "$RUNNER_TEMP/mame0289" rev-parse HEAD)" = "$MAME_COMMIT"
+          echo "Source commit pinned: $MAME_COMMIT"
+          test -s "$RUNNER_TEMP/mame0289/src/mame/capcom/cps1_v.cpp"
+          test -s "$RUNNER_TEMP/mame0289/src/mame/capcom/cps1.cpp"
+
+      - name: Instrument the actual upstream C++ and audit exact insertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          original="$RUNNER_TEMP/mame0289/src/mame/capcom/cps1_v.cpp"
+          generated="$RUNNER_TEMP/cps1_v.instrumented.cpp"
+          python3 tools/mame_obj_source_probe.py "$original" --out "$generated"
+          python3 tools/mame_obj_real_source_audit.py "$original" "$generated"
+          cp "$generated" "$original"
+          # Only the video source in this temporary checkout may differ.
+          test "$(git -C "$RUNNER_TEMP/mame0289" diff --name-only)" = \
+            'src/mame/capcom/cps1_v.cpp'
+
+      - name: Compile real instrumented CPS-1 driver and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mame0289"
+          # Official upstream mame0289 subset-build interface. This is
+          # the real emulator, not the Stage 58 mock cps_state harness.
+          # No ROM paths, dino ROMs, or game binary data are used.
+          make -j2 SUBTARGET=dino \
+            SOURCES=src/mame/capcom/cps1.cpp \
+            REGENIE=1 NOWERROR=1 SYMBOLS=0 OPTIMIZE=0 \
+            TOOLS=0 TESTS=0
+
+      - name: Verify resulting emulator without loading game ROMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mame0289"
+          binary="$(find . -maxdepth 1 -type f -executable \
+            -name '*dino*' -print -quit)"
+          if [[ -z "$binary" ]]; then
+            echo "No executable matching CPS-1 dino subtarget was built" >&2
+            exit 1
+          fi
+          echo "Instrumented real MAME built successfully: $binary"
+          "$binary" -listxml dino > /dev/null
+          echo "ROM-free MAME driver metadata command passed"
