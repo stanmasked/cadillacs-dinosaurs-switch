@@ -8,13 +8,28 @@ alone cannot verify the displayed frame, latch age, or raster parity.
 from pathlib import Path
 import re
 
-PREFIX = b'CPS1_DINO_LATCH_V1 '
-LINE_RE = re.compile(rb'CPS1_DINO_LATCH_V1 (0|[1-9][0-9]*)\n\Z')
+PREFIX_V1 = b'CPS1_DINO_LATCH_V1 '
+LINE_RE_V1 = re.compile(rb'CPS1_DINO_LATCH_V1 (0|[1-9][0-9]*)\n\Z')
+LINE_RE_V2 = re.compile(
+    rb'CPS1_DINO_LATCH_V2 (0|[1-9][0-9]*) ([0-9a-f]{16})\n\Z')
 MAX_COUNT = (1 << 64) - 1
+MAX_LINE_BYTES = 80
+FNV_OFFSET = 14695981039346656037
+FNV_PRIME = 1099511628211
+
+
+def obj_fnv1a64(blob):
+    """Hash the exact 2048 serialized big-endian OBJ bytes in C++ order."""
+    if type(blob) is not bytes or len(blob) != 2048:
+        raise ValueError('FNV binding requires exactly 2048 OBJ bytes')
+    h = FNV_OFFSET
+    for byte in blob:
+        h = ((h ^ byte) * FNV_PRIME) & MAX_COUNT
+    return f'{h:016x}'
 
 
 def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
-                             changed_obj_slots=None):
+                             changed_obj_slots=None, obj_frames=None):
     """Return monotonically increasing observations from every nominal sample.
 
     This is opt-in: if any sidecar is absent, the entire diagnostic fails,
@@ -32,23 +47,45 @@ def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
             any(type(x) is not int or not 0 <= x <= 256
                 for x in changed_obj_slots)):
         raise ValueError('OBJ change series does not match capture intervals')
+    if obj_frames is not None and (
+            not isinstance(obj_frames, (tuple, list)) or
+            len(obj_frames) != frame_count or
+            any(type(x) is not bytes or len(x) != 2048 for x in obj_frames)):
+        raise ValueError('OBJ fingerprint series must contain complete probes')
 
     root = Path(directory)
     frames = [first_frame + i * frame_step for i in range(frame_count)]
     counts = []
-    for frame in frames:
+    versions = []
+    for index, frame in enumerate(frames):
         path = root / (f'frame-{frame:08d}.obj-latch-count.txt')
         with path.open('rb') as source:
-            line = source.read(65)
-        if len(line) > 64:
+            line = source.read(MAX_LINE_BYTES + 1)
+        if len(line) > MAX_LINE_BYTES:
             raise ValueError(f'{path.name}: oversized latch-counter sidecar')
-        if LINE_RE.fullmatch(line) is None:
+        match_v2 = LINE_RE_V2.fullmatch(line)
+        match_v1 = LINE_RE_V1.fullmatch(line) if match_v2 is None else None
+        if match_v2:
+            version = 2
+            if obj_frames is None:
+                raise ValueError(f'{path.name}: V2 requires original OBJ sidecar bytes')
+            declared_fnv = match_v2.group(2).decode('ascii')
+            actual_fnv = obj_fnv1a64(obj_frames[index])
+            if declared_fnv != actual_fnv:
+                raise ValueError(f'{path.name}: buffered OBJ fingerprint mismatch')
+            value = int(match_v2.group(1))
+        elif match_v1:
+            version = 1
+            value = int(match_v1.group(1))
+        else:
             raise ValueError(f'{path.name}: malformed latch-counter sidecar')
-        value = int(line[len(PREFIX):-1])
+        if versions and version != versions[0]:
+            raise ValueError(f'{path.name}: mixed V1/V2 counter series')
         if value > MAX_COUNT:
             raise ValueError(f'{path.name}: latch counter exceeds uint64 range')
         if counts and value < counts[-1]:
             raise ValueError(f'{path.name}: latch counter decreased; possible MAME reset')
+        versions.append(version)
         counts.append(value)
 
     differences = [after - before for before, after in zip(counts, counts[1:])]
@@ -60,6 +97,13 @@ def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
     return {
         'status': 'LATCH_CALLBACK_COUNTS_UNVERIFIED',
         'diagnostic_only': True,
+        'sidecar_format_version': versions[0],
+        'obj_byte_fingerprint_binding': (
+            'FNV1A64_ALL_SAMPLES_MATCHED' if versions[0] == 2
+            else 'LEGACY_V1_NOT_BOUND'),
+        'obj_byte_fingerprint_verified_count': (
+            frame_count if versions[0] == 2 else 0),
+        'obj_byte_fingerprint_is_cryptographic': False,
         'capture_source': 'MAME_0289_CPP_CPS1_OBJRAM_LATCH_CALL_COUNTER',
         'nominal_frame_labels': frames,
         'observed_latch_callback_counts': counts,
