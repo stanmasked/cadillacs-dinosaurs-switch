@@ -160,6 +160,46 @@ class NativeSceneTests(unittest.TestCase):
             with self.subTest(length=len(wrong)):
                 self.assertFalse(self.dll.cps1_scene_decode(wrong,len(wrong),dst))
 
+    def test_native_decoder_refuses_noncanonical_enabled_even_with_valid_crc(self):
+        # Every input was originally an otherwise valid scene. Recompute
+        # CRC32 so refusal proves schema validation, not checksum failure.
+        original=pack_scene(blank_scene())
+        for index in range(3):
+            for wrong in (2,128,255):
+                with self.subTest(index=index, wrong=wrong):
+                    corrupted=bytearray(original)
+                    corrupted[32+index]=wrong
+                    corrupted[12:16]=zlib.crc32(corrupted[16:]).to_bytes(
+                        4,'little')
+                    self.assertEqual(
+                        zlib.crc32(corrupted[16:]),
+                        int.from_bytes(corrupted[12:16],'little'))
+                    out=ctypes.create_string_buffer(70000)
+                    ctypes.memset(out,0xa5,len(out))
+                    before=out.raw
+                    self.assertFalse(self.dll.cps1_scene_decode(
+                        bytes(corrupted),len(corrupted),out))
+                    self.assertEqual(out.raw,before)
+
+    def test_native_decoder_accepts_all_boolean_layer_enable_combinations(self):
+        for mask in range(8):
+            with self.subTest(mask=mask):
+                scene=blank_scene()
+                expected=[]
+                for index,name in enumerate(('scroll1','scroll2','scroll3')):
+                    active=bool(mask&(1<<index))
+                    expected.append(int(active))
+                    if active:
+                        scene[name]={'words':[0]*8192,'enabled':True}
+                packed=pack_scene(scene)
+                self.assertEqual(list(packed[32:35]),expected)
+                out=ctypes.create_string_buffer(70000)
+                self.assertTrue(self.dll.cps1_scene_decode(
+                    packed,len(packed),out))
+                # C structure: two u16 controls, six u16 scroll
+                # registers, then three adjacent u8 enable flags.
+                self.assertEqual(list(out.raw[16:19]),expected)
+
     def test_empty_scene_matches_reference(self):
         self.parity(blank_scene())
 
