@@ -219,11 +219,11 @@ emu.register_frame_done(function()
             end
             if complete_metadata_streak>=2 then
                 exit_scheduled=true
-                print('[cps1 capture] complete file-size set observed twice; exiting')
+                print('CPS1_DINO_AUTO_EXIT_V1_READY_54_SIZE_ONLY')
                 machine:exit()
             elseif frame>=last_capture_frame+AUTO_EXIT_GRACE_FRAMES then
                 exit_scheduled=true
-                print('[cps1 capture] C++/Lua file-size set incomplete after grace; exiting for strict local audit')
+                print('CPS1_DINO_AUTO_EXIT_V1_GRACE_INCOMPLETE_SIZE_ONLY')
                 machine:exit()
             end
         end

@@ -36,6 +36,7 @@ try:
                                                 require_stable_private_dino_rom_content)
     from tools.mame_private_cli_errors import write_private_failure
     from tools.mame_private_capture_failure_summary import safe_capture_failure_report
+    from tools.mame_private_auto_exit_evidence import private_mame_auto_exit_log_observation
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -53,6 +54,7 @@ except ModuleNotFoundError:
                                           require_stable_private_dino_rom_content)
     from mame_private_cli_errors import write_private_failure
     from mame_private_capture_failure_summary import safe_capture_failure_report
+    from mame_private_auto_exit_evidence import private_mame_auto_exit_log_observation
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -337,6 +339,9 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         raise ValueError('Unable to execute local MAME; private files retained') from exc
     if proc.returncode != 0:
         raise ValueError('Local MAME exited unsuccessfully; check private log locally')
+    auto_exit_log_observation = (
+        private_mame_auto_exit_log_observation(private)
+        if auto_exit_after_capture else None)
     if rom_before is not None:
         # Gameplay must not mutate or substitute the just-audited set.
         require_stable_private_dino_rom_content(roms, rom_before)
@@ -419,6 +424,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
                 verify_private_romset_before_capture),
             'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
             'auto_exit_after_capture_requested': auto_exit_after_capture,
+            'auto_exit_log_observation': auto_exit_log_observation,
             'nominal_frame_count': FRAME_COUNT,
             'crc32_lua_components_checked': FRAME_COUNT * 5,
             'v2_bound_obj_samples': FRAME_COUNT,
@@ -466,6 +472,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
             verify_private_romset_before_capture),
         'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
         'auto_exit_after_capture_requested': auto_exit_after_capture,
+        'auto_exit_log_observation': auto_exit_log_observation,
         'original_game_authenticity_verified': False,
         'obj_latch_age_verified': False,
         'frame_sync_verified': False,
@@ -535,8 +542,12 @@ def main(argv=None):
         if args.diagnose_failed_capture:
             # One self-contained safe JSON object only: no filesystem
             # errors, filenames, ROM bytes or capture raw values on stderr.
-            print(json.dumps(safe_capture_failure_report(
-                exc, args.workspace, include_progress=True)), file=sys.stderr)
+            failure = safe_capture_failure_report(
+                exc, args.workspace, include_progress=True)
+            if args.auto_exit_after_capture:
+                failure['auto_exit_log_observation'] = (
+                    private_mame_auto_exit_log_observation(args.workspace))
+            print(json.dumps(failure), file=sys.stderr)
         else:
             write_private_failure(exc, sys.stderr)
         return 2
