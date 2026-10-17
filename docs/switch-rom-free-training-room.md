@@ -111,3 +111,39 @@ This is **not original CPS-1 enemy AI or gameplay physics**;
 the values, colors, dummy and attack behavior were invented for
 this test harness. No original assets or game runtime have been
 captured, distributed or executed as part of this prototype.
+
+## Stage 116 — deterministic pose-state presentation without game assets
+
+The ROM-free arena now exposes read-only C pose queries:
+`dino_arena_player_pose()`, `dino_arena_dummy_pose()`, and
+`dino_arena_pose_phase()`. Both actors use a deliberately invented
+priority order: **knockout > hurt > attack > jump > walk > idle**
+for the player, with the enemy's **windup** inserted before attack.
+A standing or blocked player does not appear to walk merely because
+a direction button is held: each 60 Hz tick records actual movement
+of both actors. The opponent's attack preparation has its own
+state and a visible warning, while an injured actor displays a
+hit reaction until its stun expires.
+
+The two visual phases cycle every six simulation ticks, not according
+to the display frame rate. Pose queries do not advance the clock,
+mutate physics, consume player input, change hitboxes or allocate
+memory. The Switch NRO draws these states with independently designed
+geometric rectangles: a walking bob, jump elevation, attack reach,
+stun colors, sparring windup and collapsed knockout silhouettes.
+The HUD prints the current player/opponent poses and health.
+No protected original characters, sprites or original game
+animation timings are encoded here.
+
+Nine ROM-free host-C regressions check idle/null behavior,
+actual displacement versus blocked input, jump/attack priority,
+chase/windup/strike transitions, hurt precedence, knockout
+precedence, six-tick visual phase timing, read-only pose queries
+and movement reset during stun/KO. These complement the existing
+722 synthetic tests; independent CI determines whether the
+expanded suite passes.
+
+**Limitations:** these visuals are temporary art-free placeholding.
+The game still lacks original fighting system, characters, level
+assets, sound and verified actual console execution. Correct
+synthetic pose states do not imply MAME-original gameplay parity.
