@@ -29,6 +29,7 @@ try:
     from tools.mame_capture_session_binding import require_private_capture_session
     from tools.mame_private_interval_consistency import private_nominal_interval_consistency
     from tools.mame_private_capture_triage import private_capture_triage
+    from tools.mame_private_rom_entry import require_private_dino_entry
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -39,6 +40,7 @@ except ModuleNotFoundError:
     from mame_capture_session_binding import require_private_capture_session
     from mame_private_interval_consistency import private_nominal_interval_consistency
     from mame_private_capture_triage import private_capture_triage
+    from mame_private_rom_entry import require_private_dino_entry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -125,7 +127,8 @@ def _require_session_aware_build(binary, tree):
 
 def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None,
                             *, timeout_seconds=1800, preflight_only=False,
-                            verify_build_only=False):
+                            verify_build_only=False,
+                            check_launch_readiness=False):
     """Run full MAME locally, then audit all private files with strict checks."""
     if (type(timeout_seconds) is not int or
             not 30 <= timeout_seconds <= 3600):
@@ -134,7 +137,9 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         raise ValueError('preflight_only must be boolean')
     if type(verify_build_only) is not bool:
         raise ValueError('verify_build_only must be boolean')
-    if preflight_only and verify_build_only:
+    if type(check_launch_readiness) is not bool:
+        raise ValueError('check_launch_readiness must be boolean')
+    if sum((preflight_only, verify_build_only, check_launch_readiness)) > 1:
         raise ValueError('Choose one ROM-free preflight mode')
     # A ROM-free build check must work before any owned ROM or private
     # capture workspace exists. Preserve the old four-path form, with its
@@ -162,6 +167,26 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         _require_session_aware_build(binary, tree)
         return {
             'status': 'ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED',
+            'game_executed': False,
+            'capture_verified': False,
+            'linked_probe_runtime_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
+    # A dry-run checklist for the first local capture. This invokes the
+    # driver's -listxml path, not original game emulation or archive reads.
+    # The found game-entry name/size is deliberately excluded from output.
+    if check_launch_readiness:
+        _require_session_aware_build(binary, tree)
+        entry = require_private_dino_entry(roms)
+        return {
+            'status': 'PRIVATE_DINO_LAUNCH_PREFLIGHT_ONLY',
+            'compiled_session_probe_elf_checked': True,
+            'private_rom_entry_observed': entry['game_set_entry_observed'],
+            'rom_file_bytes_read': False,
+            'rom_integrity_verified': False,
+            'rom_set_completeness_verified': False,
             'game_executed': False,
             'capture_verified': False,
             'linked_probe_runtime_verified': False,
@@ -338,13 +363,17 @@ def main(argv=None):
     preflight_options.add_argument(
         '--verify-build-only', action='store_true',
         help='Verify ROM-free driver/ELF with only --mame and --mame-tree')
+    preflight_options.add_argument(
+        '--check-launch-readiness', action='store_true',
+        help='ROM-free build and private dino entry metadata; requires all paths')
     args = p.parse_args(argv)
     try:
         result = execute_private_capture(
             args.mame, args.mame_tree, args.rom_dir, args.workspace,
             timeout_seconds=args.timeout_seconds,
             preflight_only=args.preflight_only,
-            verify_build_only=args.verify_build_only)
+            verify_build_only=args.verify_build_only,
+            check_launch_readiness=args.check_launch_readiness)
         print(json.dumps(result, indent=2))
         return 0
     except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:

@@ -709,3 +709,46 @@ successful triage, so rejection leaves the final JSON unpublished.
 No game ROM, RGB/OBJ binary data or raw capture-session tokens are
 uploaded. The result remains a same-process diagnostic, **not** verified
 gameplay, physical VBlank timing or original/Switch frame parity.
+
+
+## Stage 79 — metadata-only first-run readiness check
+
+Before spending time on a real private original-game session, the launcher
+now offers a combined **ROM-free readiness command**:
+
+```sh
+python3 tools/mame_private_dino_session.py \
+  --mame /private/mame0289/dino \
+  --mame-tree /private/mame0289 \
+  --rom-dir /private/owned-mame-roms \
+  --workspace /private/empty-dino-capture \
+  --check-launch-readiness
+```
+
+The 0700 workspace must already exist and be empty. The MAME source/tree,
+user-owned ROM directory and workspace must remain outside this public
+project and separate from each other. This dry-run first verifies the
+instrumented `dino` driver using ROM-free `-listxml`, compiled CPS-1
+session-aware object and **linked ELF probe markers**. It then checks only
+filesystem metadata for a nonempty ordinary `dino.zip` archive or a
+nonempty unpacked `dino/` game-set directory. Symlinked and empty
+entries are refused to catch common placement mistakes. No archive is
+opened or decompressed; no ROM bytes or private filenames are printed,
+uploaded or hashed; no MAME game is launched and no capture output/log
+is created. The returned `PRIVATE_DINO_LAUNCH_PREFLIGHT_ONLY` result
+explicitly keeps ROM content integrity, complete set identification,
+gameplay, synchronized callbacks and pixel parity unverified.
+
+This is a convenience **presence check, not MAME's `-verifyroms`** and
+cannot tell whether the user's private set is complete or usable. If it
+passes, invoke the same command without `--check-launch-readiness` to
+run the game privately in MAME. The ordinary capture retains its strict
+six-frame, same-process session-label, source-stability and integrity
+checks before publishing `dino-latch-diagnostic.json`. The resulting
+local JSON report and `cps1-captures/` remain outside the public repo.
+A run may fail at game startup even after metadata readiness succeeds.
+
+Synthetic regressions verify zipped/unpacked layout, missing/empty/linked
+entries, no original-ROM read, conservative output, bad ELF before entry
+inspection, mutually exclusive modes and no filesystem side effects.
+These synthetic results are **not a live original-game capture**.
