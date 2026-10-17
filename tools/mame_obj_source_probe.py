@@ -33,13 +33,19 @@ PROBE = r'''
 		if (frame_number >= 900 && frame_number <= 910 &&
 				((frame_number - 900) % 2) == 0)
 		{
-			char path[128];
+			char path[128], registers_path[128];
 			std::snprintf(path, sizeof(path),
 				"cps1-captures/frame-%08llu.buffered-obj-be.bin", frame_number);
+			std::snprintf(registers_path, sizeof(registers_path),
+				"cps1-captures/frame-%08llu.render-regs-be.bin", frame_number);
 			std::FILE *existing = std::fopen(path, "rb");
-			if (existing)
+			std::FILE *existing_registers = std::fopen(registers_path, "rb");
+			if (existing || existing_registers)
 			{
-				std::fclose(existing);
+				if (existing)
+					std::fclose(existing);
+				if (existing_registers)
+					std::fclose(existing_registers);
 			}
 			else
 			{
@@ -63,6 +69,35 @@ PROBE = r'''
 						complete = false;
 					if (!complete)
 						osd_printf_warning("OBJ probe: incomplete %s\n", path);
+					else
+					{
+						// The exact 64 CPS-A + 64 CPS-B register bytes
+						// read at the OBJ probe's video-update hook.
+						// The Lua callback reads these registers later;
+						// equality is necessary evidence, NOT frame proof.
+						std::FILE *registers = std::fopen(registers_path, "wb");
+						if (!registers)
+							osd_printf_warning("OBJ probe: unable to open %s\n", registers_path);
+						else
+						{
+							bool registers_complete = true;
+							for (unsigned index = 0; index < 64; ++index)
+							{
+								const unsigned word = index < 32 ?
+										m_cps_a_regs[index] : m_cps_b_regs[index - 32];
+								if (std::fputc((word >> 8) & 255, registers) == EOF ||
+										std::fputc(word & 255, registers) == EOF)
+								{
+									registers_complete = false;
+									break;
+								}
+							}
+							if (std::fclose(registers) != 0)
+								registers_complete = false;
+							if (!registers_complete)
+								osd_printf_warning("OBJ probe: incomplete %s\n", registers_path);
+						}
+					}
 				}
 			}
 		}
