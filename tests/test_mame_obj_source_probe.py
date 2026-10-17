@@ -15,8 +15,12 @@ from tools.mame_obj_source_probe import (
 MINIMAL_SOURCE = '''#include "emu.h"
 #include "cps1.h"
 
-void cps_state::cps1_objram_latch(int state) {
-    if (state) memcpy(m_buffered_obj.get(), m_obj, m_obj_size);
+void cps_state::cps1_objram_latch(int state)
+{
+	if (state)
+	{
+		memcpy(m_buffered_obj.get(), m_obj, m_obj_size);
+	}
 }
 uint32_t cps_state::screen_update_cps1(screen_device &screen,
         bitmap_ind16 &bitmap, const rectangle &cliprect)
@@ -47,6 +51,40 @@ class MameObjSourceProbeTests(unittest.TestCase):
         self.assertNotIn('m_obj[index]', probe)
         self.assertIn('m_obj_size == 0x800', probe)
         self.assertIn('std::strcmp(machine().system().name, "dino")', probe)
+
+    def test_latch_counter_uses_actual_mame_latch_after_copy(self):
+        source = instrument(MINIMAL_SOURCE)
+        self.assertIn('#include <atomic>', source)
+        self.assertIn('cps1_dino_obj_latch_events{0};', source)
+        self.assertEqual(source.count('cps1_dino_obj_latch_events.fetch_add('), 1)
+        self.assertLess(source.index('memcpy(m_buffered_obj.get(), m_obj, m_obj_size)'),
+                        source.index('cps1_dino_obj_latch_events.fetch_add('))
+        self.assertIn('if (std::strcmp(machine().system().name, "dino") == 0)',
+                      source)
+        self.assertIn('std::memory_order_relaxed', source)
+
+    def test_video_update_records_counter_before_obj_bytes(self):
+        source = instrument(MINIMAL_SOURCE)
+        self.assertIn('frame-%08llu.obj-latch-count.txt', source)
+        self.assertIn('CPS1_DINO_LATCH_V1 %llu\\n', source)
+        self.assertIn('observed_latch_count', source)
+        self.assertLess(source.index('cps1_dino_obj_latch_events.load('),
+                        source.index('m_buffered_obj[index]'))
+        self.assertIn('existing_latch', source)
+        self.assertIn('existing || existing_registers || existing_latch', source)
+        self.assertIn('std::fclose(latch_output)', source)
+
+    def test_latch_copy_anchor_must_be_exactly_unique(self):
+        bad = MINIMAL_SOURCE.replace(
+            '\t\tmemcpy(m_buffered_obj.get(), m_obj, m_obj_size);',
+            '\t\tother_latch_copy();')
+        with self.assertRaisesRegex(ValueError, 'anchors'):
+            instrument(bad)
+        with self.assertRaisesRegex(ValueError, 'anchors'):
+            instrument(MINIMAL_SOURCE.replace(
+                '\t\tmemcpy(m_buffered_obj.get(), m_obj, m_obj_size);',
+                '\t\tmemcpy(m_buffered_obj.get(), m_obj, m_obj_size);\n'
+                '\t\tmemcpy(m_buffered_obj.get(), m_obj, m_obj_size);'))
 
     def test_limits_frames_and_uses_exact_big_endian_words(self):
         probe = instrument(MINIMAL_SOURCE)
