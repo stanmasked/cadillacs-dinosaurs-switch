@@ -220,6 +220,14 @@ class MultiframeAlignmentTests(unittest.TestCase):
             # recurring all-register changes are not unique timing evidence.
             self.assertFalse(doc['transition_analysis']['transition_hypothesis_informative'])
             self.assertIsNone(doc['diagnostic_offset_metrics_agree'])
+            self.assertIn('diagnostic_verdict', doc)
+            self.assertEqual(doc['diagnostic_verdict']['status'],
+                             'EXACT_ONLY_UNCORROBORATED')
+            self.assertIsNone(
+                doc['diagnostic_verdict']['diagnostic_candidate_offset_steps'])
+            self.assertTrue(doc['diagnostic_verdict']['diagnostic_only'])
+            self.assertFalse(doc['diagnostic_verdict']['frame_sync_verified'])
+            self.assertFalse(doc['diagnostic_verdict']['pixel_parity_eligible'])
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(main(args),2)
             self.assertEqual(json.loads(result.read_text()),doc)

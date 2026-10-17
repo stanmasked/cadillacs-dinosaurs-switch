@@ -16,9 +16,11 @@ import zlib
 try:
     from tools.mame_obj_transition_evidence import transition_diagnostic
     from tools.mame_obj_transition_stability import transition_leave_one_out
+    from tools.mame_obj_diagnostic_verdict import diagnostic_verdict
 except ModuleNotFoundError:
     from mame_obj_transition_evidence import transition_diagnostic
     from mame_obj_transition_stability import transition_leave_one_out
+    from mame_obj_diagnostic_verdict import diagnostic_verdict
 
 REG_A = 'cps-a-be.bin'
 REG_B = 'cps-b-be.bin'
@@ -215,6 +217,8 @@ def main(argv=None):
                 transitions['transition_best_offset_steps'])
         else:
             report['diagnostic_offset_metrics_agree'] = None
+        report['diagnostic_verdict'] = diagnostic_verdict(
+            report, transitions, report['transition_stability'])
         report['first_frame'] = args.first_frame
         report['probe_register_sha256'] = [
             hashlib.sha256(blob).hexdigest() for blob in render]

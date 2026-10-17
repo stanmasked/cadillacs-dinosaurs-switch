@@ -354,3 +354,81 @@ runtime failures, per-trial accounting and that LOO never promotes
 an inconclusive base result. These synthetic tests do not replace
 a full GitHub Actions run or actual MAME 0.289 gameplay capture.
 The GitHub runner allocation issue remains open as issue #20.
+
+
+## Stage 49 — conservative cross-method diagnostic verdict
+
+The multi-frame CLI now includes a `diagnostic_verdict` object generated
+by `tools/mame_obj_diagnostic_verdict.py`. It reconciles three **correlated**
+observations drawn from the **same CPS-A/B capture**:
+
+1. A uniquely informative exact **128-byte register-state offset**
+   (Stage 44/45, `offset_hypothesis_informative`).
+2. A uniquely informative **changed-register transition-mask offset**
+   with >=75% real transition overlap (Stage 46/47).
+3. A **leave-one-transition-out** result in which the candidate survives
+   every omission with unchanged offset and adequate active evidence
+   (Stage 48).
+
+The verdict is **fail-closed** on inconsistent input: required flags must
+be genuine booleans, neither source may assert pixel parity or frame
+synchronization, informative offsets must be bounded integers, and LOO
+trial counters/unstable indices must be complete, consistent and
+non-duplicated. It rejects malformed metadata instead of manufacturing
+a stronger conclusion.
+
+The report's `status` is exactly one of:
+
+- `CONSISTENT_BUT_UNVERIFIED`: exact and transition hypotheses agree,
+  **and** the full LOO check is stable. Only this case supplies a
+  `diagnostic_candidate_offset_steps` number.
+- `CONFLICTING_REGISTER_DIAGNOSTICS`: the two informative scores favor
+  different offsets; candidate remains null even with stable LOO.
+- `FRAGILE_REGISTER_DIAGNOSTIC`: the two offsets agree but at least
+  one LOO trial broke the changed-register hypothesis.
+- `EXACT_ONLY_UNCORROBORATED`: exact-value score is informative but
+  changed-register transitions are not.
+- `TRANSITION_ONLY_UNCORROBORATED`: changed-register score is
+  informative but full 128-byte register comparison is not.
+- `INSUFFICIENT_REGISTER_EVIDENCE`: neither score is informative.
+
+The exact, transition and LOO checks are **not three independent
+measurements**: every result is computed from the same captured bytes.
+The verdict therefore records
+`independent_physical_measurement_count:0`,
+`diagnostic_only:true`, `frame_sync_verified:false`, and
+`pixel_parity_eligible:false` **in every case**, including
+`CONSISTENT_BUT_UNVERIFIED`. It neither modifies the native
+Switch scene exporter's guard nor corrects offsets automatically.
+
+The metadata-only CLI still uses the prior Stage 44 defaults:
+
+```sh
+python3 tools/mame_obj_sequence_alignment.py \
+  /private/cps1-captures --first-frame 900 --frame-count 6 \
+  --frame-step 2 --max-offset-steps 2 \
+  --out /private/local_outputs/mame-900-stage49.json
+```
+
+Original CPS-1/ROM data, register arrays, sprites and screenshots never
+enter the JSON report. Current status is preparation for real MAME 0.289
+verification, not a verified frame capture or playable Switch port.
+
+### Validation and CI boundary
+
+The **exact GitHub-committed** Stage 49 classifier source and its new
+test module were checked using Git blob SHA-1 and executed locally:
+**13 new tests passed**; the 23 Stage 47/48 transition and stability
+tests also passed, totaling **36/36** on a ROM-free focused local tree.
+The test cases include disagreements, fragile matches, false
+pixel-parity declarations, invalid types and mismatched LOO counts.
+An existing multi-frame CLI regression now checks the new verdict
+object; that broader CLI integration check was committed but has not
+yet run in a full clean repository checkout.
+
+GitHub Actions remains blocked before runner allocation as tracked in
+[issue #20](https://github.com/stanmasked/cadillacs-dinosaurs-switch/issues/20).
+A real compiled MAME 0.289 probe and original game's framebuffer timing
+remain prerequisites for fidelity claims. No original ROMs, private
+captures, licensed sprites, commercial source or authentic game frames
+are committed.
