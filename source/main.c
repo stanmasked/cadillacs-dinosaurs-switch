@@ -13,6 +13,7 @@
 #include "cps1_tile.h"
 #include "cps1_scene.h"
 #include "cps1_sequence.h"
+#include "dino_arena.h"
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
        GRID_COLS = 16, GRID_ROWS = 8, PAGE_TILES = GRID_COLS * GRID_ROWS,
@@ -243,6 +244,58 @@ static uint8_t *load_sequence_image(const uint8_t *gfx,
     return rgba;
 }
 
+/* Fully ROM-free geometry preview: intentionally not original game art.
+ * Placeholder actor and stationary dummy use independently written rules.
+ */
+static void arena_frame(uint32_t *frame, unsigned pitch,
+                        const DinoArena *arena, bool have_gfx) {
+    rectangle(frame,pitch,0,0,FB_WIDTH,FB_HEIGHT,rgb(11,18,29));
+    label(frame,pitch,52,19,"TRAINING ROOM  -  ORIGINAL ROM FREE PROTOTYPE",
+          2,rgb(226,233,229));
+    label(frame,pitch,52,55,
+          "PLACEHOLDER ACTOR AND DUMMY  -  NOT ORIGINAL GAMEPLAY",
+          1,rgb(160,190,207));
+    const int ox=64, oy=80, scale=3;
+    rectangle(frame,pitch,ox,oy,1152,576,rgb(30,61,70));
+    rectangle(frame,pitch,ox,oy+240,1152,336,rgb(62,83,74));
+    for (int lane=0;lane<5;++lane)
+        rectangle(frame,pitch,ox,oy+240+lane*64,1152,1,rgb(86,108,94));
+    if (arena->dummy_hp) {
+        const int x=ox+arena->dummy_x*scale;
+        const int y=oy+arena->dummy_y*scale;
+        rectangle(frame,pitch,x-17,y-7,34,8,rgb(26,37,40));
+        rectangle(frame,pitch,x-16,y-102,32,94,
+                  arena->dummy_hitstun?rgb(247,196,120):rgb(190,126,74));
+        rectangle(frame,pitch,x-12,y-113,24,16,rgb(231,202,142));
+        /* Three neutral pips represent the dummy's remaining health. */
+        for (unsigned i=0;i<arena->dummy_hp;++i)
+            rectangle(frame,pitch,x-24+(int)i*17,y-133,12,6,rgb(250,196,87));
+    }
+    const int px=ox+arena->x*scale;
+    const int py=oy+arena->y*scale;
+    const int rise=arena->z*scale;
+    rectangle(frame,pitch,px-16,py-7,32,7,rgb(27,39,43));
+    rectangle(frame,pitch,px-16,py-rise-74,32,67,rgb(62,180,208));
+    rectangle(frame,pitch,px-12,py-rise-92,24,18,rgb(231,218,164));
+    rectangle(frame,pitch,px+(arena->facing_right?9:-15),
+              py-rise-63,6,13,rgb(238,233,210));
+    if (arena->attack_frames) {
+        const int hit_x=px+(arena->facing_right?16:-75);
+        rectangle(frame,pitch,hit_x,py-rise-63,60,18,rgb(249,214,100));
+    }
+    char status[115];
+    snprintf(status,sizeof(status),
+             "X %03d  DEPTH %03d  JUMP %02d  HITS %03u  DUMMY HP %u",
+             (int)arena->x,(int)arena->y,(int)arena->z,
+             (unsigned)arena->successful_hits,(unsigned)arena->dummy_hp);
+    label(frame,pitch,52,670,status,1,rgb(218,228,224));
+    label(frame,pitch,52,698,
+          "DPAD MOVE   A ATTACK   B JUMP   Y RESET   PLUS EXIT",
+          1,rgb(182,207,219));
+    if (have_gfx)
+        label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,rgb(169,210,182));
+}
+
 static void fallback_text(PadState *pad) {
     consoleInit(NULL);
     printf("Cadillacs and Dinosaurs - CPS-1 tile viewer\n\n");
@@ -269,8 +322,11 @@ int main(int argc, char **argv) {
     PadState pad;
     padInitializeDefault(&pad);
 
+    /* Without original ROM assets, start a purely geometric training room.
+     * With user-owned graphics present, the established tile/scene viewer
+     * remains the initial mode and ZL switches to/from the training room.
+     */
     uint8_t *gfx=load_region();
-    if (!gfx) { fallback_text(&pad); return 0; }
 
     Framebuffer fb;
     Result rc=framebufferCreate(&fb,nwindowGetDefault(),FB_WIDTH,FB_HEIGHT,
@@ -295,15 +351,23 @@ int main(int argc, char **argv) {
     Cps1Playback playback;
     cps1_playback_init(&playback);
     uint8_t *sequence_blob=NULL;
-    uint8_t *scene_rgba=load_sequence_image(gfx,&scene,&sequence,&sequence_blob);
-    if (!scene_rgba) scene_rgba=load_scene_image(gfx,&scene);
+    uint8_t *scene_rgba=NULL;
+    if (gfx) {
+        scene_rgba=load_sequence_image(gfx,&scene,&sequence,&sequence_blob);
+        if (!scene_rgba) scene_rgba=load_scene_image(gfx,&scene);
+    }
     uint16_t initial_scrollx[3]={0}, initial_scrolly[3]={0};
     if (scene) {
         memcpy(initial_scrollx,scene->scrollx,sizeof(initial_scrollx));
         memcpy(initial_scrolly,scene->scrolly,sizeof(initial_scrolly));
     }
     bool show_scene=(sequence_blob!=NULL);
-    cache_page(gfx,page);
+    bool arena_active=(gfx==NULL);
+    DinoArena arena;
+    dino_arena_reset(&arena);
+    uint32_t pending_actions=0;
+    u64 arena_clock_carry=0;
+    if (gfx) cache_page(gfx,page);
     u64 last_tick=armGetSystemTick(), clock_carry=0;
     while (appletMainLoop()) {
         padUpdate(&pad);
@@ -314,8 +378,40 @@ int main(int argc, char **argv) {
         last_tick=now;
         if (elapsed_ns>250000000ULL) elapsed_ns=250000000ULL;
         if (down & HidNpadButton_Plus) break;
-        if ((down & HidNpadButton_X) && scene_rgba) show_scene=!show_scene;
-        if (show_scene && scene_rgba && scene && sequence_blob) {
+        if ((down & HidNpadButton_ZL) && gfx) {
+            arena_active=!arena_active;
+            arena_clock_carry=0;
+            pending_actions=0;
+        }
+        if (arena_active) {
+            if (down & HidNpadButton_Y) {
+                dino_arena_reset(&arena);
+                arena_clock_carry=0;
+                pending_actions=0;
+            }
+            uint32_t held_arena=0;
+            if (held & HidNpadButton_Left) held_arena|=DINO_ARENA_LEFT;
+            if (held & HidNpadButton_Right) held_arena|=DINO_ARENA_RIGHT;
+            if (held & HidNpadButton_Up) held_arena|=DINO_ARENA_UP;
+            if (held & HidNpadButton_Down) held_arena|=DINO_ARENA_DOWN;
+            if (down & HidNpadButton_A) pending_actions|=DINO_ARENA_ATTACK;
+            if (down & HidNpadButton_B) pending_actions|=DINO_ARENA_JUMP;
+            arena_clock_carry+=elapsed_ns*60u;
+            uint32_t arena_ticks=(uint32_t)(arena_clock_carry/1000000000ULL);
+            arena_clock_carry%=1000000000ULL;
+            for (uint32_t i=0;i<arena_ticks;++i) {
+                dino_arena_step(&arena,held_arena,
+                                i==0 ? pending_actions : 0);
+            }
+            if (arena_ticks) pending_actions=0;
+            clock_carry=0;
+        } else {
+            arena_clock_carry=0;
+            pending_actions=0;
+        }
+        if (!arena_active && (down & HidNpadButton_X) && scene_rgba)
+            show_scene=!show_scene;
+        if (!arena_active && show_scene && scene_rgba && scene && sequence_blob) {
             bool redraw=false;
             if (down & HidNpadButton_A) playback.paused=!playback.paused;
             if (down & HidNpadButton_L) cps1_playback_speed(&playback,-1);
@@ -334,7 +430,7 @@ int main(int argc, char **argv) {
         } else {
             clock_carry=0;
         }
-        if (show_scene && scene_rgba && scene && !sequence_blob) {
+        if (!arena_active && show_scene && scene_rgba && scene && !sequence_blob) {
             /* Free navigation: does not advance the game's CPU or AI.
              * Sprites remain at their captured screen coordinates.
              */
@@ -368,11 +464,13 @@ int main(int argc, char **argv) {
         u32 stride=0;
         uint32_t *frame=(uint32_t*)framebufferBegin(&fb,&stride);
         if (!frame) break;
-        if (show_scene && scene_rgba)
+        if (arena_active)
+            arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL);
+        else if (show_scene && scene_rgba)
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
                         sequence_blob?&playback:NULL);
-        else
+        else if (gfx)
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
     }
