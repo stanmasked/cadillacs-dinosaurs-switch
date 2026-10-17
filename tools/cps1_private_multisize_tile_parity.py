@@ -40,6 +40,7 @@ def sampled_codes(limit, *, seed=SEED):
     rng = random.Random(seed + limit)
     selected = set(range(min(32, limit)))
     selected.update(range(max(0, limit - 32), limit))
+    selected.update((limit // 2 - 1, limit // 2))
     selected.update(range(0, limit, max(1, limit // 160)))
     selected.update(rng.randrange(limit) for _ in range(160))
     return tuple(sorted(selected))
