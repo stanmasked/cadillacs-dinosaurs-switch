@@ -47,6 +47,33 @@ local function write_file(name, bytes)
     assert(file:close())
 end
 
+-- The multi-frame analyser requires complete CRC32 of all five Lua blobs.
+-- This detects accidental damage and swaps, NOT original-game authenticity.
+local function crc32(bytes)
+    local crc=0xffffffff
+    for i=1,#bytes do
+        crc=crc ~ bytes:byte(i)
+        for _=1,8 do
+            local low=crc & 1
+            crc=(crc >> 1) ~ (low==1 and 0xedb88320 or 0)
+        end
+    end
+    return string.format('%08x', (~crc) & 0xffffffff)
+end
+
+local function refuse_existing(name)
+    local file=io.open(OUTPUT_DIR..'/'..name,'rb')
+    if file then
+        file:close()
+        error('Refusing to overwrite existing private MAME capture: '..name)
+    end
+end
+
+local CAPTURE_COMPONENTS={
+    'gfxram-be.bin','cps-a-be.bin','cps-b-be.bin',
+    'palette-rgb24.bin','reference-rgb24.bin'
+}
+
 local function serialize_words(share,bytes)
     local result={}
     for i=0,bytes/2-1 do
@@ -82,11 +109,28 @@ end
 
 local function capture(frame)
     local stem=string.format('frame-%08d',frame)
-    write_file(stem..'.gfxram-be.bin',serialize_words(gfx,0x30000))
-    write_file(stem..'.cps-a-be.bin',serialize_words(cps_a,0x40))
-    write_file(stem..'.cps-b-be.bin',serialize_words(cps_b,0x40))
-    write_file(stem..'.palette-rgb24.bin',active_palette())
-    write_file(stem..'.reference-rgb24.bin',reference_rgb())
+    -- Preflight all six filenames BEFORE any large memory serialization
+    -- or disk write. Existing local game data must not be overwritten.
+    for _,name in ipairs(CAPTURE_COMPONENTS) do
+        refuse_existing(stem..'.'..name)
+    end
+    refuse_existing(stem..'.manifest.json')
+
+    local captured_files={
+        ['gfxram-be.bin']=serialize_words(gfx,0x30000),
+        ['cps-a-be.bin']=serialize_words(cps_a,0x40),
+        ['cps-b-be.bin']=serialize_words(cps_b,0x40),
+        ['palette-rgb24.bin']=active_palette(),
+        ['reference-rgb24.bin']=reference_rgb()
+    }
+    local crc={}
+    for _,name in ipairs(CAPTURE_COMPONENTS) do
+        crc[name]=crc32(captured_files[name])
+        write_file(stem..'.'..name,captured_files[name])
+    end
+
+    -- This is the canonical five-file CRC32 schema enforced by the
+    -- private MAME sequence analyser. The manifest is written LAST.
     write_file(stem..'.manifest.json',string.format([=[{
   "game":"dino","frame":%d,"capture_hook":"frame_done",
   "gfxram_bytes":196608,"cps_a_bytes":64,"cps_b_bytes":64,
@@ -94,9 +138,15 @@ local function capture(frame)
   "reference_rgb_bytes":258048,"raw_word_endianness":"big",
   "palette_source":"MAME_effective_pen_color",
   "obj_latch":"NOT_CAPTURED","pixel_parity_eligible":false,
-  "warning":"Authentic MAME RGB only; internal buffered OBJ unavailable"
+  "file_crc32":{
+    "gfxram-be.bin":"%s","cps-a-be.bin":"%s","cps-b-be.bin":"%s",
+    "palette-rgb24.bin":"%s","reference-rgb24.bin":"%s"
+  },
+  "warning":"CRC32 validates Lua files, not callback synchronization or original pixel parity"
 }
-]=],frame))
+]=],frame,
+        crc['gfxram-be.bin'],crc['cps-a-be.bin'],crc['cps-b-be.bin'],
+        crc['palette-rgb24.bin'],crc['reference-rgb24.bin']))
     print('[cps1 capture] collected private MAME frame '..tostring(frame))
 end
 

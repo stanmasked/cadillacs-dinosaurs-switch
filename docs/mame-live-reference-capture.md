@@ -97,7 +97,58 @@ dumps must remain outside GitHub. Tests use synthetic bytes only.
 `tests/test_mame_lua_stub.py` optionally loads the actual capture script
 under an installed Lua 5.4 shared library, with an artificial in-memory
 simulation of MAME's named shares, palette, screen and frame-complete hook.
-It checks that six expected files are written and that byte lengths,
-big-endian words, manifest and honesty/provenance fields are correct.
+It checks six complete frame bundles (36 files), CRC32, big-endian words,
+manifest provenance and strict multi-frame analyzer compatibility.
 If liblua5.4 is not available, the smoke test is skipped and reported as
 such. **This is not a real MAME capture.**
+
+
+### Stage 64: checksum-complete private Lua captures
+
+The original Lua script emitted the five binary files and a manifest
+**without** `file_crc32`, while the multi-frame verifier introduced
+in Stage 40/52 requires the **complete five-file checksum map**.
+Consequently the recorder's own output was incompatible with the
+strict sequence analyser. This mismatch has now been corrected in
+the shipped `tools/mame_cps1_capture.lua`.
+
+For each nominal frame the Lua recorder now serializes exactly the
+same five existing captures, calculates canonical CRC32 on the
+**exact bytes being written**, and writes the manifest **last**
+with the five lowercase eight-digit hexadecimal CRC32 values.
+CRC32 catches accidental damage and mixing; it does not
+authenticate original MAME frames or render callback timing.
+
+Before serializing any frame it checks whether any of the six
+output paths already exists and refuses to overwrite a prior
+private capture. This protects against inadvertent repeated
+recording into the same directory. It cannot ensure an atomic
+multi-file write if the emulator crashes mid-capture: incomplete
+datasets remain invalid and must be recaptured privately.
+
+The Lua 5.4 synthetic fixture now emits **six nominal frames**
+(900, 902, 904, 906, 908, 910). CI independently calculates
+Python zlib CRC32 on all 30 binary files, feeds the Lua-generated
+manifests plus **synthetic** C++ records to the real
+`mame_obj_sequence_alignment.py` CLI with V2 latch-count
+validation, and verifies every sync/parity eligibility flag
+remains false. A separate Lua test confirms an existing manifest
+is never overwritten. No original game ROM is used in these
+tests.
+
+For an **actual private test**, use the confirmed built
+instrumented MAME 0.289 from the Stage 60/62 process with a
+legitimately owned `dino` ROM set available only in a private
+local ROM directory. Before running, create an **empty**
+`cps1-captures` directory in the process working directory,
+then launch the emulator with the project's Lua
+`-autoboot_script` path, as described above. The C++ video probe
+and Lua collector must be used with the **same process and
+working directory**. Do not upload any source-ROM set, frame
+RGB, RAM, OBJ, screenshots or a full capture bundle to GitHub.
+
+After exactly six captures, the private multiframe CLI can
+validate the bundle with `--latch-count-evidence`. Real frame
+alignment is only a hypothesis until original runtime timing
+is independently established; captured buffers must **not**
+be promoted to Switch-authentic scene assets yet.
