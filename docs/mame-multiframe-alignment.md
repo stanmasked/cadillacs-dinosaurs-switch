@@ -432,3 +432,56 @@ A real compiled MAME 0.289 probe and original game's framebuffer timing
 remain prerequisites for fidelity claims. No original ROMs, private
 captures, licensed sprites, commercial source or authentic game frames
 are committed.
+
+
+## Stage 50 — cross-check the input reports before trusting their consistency
+
+The Stage 49 diagnostic verdict now checks that the three register-only
+observations actually refer to **compatible sampled frame series**, rather
+than accepting their summary booleans at face value.
+
+For a full Stage 49 CLI report, `tools/mame_obj_diagnostic_verdict.py`
+validates the following before it may emit
+`CONSISTENT_BUT_UNVERIFIED`:
+
+- The source's `sample_count` is an integer from 4 to 24 and
+  `frame_step` is an integer from 1 to 120. A boolean or a lone
+  incomplete field is refused.
+- An applicable leave-one-out assessment contains exactly
+  `sample_count - 1` transition-omission trials.
+- Every informative offset uses **consistent nominal frame units**:
+  `best_offset_nominal_frames` and
+  `transition_best_offset_nominal_frames` must equal the corresponding
+  sample-step offset times `frame_step`.
+- The claimed exact-offset candidate, if candidate rows are present,
+  must actually contain **at least 3 fully matching register frames**
+  and **2 distinct matching states**.
+- The transition candidate, if candidate rows are present, must have
+  sufficient real overlap, at least **3 active matching transitions**
+  and **2 distinct matching change-mask patterns**.
+- The LOO reason must agree with its actual flags and counter results:
+  inconclusive, all omissions pass, or sensitive to omitted transitions.
+
+Malformed or contradictory complete reports are **rejected** instead
+of being relabeled with a favorable status. Older callers passing only
+three minimal diagnostic dictionaries remain supported; they **do not**
+receive extra source-provenance validation merely by omitting metadata.
+This is a consistency check, **not cryptographic authentication** of
+actual MAME data, real-time callback alignment, or original sprites.
+
+**Execution evidence:** The exact GitHub-committed updated classifier
+(Git blob `5132f06a40b246ad5f074281337144a569512a95`) and nine-test
+cross-report regression module
+(`b55b515e9a97b9f88991e03ee33d44dddf1cdfe2`)
+were verified against local Git blob hashes. With the existing
+Stage 47–49 modules, **45 of 45 ROM-free local unittest methods
+passed**. The additional tests use *actual returned report objects*
+from `transition_diagnostic()` and `transition_leave_one_out()`,
+not only manually invented dictionaries.
+
+This validation does **not** constitute a full clean repository
+checkout, real MAME 0.289 gameplay capture, native Nintendo Switch
+render test, or successful GitHub Actions run. The existing CI
+runner-allocation blocker remains in issue #20. The report still
+unconditionally has `frame_sync_verified:false` and
+`pixel_parity_eligible:false`.
