@@ -104,6 +104,13 @@ def audit_sequence(render, lua, frame_step, max_offset_steps=2):
         pairs = [(render[i], lua[i+offset]) for i in range(n)
                  if 0 <= i+offset < n]
         exact = [a for a, b in pairs if a == b]
+        # Each capture contains 64 big-endian 16-bit CPS-A/B words.
+        # A partial register match is only a diagnostic hint, never
+        # evidence that the same MAME frame was displayed.
+        differing_words = sum(
+            aa[i:i+2] != bb[i:i+2]
+            for aa, bb in pairs for i in range(0, 128, 2))
+        compared_words = len(pairs) * 64
         candidates.append({
             'offset_steps': offset,
             'offset_nominal_frames': offset * frame_step,
@@ -111,6 +118,9 @@ def audit_sequence(render, lua, frame_step, max_offset_steps=2):
             'exact_equal_pairs': len(exact),
             'exact_equal_fraction': len(exact) / len(pairs),
             'distinct_equal_register_states': len(set(exact)),
+            'different_register_words': differing_words,
+            'compared_register_words': compared_words,
+            'register_word_mismatch_fraction': differing_words / compared_words,
         })
     highest_ratio = max(row['exact_equal_fraction'] for row in candidates)
     tied = [row for row in candidates
@@ -124,22 +134,47 @@ def audit_sequence(render, lua, frame_step, max_offset_steps=2):
                    and best['distinct_equal_register_states'] >= 2
                    and best['exact_equal_pairs'] >= 3
                    and len(tied) == 1)
+    # Zero exact matching pairs carries no evidence for *any* offset.
+    # Do not invent a best shift simply from the nominal frame labels.
+    strong_best = best if best['exact_equal_pairs'] else None
+    smallest_word_fraction = min(
+        row['register_word_mismatch_fraction'] for row in candidates)
+    word_tied = [row for row in candidates
+                 if row['register_word_mismatch_fraction'] == smallest_word_fraction]
+    word_best = sorted(word_tied, key=lambda row: (
+        -row['compared_pairs'], abs(row['offset_steps']), row['offset_steps']))[0]
+    # Only report a unique *closest* candidate if both streams changed and
+    # some 16-bit words agreed. The result is weaker than exact frame parity.
+    word_hypothesis = (
+        word_best if probe_states >= 2 and lua_states >= 2 and
+        len(word_tied) == 1 and smallest_word_fraction < 1.0 else None)
     return {
         'sample_count': n,
         'frame_step': frame_step,
         'render_distinct_register_states': probe_states,
         'lua_distinct_register_states': lua_states,
         'candidates': candidates,
-        'best_offset_steps': best['offset_steps'],
-        'best_offset_nominal_frames': best['offset_nominal_frames'],
-        'best_overlap_pairs': best['compared_pairs'],
+        'best_offset_steps': strong_best['offset_steps'] if strong_best else None,
+        'best_offset_nominal_frames': (
+            strong_best['offset_nominal_frames'] if strong_best else None),
+        'best_overlap_pairs': strong_best['compared_pairs'] if strong_best else None,
+        'no_exact_register_pairs': strong_best is None,
         'offset_hypothesis_informative': informative,
         'ambiguous_best_offsets': [row['offset_steps'] for row in tied]
             if len(tied) > 1 else [],
+        'closest_word_offset_steps': (
+            word_hypothesis['offset_steps'] if word_hypothesis else None),
+        'closest_word_offset_nominal_frames': (
+            word_hypothesis['offset_nominal_frames'] if word_hypothesis else None),
+        'closest_word_mismatch_fraction': smallest_word_fraction,
+        'ambiguous_closest_word_offsets': (
+            [row['offset_steps'] for row in word_tied] if len(word_tied) > 1 else []),
+        'word_distance_diagnostic_only': True,
         'frame_sync_verified': False,
         'pixel_parity_eligible': False,
         'warning': (
             'Register equality and frame indices never prove MAME frame timing. '
+            'Word-distance guesses are weaker than exact matches. '
             'Flat sequences, edge overlap and repeated states can yield false offsets.'
         ),
     }
