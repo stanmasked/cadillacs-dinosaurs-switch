@@ -75,3 +75,39 @@ the original `ioc1.ic1`/QSound ROM dependencies, validate audio or
 determine likeness to Capcom's original gameplay. Real game-faithful
 mechanics require independently verified references and appropriate
 rights for distributing protected characters, story and artwork.
+
+## Stage 115 — opt-in sparring against an invented training opponent
+
+Press **X** in the arena to toggle **SPAR ON/OFF**. The default after
+reset is still the stationary three-HP dummy; the earlier target-practice
+controls, test outcomes and tile/scene viewer remain available.
+
+With sparring enabled, the opponent now moves deterministically
+towards the player at a bounded integer rate, changes depth lanes
+to follow the player, respects same-lane body separation, and has
+a visible **12-tick attack windup** followed by one damage check.
+The attack has a 48-tick cooldown and a short visible follow-through.
+Players begin sparring with five HP and receive 30 ticks of
+post-hit invulnerability. Attacking first interrupts an opponent
+windup, and leaving the depth lane, moving out of range or jumping
+above the strike height can evade a telegraphed hit. The player
+cannot initiate new actions after zero HP; a defeated opponent
+cannot deliver new hits.
+
+The new fields are confined to `DinoArena` in
+`source/dino_arena.h` and `source/dino_arena.c`; the 60 Hz
+simulation remains portable C and doesn't read or decode ROM
+graphics. The Switch UI draws the invented opponent's windup
+outline, attack flash and two HP counters using plain shapes.
+Press **Y** to reset the training session; press **X** to turn
+sparring off again.
+
+The expanded `tests/test_dino_arena.py` uses host-compiled C
+and synthetic inputs to cover: explicit opt-in, opponent pursuit,
+body blocking, passing from another depth lane, telegraph latency,
+damage and invulnerability, two distinct dodges, hit interruption,
+player KO, enemy KO and deterministic 700-tick replay.
+This is **not original CPS-1 enemy AI or gameplay physics**;
+the values, colors, dummy and attack behavior were invented for
+this test harness. No original assets or game runtime have been
+captured, distributed or executed as part of this prototype.
