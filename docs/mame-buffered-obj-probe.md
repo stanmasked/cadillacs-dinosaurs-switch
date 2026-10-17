@@ -467,3 +467,49 @@ with MAME's required compiler, SDL and development headers. Such a
 full-tree compile/run remains a **separate future acceptance
 requirement**, not a result of this stage. No ROMs are included in
 any build recipe.
+
+
+## Stage 60 — experimental full-tree MAME 0.289 CPS-1 build
+
+The prior source gate proved exact upstream source modifications, but
+deliberately did **not compile actual upstream MAME**. A separate,
+opt-in GitHub workflow at .github/workflows/mame0289-cps1-build.yml now
+attempts that stronger test on a GitHub-hosted Ubuntu runner **without ROMs**.
+
+The workflow uses the official upstream tag mame0289, **pinned to**
+commit f34f02505e32c1993c6a782b6814232cbfc74e36. It fetches a
+temporary full checkout under the runner temp directory, checks the
+commit ID, runs the existing source generator and independent
+byte-restoration audit, then copies the generated cps1_v.cpp into
+**only that disposable upstream checkout**.
+
+MAME's documented Debian/Ubuntu dependencies are installed; the
+actual source-target build command is:
+
+    make -j2 SUBTARGET=dino SOURCES=src/mame/capcom/cps1.cpp REGENIE=1 NOWERROR=1 SYMBOLS=0 OPTIMIZE=0 TOOLS=0 TESTS=0
+
+This compiles the complete dependencies needed for a CPS-1-only
+emulator target (not just a mock cps_state or isolated stub). If the
+build succeeds, a subsequent **ROM-free** -listxml dino command
+tests driver metadata availability. No game ROMs, commercial sprite
+assets, MAME binary, or generated MAME C++ are uploaded.
+
+The full-tree job is resource-intensive and intentionally runs only
+on a change to its own workflow path or on **manual GitHub Actions
+dispatch**; it is not a required every-push/PR job. A failed compile
+or runner timeout must be reported as such and is **not** equivalent
+to a successful MAME build. Changing this workflow can retrigger
+the expensive job; do not add it as a broad pull-request check.
+
+A separate five-test Python module checks the recipe's pinned upstream
+version, exact source-target build, opt-in nature and absence of
+source/binary upload. These tests are structural guardrails, **not
+evidence of successful compilation**. CI job outcomes must be
+validated against the specific run and commit before any success
+claim.
+
+Even if the full emulator builds and can print driver XML without
+ROMs, it still does not establish runtime authenticity of dino
+captures, real VBlank latch age, pixel-perfect images or physical
+Nintendo Switch gameplay. The previously approved cover and game
+assets remain separate and untouched.
