@@ -46,6 +46,28 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
             return audit.audit_private_dino_rom_payloads(
                 self.root, allow_private_reads=True, **kwargs)
 
+    def test_private_archive_location_must_not_overlap_public_checkout(self):
+        source = self.root / 'public-project'
+        source.mkdir()
+        # ROM directory equal to project root; project is within ROM
+        # directory; ROM directory is within project root.
+        inner = source / 'private-roms'
+        inner.mkdir()
+        for project_root, roms in (
+            (self.root, self.root),
+            (source, self.root),
+            (self.root, inner),
+        ):
+            with self.subTest(project_root=project_root, roms=roms), \
+                 patch.object(audit, 'PROJECT_ROOT', project_root), \
+                 patch.object(audit, '_catalog_payload_check',
+                              side_effect=AssertionError('ROM read forbidden')) as scan:
+                with self.assertRaisesRegex(ValueError,
+                                            'outside the project tree'):
+                    audit.audit_private_dino_rom_payloads(
+                        roms, allow_private_reads=True)
+                scan.assert_not_called()
+
     def test_explicit_consent_is_required_before_opening_any_rom(self):
         with patch.object(audit, '_catalog_payload_check',
                           side_effect=AssertionError('private reads forbidden')):
