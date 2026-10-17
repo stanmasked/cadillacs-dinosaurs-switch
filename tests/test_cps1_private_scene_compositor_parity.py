@@ -12,7 +12,7 @@ import zipfile
 from tools.cps1_gfx import LANES, ROM_SIZE
 from tools.cps1_private_scene_compositor_parity import (
     CASES, PIXELS, DIFFERENTIAL_EXPECTATIONS, GROUP_UNMASKED_CASES,
-    synthetic_scene,
+    synthetic_scene, pure_synthetic_pair,
     compare_private_native_scene_compositor,
     main,
 )
@@ -138,6 +138,82 @@ class NativeSceneCompositorParityTests(unittest.TestCase):
         self.assertEqual(result['status'],
                          'PRIVATE_NATIVE_SCENE_DIFFERENTIAL_COVERAGE_REFUSED')
 
+    def test_all_controls_are_pure_one_factor_scene_edits(self):
+        # Exercise the same helper used by the actual native-run driver.
+        pairs = (
+            ('priority_sprite', 'unmasked_sprite'),
+            ('priority_sprite', 'priority_transparent_bit'),
+            ('priority_sprite', 'priority_group_selective'),
+            ('unmasked_sprite', 'transparent_palette_unused'),
+            ('unmasked_sprite', 'palette_channels_shift'),
+            ('scroll1_priority', 'scroll1_unmasked'),
+            *(( 'priority_sprite', name) for name in GROUP_UNMASKED_CASES),
+        )
+        self.assertEqual(len(pairs), 10)
+        for baseline_name, trial_name in pairs:
+            with self.subTest(scenario=trial_name):
+                self.assertTrue(pure_synthetic_pair(
+                    synthetic_scene(baseline_name),
+                    synthetic_scene(trial_name), trial_name))
+
+    def test_pair_purity_refuses_unrelated_scene_modifications(self):
+        a = synthetic_scene('priority_sprite')
+        # The prescribed mask edit remains valid, but these additional
+        # changes must disqualify the controlled differential.
+        for field in ('layer_control', 'video_control', 'buffered_obj_words',
+                      'scroll1', 'scroll2', 'scroll3', 'palette_rgb'):
+            b = synthetic_scene('unmasked_sprite')
+            if field == 'layer_control':
+                b[field] ^= 0x40
+            elif field == 'video_control':
+                b[field] ^= 1
+            elif field == 'buffered_obj_words':
+                b[field][2] ^= 1
+            elif field.startswith('scroll'):
+                b[field]['words'][0] ^= 1
+            elif field == 'palette_rgb':
+                b[field][0][0] ^= 1
+            with self.subTest(field=field):
+                self.assertFalse(pure_synthetic_pair(a, b, 'unmasked_sprite'))
+        extra = synthetic_scene('unmasked_sprite')
+        extra['unknown_game_state'] = 1
+        self.assertFalse(pure_synthetic_pair(a, extra, 'unmasked_sprite'))
+
+    def test_pair_purity_refuses_wrong_palette_pen_and_backdrop(self):
+        for baseline_name, trial_name, poison in (
+            ('unmasked_sprite', 'transparent_palette_unused', 0),
+            ('unmasked_sprite', 'transparent_palette_unused', 0xbff),
+            ('unmasked_sprite', 'palette_channels_shift', 15),
+            ('unmasked_sprite', 'palette_channels_shift', 0xbff),
+        ):
+            a = synthetic_scene(baseline_name)
+            b = synthetic_scene(trial_name)
+            b['palette_rgb'][poison][0] ^= 1
+            with self.subTest(scenario=trial_name, index=poison):
+                self.assertFalse(pure_synthetic_pair(a, b, trial_name))
+        self.assertFalse(pure_synthetic_pair(
+            synthetic_scene('unmasked_sprite'),
+            synthetic_scene('unmasked_sprite'),
+            'transparent_palette_unused'))
+
+    def test_private_runner_rejects_extra_sprite_state_changes(self):
+        self.write_fake_archive()
+        from tools import cps1_private_scene_compositor_parity as mod
+        original = mod.synthetic_scene
+
+        def corrupted(name):
+            scene = original(name)
+            if name == 'priority_group3_unmasked':
+                scene['buffered_obj_words'][2] ^= 1
+            return scene
+
+        with patch.object(mod, 'synthetic_scene', side_effect=corrupted):
+            result = compare_private_native_scene_compositor(self.archive)
+        self.assertFalse(result['differential_inputs_verified'])
+        self.assertFalse(result['differential_coverage_verified'])
+        self.assertNotEqual(result['status'], 'PRIVATE_NATIVE_SCENE_PARITY_PASSED')
+        self.assertNotIn(str(self.root), json.dumps(result))
+
     def test_missing_pairwise_stimulus_cannot_claim_coverage(self):
         self.write_fake_archive()
         from tools import cps1_private_scene_compositor_parity as mod
@@ -156,6 +232,7 @@ class NativeSceneCompositorParityTests(unittest.TestCase):
         self.assertEqual(result['synthetic_cases'], 14)
         self.assertEqual(result['pixels_compared'], 14*PIXELS)
         self.assertEqual(result['mismatching_pixels_total'], 0)
+        self.assertTrue(result['differential_inputs_verified'])
         self.assertTrue(result['differential_coverage_verified'])
         for metric, must_change in DIFFERENTIAL_EXPECTATIONS.items():
             self.assertEqual(result[metric] > 0, must_change, metric)
