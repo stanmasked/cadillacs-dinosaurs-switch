@@ -608,3 +608,49 @@ probe origin or VBlank-latched OBJ state. In all reports,
 `frame_sync_verified:false` and
 `pixel_parity_eligible:false` remain unchanged. Real captures and
 original-game pixel parity are **not** demonstrated by this stage.
+
+
+## Stage 53 — bound manifest and C++ sidecar reads
+
+After Stage 52 validated all five Lua capture files, the input reader
+still used unbounded `Path.read_bytes()` for the 64-byte CPS-A/B
+registers and 128-byte C++ register / 2048-byte buffered OBJ sidecars,
+and unbounded `read_text()` for the JSON manifest. An accidentally
+gigantic input could therefore allocate unnecessary memory **before**
+its bad length was detected.
+
+The same reader now enforces bounded reads:
+
+- `_read_manifest()` reads no more than **16,385 bytes** and rejects
+  a manifest larger than **16 KiB** before UTF-8 decoding or JSON
+  object construction. A valid JSON document padded with whitespace
+  to exactly 16 KiB is accepted.
+- `_read_exact_small()` reads at most **expected length + 1 byte**
+  from each CPS-A, CPS-B, C++ render-register and buffered OBJ file.
+  It rejects both short and oversized files without loading more than
+  65, 129 or 2,049 bytes respectively.
+- Existing error messages continue to say `incomplete` when a
+  register or OBJ input is truncated, preserving the Stage 44/51
+  command-line regression expectations.
+
+Six new ROM-free regression methods in
+`tests/test_mame_obj_bounded_input_reads.py` cover the valid path;
+a legal manifest at precisely 16 KiB; an oversized manifest at
+16 KiB + 1; oversized and truncated CPS-A/B and C++ sidecars; and
+invalid UTF-8. **Their exact GitHub test file Git blob**
+is `d3f2230df97a35087b50923284830d1fef1bd238`,
+confirmed equal to the locally executed file.
+
+Focused local Python verification executed these **six new tests**
+and the **ten Stage 52 file-integrity/PR #25 compatibility checks**,
+for **16/16 successes**. The local reader contains the copied Stage 53
+input-loading functions from the GitHub source, but this focused run
+is **not** a full clean repository checkout, nor the entire historical
+61+ tests, MAME 0.289 gameplay or a Switch NRO test. CI runner
+allocation remains blocked under issue #20.
+
+The new size ceilings are safety/resource guards only. Successful
+CRC32 and bounded reads do not independently authenticate the
+provenance, frame synchronization, VBlank-latched sprite buffer or
+pixel parity of any original game capture. No private capture
+payloads or original game files are committed.
