@@ -419,3 +419,51 @@ it is **not** compilation of upstream MAME 0.289 itself and it
 does not use actual game ROMs, game VBlank, original pixels, or
 physical Nintendo Switch hardware. All alignment and parity flags
 remain false, and original capture data stays outside GitHub.
+
+## Stage 59 — verified original MAME source injection in hosted CI
+
+Mock-compiled generated C++ proved the probe can compile in a small
+`cps_state` fixture, but that alone did not exercise the **complete
+original** `src/mame/capcom/cps1_v.cpp` from MAME version 0.289.
+
+The `CPS-1 Python tools` GitHub Actions workflow now fetches a
+**temporary, unmodified upstream copy** directly from
+`mamedev/mame` tag `mame0289` and runs two separate checks:
+
+1. Execute `tools/mame_obj_source_probe.py`, which requires the
+   **exact expected upstream Git blob SHA-1**
+   `c1b5e3867824d0d1877b981142db7741346d2c55`, then writes a
+   new generated C++ copy without overwriting the original.
+2. Execute `tools/mame_obj_real_source_audit.py`, independently
+   checking three **exactly scoped** modifications: adding
+   includes/counter storage, observing actual
+   `cps1_objram_latch` after its original memcpy, and sampling OBJ
+   after `find_last_sprite()` inside the video update. It removes
+   the expected insertions **in memory** and demands
+   **byte-for-byte restoration** of the original 0.289 source.
+   Unrecognized changes, wrong source versions, renamed/missing
+   anchors or mismatched probe payloads fail the job.
+
+The CLI emits only source and generated SHA-256 metadata, the fixed
+Git blob, and conservative verification flags. Upstream source,
+modified MAME C++, private game captures and ROM bytes are all kept
+out of the repository and artifacts. Temporary sources are erased
+using a shell exit trap. Nine additional ROM-free Python regression
+methods test source restoration, mutation and substitution failure,
+wrong upstream version, malformed UTF-8 and command behavior.
+
+**Verification boundary:** This automated gate confirms that our
+generator applies **only the reviewed insertions to genuine upstream
+MAME 0.289 video source**. The separate Stage 58 tests compile and
+execute the generated insertion against mock MAME classes. Neither
+step is a full real MAME build using its entire header/dependency tree,
+and neither starts an original-game emulator or verifies its VBlank
+chronology or pixels. Upstream fetch/network errors will fail the CI
+step and must not be misrepresented as game-code regressions.
+
+MAME developer documentation describes a driver-scoped build using
+`make SUBTARGET=<name> SOURCES=src/mame/capcom/cps1.cpp REGENIE=1`
+with MAME's required compiler, SDL and development headers. Such a
+full-tree compile/run remains a **separate future acceptance
+requirement**, not a result of this stage. No ROMs are included in
+any build recipe.

@@ -48,3 +48,17 @@ jobs:
           gcc -std=c11 -O2 -Wall -Wextra -Werror -Isource \
             tests/cps1_tile_native_test.c source/cps1_tile.c -o /tmp/cps1_tile_tests
           /tmp/cps1_tile_tests
+      - name: Validate OBJ instrumentation against unmodified upstream MAME 0.289
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl --fail --silent --show-error --location --retry 3 \
+            --retry-delay 2 --connect-timeout 15 --max-time 60 \
+            https://raw.githubusercontent.com/mamedev/mame/mame0289/src/mame/capcom/cps1_v.cpp \
+            --output "$tmp/cps1_v.cpp"
+          python tools/mame_obj_source_probe.py "$tmp/cps1_v.cpp" \
+            --out "$tmp/cps1_v.instrumented.cpp"
+          python tools/mame_obj_real_source_audit.py \
+            "$tmp/cps1_v.cpp" "$tmp/cps1_v.instrumented.cpp"
