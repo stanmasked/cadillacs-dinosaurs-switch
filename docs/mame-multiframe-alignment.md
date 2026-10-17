@@ -501,7 +501,7 @@ OBJ files. Then it invokes the **real production CLI `main()`**
 without mocking the filesystem, capture loader, scorer, transition
 diagnostic, LOO checker, verdict classifier, or JSON writer.
 
-Fourteen new end-to-end regression methods cover:
+Sixteen new end-to-end regression methods cover:
 
 - Correctly aligned dynamic registers → conservative
   `CONSISTENT_BUT_UNVERIFIED` with zero nominal offset;
@@ -516,18 +516,22 @@ Fourteen new end-to-end regression methods cover:
   C++ probe all produce an error exit and **no JSON output**;
 - Existing output is preserved byte-for-byte, unbounded frame counts
   are rejected, and a valid JSON report contains only diagnostic counts,
-  SHA256 and status fields, never raw CPS register or OBJ word arrays.
+  SHA256 and status fields, never raw CPS register or OBJ word arrays;
+- Two additional subprocess tests launch the *actual executable Python
+  CLI* from the repository working directory: a valid input produces
+  diagnostic JSON with unverified parity, while a truncated OBJ causes
+  exit code 2 and creates no output.
 
 **Reproducible local execution:** The new test module was copied
 byte-for-byte from the committed GitHub file, verified against Git
-blob `bc004d781ce9679125334d361132bec53dc6d9f2`, and run
+blob `701477c65d86bc4494ab2af3c72ba89b40e87ad2`, and run
 alongside the prior 45 unit tests. The actual production CLI module,
 new test file, and Stage 47–50 helper sources were verified against
 their corresponding remote Git blobs.
 
 ```sh
 PYTHONPATH=. python -m unittest discover -s tests -v
-# 59 tests, OK (45 earlier + 14 end-to-end CLI)
+# 61 tests, OK (45 earlier + 16 end-to-end CLI)
 ```
 
 **Precise boundary:** This confirms that the assembled production
