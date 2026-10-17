@@ -12,6 +12,9 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 LEFT=1;RIGHT=2;UP=4;DOWN=8;ATTACK=16;JUMP=32;SPAR=64
+SPAR_TOGGLE=1;JUMP_START=2;LAND=4;SWING=8;DUMMY_HIT=16
+FINISHER=32;DUMMY_KO=64;DUMMY_SWING=128;PLAYER_HIT=256
+PLAYER_KO=512;DODGE=1024
 
 
 class Arena(ctypes.Structure):
@@ -34,6 +37,9 @@ class Arena(ctypes.Structure):
         ('combo_hits',ctypes.c_uint8),
         ('combo_timer',ctypes.c_uint8),
         ('finisher_flash',ctypes.c_uint8),
+        ('dummy_impact_flash',ctypes.c_uint8),
+        ('player_impact_flash',ctypes.c_uint8),
+        ('events',ctypes.c_uint32),
     ]
 
 
@@ -540,6 +546,132 @@ class ArenaPrototypeTests(unittest.TestCase):
         self.assertEqual(tuple(getattr(a,k) for k in fields),
                          tuple(getattr(b,k) for k in fields))
         self.assertEqual(a.ticks,1000)
+
+    def test_event_mask_is_empty_on_reset_idle_and_one_tick_later(self):
+        p=self.new()
+        self.assertEqual(p.events,0)
+        self.step(p)
+        self.assertEqual(p.events,0)
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.events,SPAR_TOGGLE)
+        self.step(p)
+        self.assertFalse(p.events & SPAR_TOGGLE)
+
+    def test_jump_start_and_landing_are_distinct_single_tick_events(self):
+        p=self.new()
+        self.step(p,pressed=JUMP)
+        self.assertEqual(p.events,JUMP_START)
+        self.step(p,pressed=JUMP)
+        self.assertFalse(p.events & JUMP_START)
+        landings=0
+        for _ in range(40):
+            self.step(p)
+            if p.events & LAND:
+                landings+=1
+                self.assertEqual((p.z,p.vz),(0,0))
+        self.assertEqual(landings,1)
+        self.assertEqual(p.events,0)
+
+    def test_whiff_generates_swing_but_never_hit_or_impact(self):
+        p=self.new()
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.events,SWING)
+        self.assertEqual(p.dummy_impact_flash,0)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.events,0)
+        self.assertEqual(p.successful_hits,0)
+
+    def test_landed_hit_generates_swing_and_damage_event_exactly_once(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.events,SWING|DUMMY_HIT)
+        self.assertEqual(p.dummy_impact_flash,6)
+        self.step(p)
+        self.assertEqual((p.events,p.dummy_impact_flash),(0,5))
+        for _ in range(5):self.step(p)
+        self.assertEqual((p.events,p.dummy_impact_flash),(0,0))
+
+    def test_finisher_event_coincides_with_third_hit_and_ko(self):
+        p=self.new();p.x=230
+        for i in range(3):
+            self.step(p,pressed=ATTACK)
+            expected=SWING|DUMMY_HIT
+            if i==2:expected|=FINISHER|DUMMY_KO
+            self.assertEqual(p.events,expected)
+            if i<2:
+                for _ in range(14):self.step(p)
+        self.assertEqual(p.dummy_hp,0)
+        for _ in range(15):self.step(p)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.events,SWING)
+        self.assertFalse(p.events&(DUMMY_HIT|FINISHER|DUMMY_KO))
+
+    def test_spar_toggle_clears_prior_impact_effects(self):
+        p=self.new();p.x=230
+        self.step(p,pressed=ATTACK)
+        self.assertGreater(p.dummy_impact_flash,0)
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.events,SPAR_TOGGLE)
+        self.assertEqual((p.dummy_impact_flash,p.player_impact_flash),(0,0))
+
+    def test_enemy_swing_and_player_hit_share_single_impact_tick(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.events,SPAR_TOGGLE)
+        for _ in range(11):
+            self.step(p)
+            self.assertFalse(p.events&(DUMMY_SWING|PLAYER_HIT|PLAYER_KO))
+        self.step(p)
+        self.assertEqual(p.events,DUMMY_SWING|PLAYER_HIT)
+        self.assertEqual((p.player_hp,p.player_impact_flash),(4,8))
+        self.step(p)
+        self.assertEqual(p.events,0)
+        self.assertEqual(p.player_impact_flash,7)
+
+    def test_dodged_telegraph_emits_swing_and_dodge_but_no_hit(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        for i in range(12):
+            self.step(p,pressed=JUMP if i==0 else 0)
+        self.assertEqual(p.events,DUMMY_SWING|DODGE)
+        self.assertEqual((p.player_hp,p.player_impact_flash),(5,0))
+
+    def test_player_ko_is_single_transition_event_and_no_extra_damage(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        p.player_hp=1
+        p.dummy_windup=1
+        p.player_invuln=0
+        self.step(p)
+        self.assertEqual(p.events,DUMMY_SWING|PLAYER_HIT|PLAYER_KO)
+        self.assertEqual(p.player_hp,0)
+        self.step(p)
+        self.assertFalse(p.events&(PLAYER_HIT|PLAYER_KO|DUMMY_SWING))
+        self.assertEqual(p.player_hp,0)
+
+    def test_dying_dummy_emits_ko_without_automatically_finishing(self):
+        p=self.new();p.x=230;p.dummy_hp=1
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(p.events,SWING|DUMMY_HIT|DUMMY_KO)
+        self.assertFalse(p.events&FINISHER)
+        self.step(p)
+        self.assertEqual(p.events,0)
+
+    def test_five_hundred_tick_event_replay_is_deterministic(self):
+        a=self.new();b=self.new()
+        for i in range(500):
+            held=(RIGHT if i%49<24 else LEFT)|(UP if i%31<10 else DOWN)
+            pressed=(SPAR if i in (0,250) else 0)
+            pressed|=ATTACK if i%17==0 else 0
+            pressed|=JUMP if i%41==0 else 0
+            self.step(a,held,pressed)
+            self.step(b,held,pressed)
+            self.assertEqual(a.events,b.events)
+        self.assertEqual(
+            tuple(getattr(a,name) for name,_ in Arena._fields_),
+            tuple(getattr(b,name) for name,_ in Arena._fields_)
+        )
+        self.assertEqual(a.ticks,500)
 
     def test_null_pointer_is_safe_for_both_native_functions(self):
         self.lib.dino_arena_reset(None)
