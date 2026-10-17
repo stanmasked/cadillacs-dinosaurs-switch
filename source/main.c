@@ -250,16 +250,19 @@ static uint8_t *load_sequence_image(const uint8_t *gfx,
 static void arena_frame(uint32_t *frame, unsigned pitch,
                         const DinoArena *arena, bool have_gfx) {
     rectangle(frame,pitch,0,0,FB_WIDTH,FB_HEIGHT,rgb(11,18,29));
+    /* Fit the complete 384x224 arena (including its bottom lane)
+     * within the 1280x720 framebuffer at an exact integer scale. */
+    const int ox=64, oy=24, scale=3;
+    rectangle(frame,pitch,ox,oy,1152,672,rgb(30,61,70));
+    rectangle(frame,pitch,ox,oy+240,1152,432,rgb(62,83,74));
+    for (int lane=0;lane<7;++lane)
+        rectangle(frame,pitch,ox,oy+240+lane*64,1152,1,rgb(86,108,94));
+    rectangle(frame,pitch,0,0,1280,72,rgb(11,18,29));
     label(frame,pitch,52,19,"TRAINING ROOM  -  ORIGINAL ROM FREE PROTOTYPE",
           2,rgb(226,233,229));
     label(frame,pitch,52,55,
           "PLACEHOLDER ACTOR AND DUMMY  -  NOT ORIGINAL GAMEPLAY",
           1,rgb(160,190,207));
-    const int ox=64, oy=80, scale=3;
-    rectangle(frame,pitch,ox,oy,1152,576,rgb(30,61,70));
-    rectangle(frame,pitch,ox,oy+240,1152,336,rgb(62,83,74));
-    for (int lane=0;lane<5;++lane)
-        rectangle(frame,pitch,ox,oy+240+lane*64,1152,1,rgb(86,108,94));
     if (arena->dummy_hp) {
         const int x=ox+arena->dummy_x*scale;
         const int y=oy+arena->dummy_y*scale;
@@ -283,6 +286,7 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
         const int hit_x=px+(arena->facing_right?16:-75);
         rectangle(frame,pitch,hit_x,py-rise-63,60,18,rgb(249,214,100));
     }
+    rectangle(frame,pitch,0,661,1280,59,rgb(11,18,29));
     char status[115];
     snprintf(status,sizeof(status),
              "X %03d  DEPTH %03d  JUMP %02d  HITS %03u  DUMMY HP %u",
