@@ -33,9 +33,29 @@ typedef struct {
     uint8_t sparring, player_hp, player_hitstun, player_invuln;
     uint8_t dummy_windup, dummy_cooldown, dummy_attack_frames;
     uint8_t dummy_facing_right, player_hits_taken;
+    uint8_t player_moving, dummy_moving; /* displacement during most recent tick */
 } DinoArena;
 
-/* Both routines use no heap, I/O, ROM or platform-specific types. */
+/* Visual state is derived from 60 Hz simulation, not from art or MAME.
+ * All values are stable public integer constants for diagnostic playback. */
+typedef enum {
+    DINO_POSE_IDLE=0,
+    DINO_POSE_WALK=1,
+    DINO_POSE_JUMP=2,
+    DINO_POSE_ATTACK=3,
+    DINO_POSE_HURT=4,
+    DINO_POSE_KO=5,
+    DINO_POSE_WINDUP=6
+} DinoArenaPose;
+
+/* No gameplay state is changed by any of these read-only pose queries.
+ * Visual phases cycle deterministically every six simulated ticks.
+ * They are invented placeholder animations, NOT CPS-1 sprite timings. */
+DinoArenaPose dino_arena_player_pose(const DinoArena *arena);
+DinoArenaPose dino_arena_dummy_pose(const DinoArena *arena);
+uint8_t dino_arena_pose_phase(const DinoArena *arena);
+
+/* Core simulation uses no heap, I/O, ROM or platform-specific types. */
 void dino_arena_reset(DinoArena *arena);
 void dino_arena_step(DinoArena *arena, uint32_t held, uint32_t pressed);
 #endif
