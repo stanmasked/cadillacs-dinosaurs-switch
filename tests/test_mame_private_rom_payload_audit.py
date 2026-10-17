@@ -154,7 +154,7 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
     def test_qsound_sha1_mismatch_rejected_despite_valid_crc_headers(self):
         # Independently reject a wrong pinned SHA-1 even though all ZIP
         # headers and streamed CRC32 values match the synthetic catalog.
-        with patch.object(audit, 'DEVICE_SHA1', b'\\x00' * 20), \
+        with patch.object(audit, 'DEVICE_SHA1', bytes(20)), \
              patch.object(audit, 'EXPECTED', self.game_catalog), \
              patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
              patch.object(audit, 'DEVICE_HEADER', self.sound_header):
