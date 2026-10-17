@@ -232,3 +232,50 @@ This event vocabulary is an original scaffolding for future
 independently authored video/audio effects; it is not proof
 of original game hit timings, game audio, MAME execution or
 physical Nintendo Switch runtime.
+
+## Stage 119 — original procedural battle sounds (optional)
+
+This ROM-free research NRO now includes independent, newly authored
+**procedural sound cues** for all eleven training-combat events.
+`source/dino_sfx.c` synthesizes six bounded simultaneous voices with
+integer-only triangle or noise waveforms. Per-voice pitch, duration,
+amplitude, stereo pan, and relative priority are fixed constants
+written for this prototype—not recordings, SPC/QSound samples,
+Capcom musical phrases or MAME audio data.
+
+A sample block is **800 stereo frames at 48,000 Hz**, exactly one
+60 Hz simulation tick. A sample counter and fixed-duration envelope
+make playback independent of rendering frequency; generated buffers
+are **signed 16-bit interleaved stereo**, with explicit saturation
+and no malloc, file I/O or device-specific calls in the synth.
+Each tick consumes that tick's `DinoArena.events` flags.
+The six-voice capacity uses deterministic priority replacement:
+hits, finishers and KOs override low-priority movement cues under
+simultaneous-event load.
+
+The separate `source/dino_switch_sound.c` adapter uses libnx
+`audout` only if the operating system provides the documented
+48 kHz, two-channel, signed-16-bit audio configuration. It maintains
+**four 4096-byte-aligned audio pages**, submits at most one 800-frame
+block per simulated tick, and reuses a page only after libnx reports
+its release. If audio initialization, buffer submission or retrieval
+fails, it closes the sound service and continues the arena silently.
+If all buffers are busy, the synth still advances the missed tick
+into a private discard buffer rather than blocking the game loop.
+The NRO attempts sound initialization only after its framebuffer
+has been set up, and always closes the audio service on ordinary
+program exit.
+
+The host test suite compiles the **same C synth** into a Linux
+shared library via GCC, with no ROM or Switch toolchain required.
+Twelve additional tests cover all eleven event identities,
+deterministic PCM (including pseudorandom noise), stereo panning,
+silence, voice caps/priority, envelope expiry, 16-bit bounds,
+unknown flags, reset, invalid frame length, partial frames and
+null-pointer safety.
+
+**Unverified until an on-console run:** actual speaker/headphone
+audibility, latency, underrun frequency and device behavior.
+The GitHub NRO job verifies compilation, not physical playback.
+The prototype has no Capcom QSound audio, soundtrack, original
+sound effects, original sound timing or licensed samples.
