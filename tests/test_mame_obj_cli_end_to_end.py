@@ -7,6 +7,8 @@ import io
 import json
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -198,6 +200,36 @@ class EndToEndMameCliTests(unittest.TestCase):
             self.assertNotIn('render_register_bytes', text)
             self.assertNotIn('cps_a_words', text)
             self.assertTrue(doc['diagnostic_verdict']['diagnostic_only'])
+
+    def test_real_python_command_writes_valid_json(self):
+        # Execute the actual user-facing command, not just imported main().
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_capture(root)
+            script = Path(__file__).resolve().parents[1] / 'tools' / 'mame_obj_sequence_alignment.py'
+            cmd = [sys.executable, str(script), str(root), '--out',
+                   str(root / 'subprocess-audit.json')]
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  cwd=script.parents[1], timeout=10)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads((root / 'subprocess-audit.json').read_text())
+            self.assertEqual(report['diagnostic_verdict']['status'],
+                             'CONSISTENT_BUT_UNVERIFIED')
+            self.assertFalse(report['diagnostic_verdict']['frame_sync_verified'])
+
+    def test_real_python_command_rejects_corruption_without_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_capture(root)
+            (root / 'frame-00000900.buffered-obj-be.bin').write_bytes(bytes(2047))
+            script = Path(__file__).resolve().parents[1] / 'tools' / 'mame_obj_sequence_alignment.py'
+            output = root / 'refused.json'
+            proc = subprocess.run([sys.executable, str(script), str(root),
+                                   '--out', str(output)], capture_output=True,
+                                  text=True, cwd=script.parents[1], timeout=10)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn('incomplete', proc.stderr)
+            self.assertFalse(output.exists())
 
     def test_unbounded_frame_selection_is_rejected_without_output(self):
         with tempfile.TemporaryDirectory() as directory:
