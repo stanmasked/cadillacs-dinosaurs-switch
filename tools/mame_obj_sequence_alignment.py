@@ -80,6 +80,30 @@ def _check_capture_component(path, declared_crc, expected_size, data=None):
         raise ValueError(f'{path.name}: CRC32 mismatch in MAME capture')
 
 
+def _read_exact_small(path, expected_size):
+    """Read at most the expected size plus one byte; reject oversized inputs."""
+    with path.open('rb') as source:
+        data = source.read(expected_size + 1)
+    if len(data) != expected_size:
+        raise ValueError(
+            f'{path.name}: expected {expected_size} bytes, got at least {len(data)}')
+    return data
+
+
+def _read_manifest(path):
+    """Cap untrusted JSON input before decoding or constructing its objects."""
+    manifest_data = _read_exact_bounded_manifest(path)
+    return json.loads(manifest_data.decode('utf-8'))
+
+
+def _read_exact_bounded_manifest(path):
+    with path.open('rb') as source:
+        data = source.read(16 * 1024 + 1)
+    if len(data) > 16 * 1024:
+        raise ValueError(f'{path.name}: manifest exceeds 16384 bytes')
+    return data
+
+
 def read_frames(directory, first_frame, frame_count, frame_step):
     """Validate all five captured Lua binaries before scoring register shifts."""
     if (type(first_frame) is not int or first_frame < 0 or
@@ -92,8 +116,7 @@ def read_frames(directory, first_frame, frame_count, frame_step):
     for index in range(frame_count):
         frame = first_frame + index * frame_step
         stem = f'frame-{frame:08d}'
-        manifest = json.loads((directory / (stem + '.manifest.json')).read_text(
-            encoding='utf-8'))
+        manifest = _read_manifest(directory / (stem + '.manifest.json'))
         if (not isinstance(manifest, dict) or
                 type(manifest.get('frame')) is not int or
                 manifest['frame'] != frame or
@@ -112,8 +135,8 @@ def read_frames(directory, first_frame, frame_count, frame_step):
         if any(not isinstance(value, str) or HEX_CRC.fullmatch(value) is None
                for value in crc.values()):
             raise ValueError(f'{stem}: malformed file_crc32 digest')
-        a = (directory / (stem + '.' + REG_A)).read_bytes()
-        b = (directory / (stem + '.' + REG_B)).read_bytes()
+        a = _read_exact_small(directory / (stem + '.' + REG_A), 64)
+        b = _read_exact_small(directory / (stem + '.' + REG_B), 64)
         # The Stage 40 capture's five-file CRC32 map is a *whole-capture*
         # promise. Do not emit frame-alignment evidence when its RGB image,
         # palette, or graphics RAM is absent, swapped, short or corrupt.
@@ -122,10 +145,8 @@ def read_frames(directory, first_frame, frame_count, frame_step):
             _check_capture_component(
                 component, crc[name], size,
                 a if name == REG_A else b if name == REG_B else None)
-        r = (directory / (stem + '.' + PROBE)).read_bytes()
-        obj = (directory / (stem + '.' + OBJ)).read_bytes()
-        if len(r) != 128 or len(obj) != 2048:
-            raise ValueError(f'{stem}: incomplete CPS registers or buffered OBJ')
+        r = _read_exact_small(directory / (stem + '.' + PROBE), 128)
+        obj = _read_exact_small(directory / (stem + '.' + OBJ), 2048)
         render.append(r)
         lua.append(a + b)
     return render, lua
