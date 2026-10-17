@@ -90,10 +90,10 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         error = io.StringIO()
         original = audit._catalog_payload_check
 
-        def fail_after_first_zip(path, catalog):
+        def fail_after_first_zip(path, catalog, **kwargs):
             if path.name == 'qsound_hle.zip':
                 raise OSError('PRIVATE_LOCAL_PATH_AND_SECRET_DATA')
-            return original(path, catalog)
+            return original(path, catalog, **kwargs)
 
         with patch.object(audit, 'EXPECTED', self.game_catalog), \
              patch.object(audit, 'DEVICE_MEMBER', 'fake-qsound.bin'), \
