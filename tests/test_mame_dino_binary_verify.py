@@ -151,6 +151,34 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main([str(self.root / 'missing'), str(self.root)]), 2)
 
+    def test_oversized_real_subprocess_stdout_fails_before_xml_parsing(self):
+        binary = self.root / 'large-output'
+        binary.write_text(
+            '#!' + sys.executable + '\n'
+            'import sys\n'
+            f'sys.stdout.buffer.write(b"x" * {MAX_XML_BYTES + 1})\n')
+        binary.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, 'exceeded the allowed size'):
+            inspect_binary(binary, self.root)
+
+    def test_empty_real_subprocess_stdout_is_rejected(self):
+        binary = self.make_fake_binary(b'')
+        with self.assertRaisesRegex(ValueError, 'exceeded the allowed size'):
+            inspect_binary(binary, self.root)
+
+    def test_large_stderr_does_not_prevent_valid_xml_validation(self):
+        binary = self.root / 'noisy-stderr'
+        binary.write_text(
+            '#!' + sys.executable + '\n'
+            'import sys\n'
+            f'sys.stdout.buffer.write({fake_xml()!r})\n'
+            'sys.stderr.buffer.write(b"warning " * 400000)\n')
+        binary.chmod(0o755)
+        meta = inspect_binary(binary, self.root)
+        self.assertTrue(meta['listxml_validated'])
+        self.assertTrue(meta['compiled_instrumented_latch_v2_format'])
+        self.assertFalse(meta['frame_sync_verified'])
+
     def test_rejects_noninteger_or_zero_metadata_timeout(self):
         binary = self.make_fake_binary(fake_xml())
         for timeout in (0, True, 121, '100'):
