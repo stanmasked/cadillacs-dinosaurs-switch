@@ -878,3 +878,38 @@ or Nintendo Switch parity. No ROM bytes, framebuffer, OBJ buffers, session
 tokens, local paths or private warnings are accessed or emitted.
 Synthetic tests exercise positive/negative shifts, complete/sparse
 coverage, forged metadata, inspection priority and privacy.
+
+
+## Stage 84 — leave-one-label-out sensitivity of nominal Lua/C++ gaps
+
+The prior stage could report a single best nominal Lua-to-C++ file-coverage
+offset without saying whether one missing sample would destroy that
+tentative association. Stage 84 adds a **six-case leave-one-nominal-label-out
+stress check** to `tools/mame_private_coverage_shift.py`. For each nominal
+label, the checker excludes **both** Lua and C++ completeness evidence at
+that same label, never renumbers or compresses surviving samples, then
+recomputes all five [-2,-1,0,+1,+2] relative overlap scores. It requires
+at least two remaining full-sized frames per source and two shifted pairs,
+plus a strictly better unique off-label overlap, for a reduced sample to
+retain the candidate. The main six-frame candidate continues to require
+the prior stronger three-source-frame/three-pair threshold.
+
+Only a candidate preserved in **all six** single-label omissions is tagged
+`STABLE_UNDER_ALL_SINGLE_LABEL_DROPS_SIZE_ONLY`. Otherwise
+`SENSITIVE_TO_SINGLE_LABEL_DROPS_SIZE_ONLY` supplies a separate count
+of retained/changed/lost candidates and safe per-nominal-label observations.
+No candidate means the sensitivity check is explicitly unassessed. With
+a fragile candidate, the local progress tool now recommends
+`REVIEW_SINGLE_LABEL_DROPOUT_SENSITIVITY`, not an unqualified offset
+inspection; a stable candidate retains the prior generic
+`INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET` action.
+Hard capture-integrity errors (unexpected entries or incorrect file sizes)
+still take precedence over every possible gap hypothesis.
+
+This sensitivity notion is **only about six discrete filename/size
+observations**. Even a positive result does not prove independent timing,
+original CPS-1 VBlank, buffered OBJ sprite age, active original gameplay,
+original pixel accuracy, or Switch parity. The test suite covers
+fragile and all-six-case-retained synthetic patterns, original cases with
+no candidate, integrated guidance changes and no disclosure of ROM/file
+paths, game pixels, metadata session secrets or hashes.

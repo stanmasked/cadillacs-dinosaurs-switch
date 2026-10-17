@@ -11,6 +11,98 @@ LUA_FILES_PER_FRAME = 6
 CPP_FILES_PER_FRAME = 3
 
 
+
+def _pair_counts(lua, cpp):
+    """Count only existing, fixed-position sample pairs, never relabel gaps."""
+    return {
+        shift: sum(lua[i] and cpp[i + shift]
+                   for i in range(6) if 0 <= i + shift < 6)
+        for shift in SHIFTS
+    }
+
+
+def _best_unique_offset(pairs, lua, cpp, *, minimum_samples, minimum_pairs):
+    if min(sum(lua), sum(cpp)) < minimum_samples:
+        return 'INSUFFICIENT_COMPLETE_SOURCE_FRAMES', None
+    high = max(pairs[shift] for shift in SHIFTS if shift != 0)
+    zero = pairs[0]
+    if high < minimum_pairs or high <= zero:
+        return 'NO_OFF_LABEL_COVERAGE_ADVANTAGE', None
+    winners = [shift for shift in SHIFTS if shift != 0 and pairs[shift] == high]
+    if len(winners) != 1:
+        return 'AMBIGUOUS_OFF_LABEL_COVERAGE', None
+    return 'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY', winners[0]
+
+
+def _single_label_dropout_evidence(lua, cpp, hypothesis, frame_step,
+                                   first_frame):
+    """Remove both streams' evidence at each nominal label in turn.
+
+    Sample positions are kept fixed. The reduced evidence threshold is
+    2 complete source sets and 2 overlapping pairs; this merely tests
+    sensitivity to one lost label and does NOT certify synchronization.
+    """
+    if hypothesis is None:
+        return {
+            'status': 'NOT_ASSESSED_NO_PRIMARY_OFFSET_CANDIDATE',
+            'diagnostic_only': True,
+            'evaluated_nominal_label_drops': 0,
+            'same_candidate_after_drop_count': 0,
+            'different_candidate_after_drop_count': 0,
+            'no_unique_candidate_after_drop_count': 0,
+            'per_nominal_label_drop': [],
+            'size_only_offset_stable_under_all_single_label_drops': False,
+            'hypothesis_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
+    observations = []
+    same = changed = absent = 0
+    for dropped in range(6):
+        # A lost *nominal label* removes Lua/C++ evidence at the exact same
+        # position. Never shift/reindex the remaining four or five samples.
+        reduced_lua = [value and i != dropped for i, value in enumerate(lua)]
+        reduced_cpp = [value and i != dropped for i, value in enumerate(cpp)]
+        reduced_pairs = _pair_counts(reduced_lua, reduced_cpp)
+        _, candidate = _best_unique_offset(
+            reduced_pairs, reduced_lua, reduced_cpp,
+            minimum_samples=2, minimum_pairs=2)
+        if candidate == hypothesis:
+            state = 'SAME_OFFSET_RETAINED_SIZE_ONLY'
+            same += 1
+        elif candidate is not None:
+            state = 'DIFFERENT_OFFSET_SIZE_ONLY'
+            changed += 1
+        else:
+            state = 'NO_UNIQUE_OFFSET_AFTER_DROP'
+            absent += 1
+        observations.append({
+            'removed_nominal_frame_label': first_frame + dropped * frame_step,
+            'outcome': state,
+            'original_offset_pairs_remaining': reduced_pairs[hypothesis],
+            'zero_offset_pairs_remaining': reduced_pairs[0],
+            'candidate_after_removal_samples': candidate,
+        })
+
+    if same + changed + absent != 6:
+        raise ValueError('Private dropout diagnostic case count disagrees')
+    return {
+        'status': ('STABLE_UNDER_ALL_SINGLE_LABEL_DROPS_SIZE_ONLY'
+                   if same == 6 else
+                   'SENSITIVE_TO_SINGLE_LABEL_DROPS_SIZE_ONLY'),
+        'diagnostic_only': True,
+        'evaluated_nominal_label_drops': 6,
+        'same_candidate_after_drop_count': same,
+        'different_candidate_after_drop_count': changed,
+        'no_unique_candidate_after_drop_count': absent,
+        'per_nominal_label_drop': observations,
+        'size_only_offset_stable_under_all_single_label_drops': same == 6,
+        'hypothesis_verified': False,
+        'frame_sync_verified': False,
+        'pixel_parity_eligible': False,
+    }
+
 def nominal_coverage_shift_hypotheses(rows, *, first_frame=900, frame_step=2):
     """Return bounded, unverified overlap scores for six expected frame labels.
 
@@ -48,27 +140,12 @@ def nominal_coverage_shift_hypotheses(rows, *, first_frame=900, frame_step=2):
         lua.append(lua_complete)
         cpp.append(cpp_complete)
 
-    pairs = {
-        shift: sum(lua[i] and cpp[i + shift]
-                   for i in range(6) if 0 <= i + shift < 6)
-        for shift in SHIFTS
-    }
+    pairs = _pair_counts(lua, cpp)
     zero = pairs[0]
-    candidates = [shift for shift in SHIFTS if shift != 0]
-    high = max(pairs[shift] for shift in candidates)
-    winners = [shift for shift in candidates if pairs[shift] == high]
-    if min(sum(lua), sum(cpp)) < 3:
-        status = 'INSUFFICIENT_COMPLETE_SOURCE_FRAMES'
-        hypothesis = None
-    elif high < 3 or high <= zero:
-        status = 'NO_OFF_LABEL_COVERAGE_ADVANTAGE'
-        hypothesis = None
-    elif len(winners) != 1:
-        status = 'AMBIGUOUS_OFF_LABEL_COVERAGE'
-        hypothesis = None
-    else:
-        status = 'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY'
-        hypothesis = winners[0]
+    status, hypothesis = _best_unique_offset(
+        pairs, lua, cpp, minimum_samples=3, minimum_pairs=3)
+    dropout = _single_label_dropout_evidence(
+        lua, cpp, hypothesis, frame_step, first_frame)
 
     return {
         'status': status,
@@ -81,6 +158,7 @@ def nominal_coverage_shift_hypotheses(rows, *, first_frame=900, frame_step=2):
         'candidate_cpp_relative_to_lua_shift_samples': hypothesis,
         'candidate_cpp_relative_to_lua_shift_nominal_frames': (
             hypothesis * frame_step if hypothesis is not None else None),
+        'single_nominal_label_dropout_evidence': dropout,
         'hypothesis_verified': False,
         'original_game_authenticity_verified': False,
         'active_gameplay_verified': False,

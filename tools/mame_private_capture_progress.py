@@ -105,10 +105,13 @@ def _with_stream_coverage(report):
             report['next_local_investigation_code'] = 'COMPARE_LUA_CPP_NOMINAL_FRAME_COVERAGE'
         # Other incomplete combinations retain the original conservative
         # generic hook code; missing data alone never identifies a culprit.
-        if (report['nominal_coverage_shift_hypotheses']['status'] ==
-                'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY'):
+        shift = report['nominal_coverage_shift_hypotheses']
+        if shift['status'] == 'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY':
+            robustness = shift['single_nominal_label_dropout_evidence']
             report['next_local_investigation_code'] = (
-                'INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET')
+                'INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET'
+                if robustness['size_only_offset_stable_under_all_single_label_drops']
+                else 'REVIEW_SINGLE_LABEL_DROPOUT_SENSITIVITY')
     return report
 
 

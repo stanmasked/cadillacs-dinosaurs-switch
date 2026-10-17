@@ -152,8 +152,29 @@ class PrivateCaptureProgressTests(unittest.TestCase):
         self.assertEqual(hint['status'], 'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY')
         self.assertEqual(hint['candidate_cpp_relative_to_lua_shift_samples'], 1)
         self.assertEqual(out['next_local_investigation_code'],
-                         'INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET')
+                         'REVIEW_SINGLE_LABEL_DROPOUT_SENSITIVITY')
+        self.assertEqual(
+            hint['single_nominal_label_dropout_evidence']['same_candidate_after_drop_count'], 2)
         self.assertFalse(hint['hypothesis_verified'])
+        self.assertFalse(out['capture_validated'])
+
+    def test_robust_offset_preserves_specialized_inspection_guidance(self):
+        lua = ('gfxram-be.bin', 'cps-a-be.bin', 'cps-b-be.bin',
+               'palette-rgb24.bin', 'reference-rgb24.bin', 'manifest.json')
+        cpp = ('render-regs-be.bin', 'buffered-obj-be.bin', 'obj-latch-count.txt')
+        for index in (0, 1, 2, 4):
+            self.add_frame(900 + 2 * index, lua)
+        for index in (1, 2, 3, 5):
+            self.add_frame(900 + 2 * index, cpp)
+        out = private_capture_progress(self.workspace)
+        hint = out['nominal_coverage_shift_hypotheses']
+        self.assertEqual(hint['status'], 'OFF_LABEL_COVERAGE_HYPOTHESIS_ONLY')
+        self.assertEqual(
+            hint['single_nominal_label_dropout_evidence']['status'],
+            'STABLE_UNDER_ALL_SINGLE_LABEL_DROPS_SIZE_ONLY')
+        self.assertEqual(out['next_local_investigation_code'],
+                         'INSPECT_LUA_CPP_NOMINAL_LABEL_COVERAGE_OFFSET')
+        self.assertFalse(out['frame_sync_verified'])
         self.assertFalse(out['capture_validated'])
 
     def test_offset_hypotheses_do_not_override_size_or_unexpected_errors(self):

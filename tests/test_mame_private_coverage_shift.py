@@ -35,6 +35,12 @@ class PrivateCoverageShiftTests(unittest.TestCase):
         self.assertEqual(result['paired_full_size_only_frames_per_shift'], [0, 1, 2, 3, 2])
         self.assertFalse(result['hypothesis_verified'])
         self.assertFalse(result['hardware_vblank_observed'])
+        dropout = result['single_nominal_label_dropout_evidence']
+        self.assertEqual(dropout['status'], 'SENSITIVE_TO_SINGLE_LABEL_DROPS_SIZE_ONLY')
+        self.assertEqual(dropout['evaluated_nominal_label_drops'], 6)
+        self.assertEqual(dropout['same_candidate_after_drop_count'], 2)
+        self.assertEqual(dropout['no_unique_candidate_after_drop_count'], 4)
+        self.assertFalse(dropout['size_only_offset_stable_under_all_single_label_drops'])
 
     def test_minus_one_nominal_shift_is_directional_not_timing_proof(self):
         result = nominal_coverage_shift_hypotheses(
@@ -44,12 +50,33 @@ class PrivateCoverageShiftTests(unittest.TestCase):
         self.assertEqual(result['candidate_cpp_relative_to_lua_shift_nominal_frames'], -2)
         self.assertFalse(result['obj_latch_age_verified'])
 
+    def test_strong_pattern_stays_nominally_distinct_after_every_single_drop(self):
+        result = nominal_coverage_shift_hypotheses(
+            frame_rows({0, 1, 2, 4}, {1, 2, 3, 5}))
+        self.assertEqual(result['candidate_cpp_relative_to_lua_shift_samples'], 1)
+        dropout = result['single_nominal_label_dropout_evidence']
+        self.assertEqual(dropout['status'], 'STABLE_UNDER_ALL_SINGLE_LABEL_DROPS_SIZE_ONLY')
+        self.assertTrue(dropout['size_only_offset_stable_under_all_single_label_drops'])
+        self.assertEqual(dropout['same_candidate_after_drop_count'], 6)
+        self.assertEqual(dropout['different_candidate_after_drop_count'], 0)
+        self.assertEqual(dropout['no_unique_candidate_after_drop_count'], 0)
+        self.assertEqual(
+            [row['removed_nominal_frame_label']
+             for row in dropout['per_nominal_label_drop']],
+            [900, 902, 904, 906, 908, 910])
+        self.assertFalse(dropout['hypothesis_verified'])
+        self.assertFalse(result['hardware_vblank_observed'])
+        self.assertFalse(result['pixel_parity_eligible'])
+
     def test_all_six_complete_does_not_suggest_a_shift(self):
         result = nominal_coverage_shift_hypotheses(
             frame_rows(set(range(6)), set(range(6))))
         self.assertEqual(result['status'], 'NO_OFF_LABEL_COVERAGE_ADVANTAGE')
         self.assertEqual(result['same_nominal_label_complete_pairs'], 6)
         self.assertIsNone(result['candidate_cpp_relative_to_lua_shift_samples'])
+        dropout = result['single_nominal_label_dropout_evidence']
+        self.assertEqual(dropout['status'], 'NOT_ASSESSED_NO_PRIMARY_OFFSET_CANDIDATE')
+        self.assertEqual(dropout['per_nominal_label_drop'], [])
         self.assertFalse(result['frame_sync_verified'])
 
     def test_one_source_missing_or_sparse_is_insufficient(self):
@@ -91,6 +118,10 @@ class PrivateCoverageShiftTests(unittest.TestCase):
         self.assertNotIn('0123456789abcdef', encoded)
         self.assertEqual(out['shift_offsets_in_nominal_samples'], list(SHIFTS))
         self.assertFalse(out['pixel_parity_eligible'])
+        self.assertNotIn('/secret/', json.dumps(
+            out['single_nominal_label_dropout_evidence']))
+        self.assertFalse(
+            out['single_nominal_label_dropout_evidence']['pixel_parity_eligible'])
 
 
 if __name__ == '__main__':
