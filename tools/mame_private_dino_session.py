@@ -42,6 +42,9 @@ def _separate(left, right):
 
 def preflight(mame, mame_source_tree, rom_dir, workspace):
     """Check only filesystem and path isolation; do not execute/read ROMs."""
+    # Refuse executable symlinks before resolve() erases that fact.
+    if Path(mame).expanduser().is_symlink():
+        raise ValueError('MAME executable may not be a symlink')
     paths = tuple(Path(x).expanduser().resolve() for x in (
         mame, mame_source_tree, rom_dir, workspace))
     binary, tree, roms, private = paths
@@ -54,6 +57,8 @@ def preflight(mame, mame_source_tree, rom_dir, workspace):
         raise ValueError('Private ROM directory is missing')
     if not private.is_dir():
         raise ValueError('Private workspace directory must already exist')
+    if os.name == 'posix' and (private.stat().st_mode & 0o077):
+        raise ValueError('Private workspace must have 0700-style permissions')
     if any(not _separate(private, other) for other in
            (PROJECT_ROOT, tree, roms)):
         raise ValueError('Capture workspace must be separate from code, MAME and ROM trees')
@@ -102,7 +107,11 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
     # Capture potential private ROM filenames and local MAME messages to
     # a PRIVATE log rather than CI or console. No shell or network used.
     try:
-        with (private / LOG_NAME).open('xb') as log:
+        # O_EXCL protects earlier logs; 0600 avoids leaking filenames
+        # from emulator diagnostics on multi-user machines.
+        fd = os.open(private / LOG_NAME,
+                     os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'wb') as log:
             proc = subprocess.run(
                 argv, cwd=private, stdout=log, stderr=subprocess.STDOUT,
                 stdin=None, timeout=timeout_seconds, check=False,
@@ -133,6 +142,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         data = source.read(128 * 1024 + 1)
     if len(data) > 128 * 1024:
         raise ValueError('Unexpected oversized local diagnostic JSON')
+    os.chmod(report, 0o600)
     result = json.loads(data)
     latch = result.get('obj_latch_count_evidence', {})
     if (latch.get('sidecar_format_version') != 2 or
