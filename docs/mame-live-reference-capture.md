@@ -1515,3 +1515,32 @@ between scans; both must be rejected. A symlinked device archive must
 be rejected *before* any ROM member is read. This is preparation for
 a private actual MAME `-verifyroms` run, **not** evidence that it
 has run or that original gameplay has been observed.
+
+## Stage 108 — report truthful private-read provenance on refusal
+
+The opt-in local payload scanner can read the first ZIP successfully and
+then reject a changed, unreadable or unsafe second archive. Previous error
+handling returned the generic baseline flag
+`private_payload_bytes_read_locally=false` even if original member bytes
+had already been accessed before the exception.
+
+On an **unauthorized** invocation (without
+`--verify-private-payloads`), no member payload is read and the fixed
+failure report continues to certify
+`explicit_private_payload_read_authorized=false`,
+`private_payload_bytes_read_locally=false` and
+`private_payload_bytes_may_have_been_read_locally=false`.
+
+On an **explicitly authorized** invocation that fails partway through,
+the fixed refusal report now records authorization, sets
+`private_payload_bytes_read_locally=null` (unknown), and conservatively
+indicates `private_payload_bytes_may_have_been_read_locally=true`.
+It also holds `private_payload_read_completion_verified=false` and
+`private_payload_crc_matches_pinned_catalog=false`. No private path,
+member data, checksum or exception detail is emitted.
+
+A successful completed local synthetic scan sets
+`private_payload_read_completion_verified=true`. Separate ROM-free
+tests exercise both classes of refusal, including deliberate failure
+after finishing the first archive. This is report-provenance hardening;
+it does **not** establish real MAME ROM acceptance or gameplay.
