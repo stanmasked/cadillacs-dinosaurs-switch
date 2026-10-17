@@ -88,14 +88,32 @@ def preflight(mame, mame_source_tree, rom_dir, workspace):
     return binary, tree, roms, private
 
 
+def _require_session_aware_build(binary, tree):
+    """ROM-free verified MAME driver, compiler object and linked executable."""
+    identity = inspect_binary(binary, tree)
+    if (identity.get('driver') != 'dino' or
+            identity.get('listxml_validated') is not True or
+            identity.get('compiled_instrumented_latch_v2_format') is not True or
+            identity.get('compiled_session_label_probe_marker') is not True or
+            identity.get('compiled_session_environment_probe_marker') is not True or
+            identity.get('linked_dino_executable_probe_markers') is not True):
+        raise ValueError('MAME identity/session-aware linked probe verification failed')
+    return identity
+
+
 def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
-                            *, timeout_seconds=1800, preflight_only=False):
+                            *, timeout_seconds=1800, preflight_only=False,
+                            verify_build_only=False):
     """Run full MAME locally, then audit all private files with strict checks."""
     if (type(timeout_seconds) is not int or
             not 30 <= timeout_seconds <= 3600):
         raise ValueError('Session timeout must be 30..3600 seconds')
     if type(preflight_only) is not bool:
         raise ValueError('preflight_only must be boolean')
+    if type(verify_build_only) is not bool:
+        raise ValueError('verify_build_only must be boolean')
+    if preflight_only and verify_build_only:
+        raise ValueError('Choose one ROM-free preflight mode')
     binary, tree, roms, private = preflight(
         mame, mame_source_tree, rom_dir, workspace)
     if preflight_only:
@@ -107,15 +125,23 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             'pixel_parity_eligible': False,
         }
 
+    # The more demanding ROM-free mode checks -listxml and both build
+    # artifacts, without creating output directories or starting dino.
+    # It intentionally does not report private source paths or ELF hashes.
+    if verify_build_only:
+        _require_session_aware_build(binary, tree)
+        return {
+            'status': 'ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED',
+            'game_executed': False,
+            'capture_verified': False,
+            'linked_probe_runtime_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
     # Real upstream driver and instrumented ELF identity. This only runs
     # -listxml, not any arcade game, and never loads ROM bytes.
-    identity = inspect_binary(binary, tree)
-    if (identity.get('driver') != 'dino' or
-            identity.get('compiled_instrumented_latch_v2_format') is not True or
-            identity.get('compiled_session_label_probe_marker') is not True or
-            identity.get('compiled_session_environment_probe_marker') is not True or
-            identity.get('linked_dino_executable_probe_markers') is not True):
-        raise ValueError('MAME identity/session-aware linked probe verification failed')
+    _require_session_aware_build(binary, tree)
 
     # The sole launcher-issued random label is passed to both Lua and C++
     # as process environment, never printed, logged or saved as a nonce.
@@ -259,14 +285,20 @@ def main(argv=None):
     p.add_argument('--rom-dir', type=Path, required=True)
     p.add_argument('--workspace', type=Path, required=True)
     p.add_argument('--timeout-seconds', type=int, default=1800)
-    p.add_argument('--preflight-only', action='store_true',
-                   help='Only validate isolated paths; no ROM reading or MAME execution')
+    preflight_options = p.add_mutually_exclusive_group()
+    preflight_options.add_argument(
+        '--preflight-only', action='store_true',
+        help='Validate isolated paths only; no MAME process or ROM reading')
+    preflight_options.add_argument(
+        '--verify-build-only', action='store_true',
+        help='Run ROM-free driver/linked-ELF verification without launching dino')
     args = p.parse_args(argv)
     try:
         result = execute_private_capture(
             args.mame, args.mame_tree, args.rom_dir, args.workspace,
             timeout_seconds=args.timeout_seconds,
-            preflight_only=args.preflight_only)
+            preflight_only=args.preflight_only,
+            verify_build_only=args.verify_build_only)
         print(json.dumps(result, indent=2))
         return 0
     except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:

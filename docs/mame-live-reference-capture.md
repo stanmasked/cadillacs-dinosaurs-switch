@@ -523,3 +523,39 @@ preflight. Neither a linked string nor the shared process environment
 is an independent authentication of MAME execution, physical VBlank,
 arcade-game identity, or pixel parity: all of those claims stay false.
 No executable, ROM or captured game bytes are published.
+
+
+## Stage 73 — ROM-free verification before first private gameplay
+
+The previous `--preflight-only` mode checked only filesystem isolation.
+It did **not** compile, run or verify the executable: its positive result
+must never be interpreted as proof a recent instrumented emulator is ready.
+
+A second, explicit private launcher mode checks the actual built executable
+**without executing the original `dino` game or accessing ROM contents**:
+
+```sh
+python3 tools/mame_private_dino_session.py \\
+  --mame /private/mame0289/dino \\
+  --mame-tree /private/mame0289 \\
+  --rom-dir /private/owned-mame-roms \\
+  --workspace /private/local-dino-session \\
+  --verify-build-only
+```
+
+Like the existing filesystem preflight, this mode requires a pre-existing
+empty, isolated mode-0700 workspace. Unlike it, the verifier executes
+**ROM-free `-listxml dino` only**, checks the genuine MAME 0.289 driver,
+the compiled session-aware CPS-1 object and the three markers in the
+**final linked ELF**. No game process is launched, no capture files or
+report/log directories are created, and no original ROM bytes are read.
+The returned status is `ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED`
+with explicit `game_executed:false` and
+`linked_probe_runtime_verified:false`. Private paths and the raw
+session label are never included in the returned JSON.
+
+Use `--verify-build-only` **or** `--preflight-only`, never both.
+When both filesystem and binary verification are successful, a separate
+normal invocation (without either flag) can run a privately owned ROM
+set in the local MAME executable. A synthetically tested build gate does
+not prove game activity, original VBlank timing or pixel parity.

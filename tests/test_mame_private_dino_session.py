@@ -86,6 +86,52 @@ class PrivateDinoSessionTests(unittest.TestCase):
         build.assert_not_called()
         run.assert_not_called()
 
+    def test_build_only_verifies_real_identity_without_game_or_writes(self):
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity) as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            report = execute_private_capture(
+                self.mame, self.build, self.roms, self.workspace,
+                verify_build_only=True)
+        identity.assert_called_once_with(self.mame.resolve(), self.build.resolve())
+        game.assert_not_called()
+        self.assertEqual(report['status'],
+                         'ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED')
+        self.assertFalse(report['game_executed'])
+        self.assertFalse(report['capture_verified'])
+        self.assertFalse(report['linked_probe_runtime_verified'])
+        self.assertFalse(report['frame_sync_verified'])
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_rejects_missing_driver_or_probe_gate_without_writes(self):
+        required = ('driver', 'listxml_validated',
+                    'compiled_instrumented_latch_v2_format',
+                    'compiled_session_label_probe_marker',
+                    'compiled_session_environment_probe_marker',
+                    'linked_dino_executable_probe_markers')
+        for key in required:
+            bad = dict(self.compiled_dino_identity())
+            bad[key] = 'not-dino' if key == 'driver' else False
+            with self.subTest(key=key):
+                with patch('tools.mame_private_dino_session.inspect_binary',
+                           return_value=bad), \
+                     patch('tools.mame_private_dino_session.subprocess.run') as game:
+                    with self.assertRaisesRegex(ValueError, 'verification failed'):
+                        execute_private_capture(
+                            self.mame, self.build, self.roms, self.workspace,
+                            verify_build_only=True)
+                    game.assert_not_called()
+                self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_rejects_invalid_flags_and_mutually_exclusive_modes(self):
+        for kwargs in ({'verify_build_only': 'true'},
+                       {'verify_build_only': True, 'preflight_only': True}):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, 'boolean|preflight mode'):
+                    execute_private_capture(
+                        self.mame, self.build, self.roms, self.workspace, **kwargs)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
     def test_workspace_inside_source_or_rom_or_project_is_rejected(self):
         for path in (self.build, self.roms, PROJECT_ROOT,
                      self.build / 'subfolder'):
@@ -389,6 +435,26 @@ class PrivateDinoSessionTests(unittest.TestCase):
             b'PRIVATE_EXISTING_REPORT')
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
+
+    def test_cli_build_only_is_rom_free_private_and_report_free(self):
+        output = io.StringIO()
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game, \
+             contextlib.redirect_stdout(output):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--verify-build-only',
+            ])
+        self.assertEqual(code, 0)
+        game.assert_not_called()
+        self.assertIn('ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED', output.getvalue())
+        self.assertNotIn(str(self.roms), output.getvalue())
+        self.assertNotIn(str(self.workspace), output.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_cli_preflight_hides_absolute_private_rom_path(self):
         text = io.StringIO()
