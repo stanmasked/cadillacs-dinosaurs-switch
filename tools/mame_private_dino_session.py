@@ -57,11 +57,11 @@ def preflight(mame, mame_source_tree, rom_dir, workspace):
         raise ValueError('Private ROM directory is missing')
     if not private.is_dir():
         raise ValueError('Private workspace directory must already exist')
-    if os.name == 'posix' and (private.stat().st_mode & 0o077):
-        raise ValueError('Private workspace must have 0700-style permissions')
     if any(not _separate(private, other) for other in
            (PROJECT_ROOT, tree, roms)):
         raise ValueError('Capture workspace must be separate from code, MAME and ROM trees')
+    if os.name == 'posix' and (private.stat().st_mode & 0o077):
+        raise ValueError('Private workspace must have 0700-style permissions')
     if not LUA_SCRIPT.is_file():
         raise ValueError('MAME capture Lua script not found in project')
     # Do not modify previously captured private bytes or diagnostic reports.
