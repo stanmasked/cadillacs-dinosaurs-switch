@@ -10,6 +10,10 @@ import os
 import struct
 import tempfile
 import unittest
+import zlib
+
+from tools.mame_obj_sequence_alignment import CAPTURE_SIZES, read_frames
+from tools.mame_obj_latch_evidence import obj_fnv1a64
 
 LIB=ctypes.util.find_library('lua5.4')
 ROOT=Path(__file__).resolve().parents[1]
@@ -45,7 +49,10 @@ manager={machine={
 emu={}
 function emu.register_frame_done(callback,name)
   assert(name=='frame')
-  callback()
+  for frame=900,910,2 do
+    screen.frame_number=frame
+    callback()
+  end
 end
 '''
 
@@ -87,17 +94,41 @@ class MameLuaCaptureStubTests(unittest.TestCase):
                 finally:
                     lib.lua_close(L)
                 root=Path('cps1-captures')
-                self.assertEqual(len(list(root.iterdir())),6)
-                prefix='frame-00000900.'
-                for suffix,length in (('gfxram-be.bin',196608),('cps-a-be.bin',64),
-                        ('cps-b-be.bin',64),('palette-rgb24.bin',9216),
-                        ('reference-rgb24.bin',258048)):
-                    self.assertEqual((root/(prefix+suffix)).stat().st_size,length)
-                raw=(root/(prefix+'gfxram-be.bin')).read_bytes()
-                self.assertEqual(struct.unpack('>2H',raw[:4]),(33,50))
-                manifest=json.loads((root/(prefix+'manifest.json')).read_text())
-                self.assertFalse(manifest['pixel_parity_eligible'])
-                self.assertEqual(manifest['obj_latch'],'NOT_CAPTURED')
+                # Six frame_done callbacks must yield six complete Lua
+                # capture bundles: five binaries plus a checksum manifest.
+                self.assertEqual(len(list(root.iterdir())),36)
+                names=set(CAPTURE_SIZES)
+                for frame in range(900,912,2):
+                    prefix=f'frame-{frame:08d}.'
+                    manifest=json.loads((root/(prefix+'manifest.json')).read_text())
+                    self.assertEqual(manifest['frame'],frame)
+                    self.assertFalse(manifest['pixel_parity_eligible'])
+                    self.assertEqual(manifest['obj_latch'],'NOT_CAPTURED')
+                    self.assertEqual(set(manifest['file_crc32']),names)
+                    for suffix,length in CAPTURE_SIZES.items():
+                        raw=(root/(prefix+suffix)).read_bytes()
+                        self.assertEqual(len(raw),length)
+                        self.assertEqual(manifest['file_crc32'][suffix],
+                                         f'{zlib.crc32(raw)&0xffffffff:08x}')
+                        if suffix=='gfxram-be.bin':
+                            self.assertEqual(struct.unpack('>2H',raw[:4]),(33,50))
+
+                # Original Lua output must now be accepted by the strict
+                # multi-frame reader once private C++ probes are present.
+                # The generated probes here are synthetic only.
+                obj=bytes(2048)
+                for i,frame in enumerate(range(900,912,2)):
+                    prefix=f'frame-{frame:08d}.'
+                    a=(root/(prefix+'cps-a-be.bin')).read_bytes()
+                    b=(root/(prefix+'cps-b-be.bin')).read_bytes()
+                    (root/(prefix+'render-regs-be.bin')).write_bytes(a+b)
+                    (root/(prefix+'buffered-obj-be.bin')).write_bytes(obj)
+                    (root/(prefix+'obj-latch-count.txt')).write_text(
+                        f'CPS1_DINO_LATCH_V2 {200+i*2} {obj_fnv1a64(obj)}\\n')
+                render,lua,objects=read_frames(root,900,6,2,include_obj=True)
+                self.assertEqual(len(objects),6)
+                self.assertEqual(render,lua)
+
             finally:
                 os.chdir(old)
 
