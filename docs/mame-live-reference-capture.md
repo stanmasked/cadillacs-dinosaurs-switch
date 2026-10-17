@@ -1220,3 +1220,40 @@ the emulated gameplay was authentic. No original ROMs or captures
 are placed in public GitHub Actions.
 
 MAME Lua API: https://docs.mamedev.org/luascript/ref-core.html
+
+
+## Stage 92 — refuse premature auto-exit until all nine Lua/C++ files per sample are size-ready
+
+Stage 91 initially scheduled an exit on the first callback after
+Lua finished its sixth captured sample. That did not check whether
+the C++ video-update probe had actually written its buffered OBJ,
+render-register and latch-count sidecars at all six nominal labels.
+The first real capture might have shut down with C++ files missing.
+
+The `--auto-exit-after-capture` Lua path now checks the **full 54-file
+set** for all sample labels 900, 902, 904, 906, 908 and 910:
+the five fixed-size Lua binary components, a bounded Lua manifest
+(1..16384 bytes), two fixed-size C++ components (128 and 2048 bytes),
+and the bounded C++ latch sidecar (1..128 bytes). It uses Lua
+`io.open(...,'rb')` and `seek('end')` to check size **without reading
+any file content**. The game exit is requested only after *two later
+callbacks* have observed every file with a valid size; under ordinary
+complete conditions this is nominal frame 912, not frame 911.
+
+If the C++ probe is absent, late, partially written or has an
+unexpected size, the Lua callback holds off automatic exit up to
+120 additional nominal frame numbers after the last Lua sample
+(frame 1030). It then requests an exit so that the local Python
+launcher can **reject the incomplete capture with the ordinary
+strict CRC/FNV/session/ROM checks** and its optional safe failure
+progress diagnostic; it does not wait indefinitely until the launcher
+timeout. Manual-mode runs never inspect C++ sidecars or auto-exit.
+
+The size probes are **metadata evidence only**, not proof of file
+durability, real shared VBlank, independent C++ timing, original game
+authenticity or Nintendo Switch pixel parity. The launcher still
+requires the existing complete Python verification *after* MAME stops.
+Synthetic Lua 5.4 MAME API regressions create artificial C++ files
+covering immediate completion, delayed final sidecar, permanently
+missing sidecars and incorrect final sidecar size. No commercial ROM
+or game frame is used in the public repository.

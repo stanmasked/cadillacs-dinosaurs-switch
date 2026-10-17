@@ -53,6 +53,41 @@ local step=nil
 local captured,last_frame=0,-1
 local last_capture_frame=nil
 local exit_scheduled=false
+local complete_metadata_streak=0
+local AUTO_EXIT_GRACE_FRAMES=120
+
+-- These sizes are mirrored in the Python strict private capture schema.
+-- Checking file lengths is strictly a *post-write readiness hint*.
+-- It is not content validation or a claim that C++ and Lua represent the
+-- same moment. The Python CRC/FNV/session/interval audits remain required.
+local READY_FILES={
+    {'gfxram-be.bin',196608,196608},
+    {'cps-a-be.bin',64,64},
+    {'cps-b-be.bin',64,64},
+    {'palette-rgb24.bin',9216,9216},
+    {'reference-rgb24.bin',258048,258048},
+    {'manifest.json',1,16384},
+    {'render-regs-be.bin',128,128},
+    {'buffered-obj-be.bin',2048,2048},
+    {'obj-latch-count.txt',1,128}
+}
+
+local function all_capture_files_size_ready()
+    -- Probe only existence and length. Never read original frame bytes.
+    for index=0,FRAME_COUNT-1 do
+        local stem=string.format('frame-%08d',START_FRAME+index*FRAME_STEP)
+        for _,rule in ipairs(READY_FILES) do
+            local file=io.open(OUTPUT_DIR..'/'..stem..'.'..rule[1],'rb')
+            if not file then return false end
+            local length=file:seek('end')
+            file:close()
+            if not length or length<rule[2] or length>rule[3] then
+                return false
+            end
+        end
+    end
+    return true
+end
 
 local function write_file(name, bytes)
     local file,err=io.open(OUTPUT_DIR..'/'..name,'wb')
@@ -168,16 +203,29 @@ end
 -- MAME docs: called after video update. Run from -autoboot_script.
 emu.register_frame_done(function()
     local frame=screen.frame_number
-    -- The final capture is nominal frame 910. Do not request a process
-    -- exit in that frame_done callback: let one later frame complete so
-    -- the instrumented C++ video-update hook can finish its own writes.
-    -- This is a safety margin, NOT evidence of callback/VBlank ordering.
+    -- Never stop on frame 910. Two distinct later frame_done callbacks
+    -- must observe all 54 expected files with acceptable sizes. This
+    -- reduces a premature process shutdown but is not proof that writes
+    -- have been fsync'd, are valid, or share actual VBlank provenance.
+    -- If a C++ hook failed, exit after a bounded grace interval so the
+    -- Python launcher reports an incomplete set instead of timing out.
     if captured>=FRAME_COUNT then
         if AUTO_EXIT_AFTER_CAPTURE and last_capture_frame and
            frame>last_capture_frame and not exit_scheduled then
-            exit_scheduled=true
-            print('[cps1 capture] scheduled local exit after six frames')
-            machine:exit()
+            if all_capture_files_size_ready() then
+                complete_metadata_streak=complete_metadata_streak+1
+            else
+                complete_metadata_streak=0
+            end
+            if complete_metadata_streak>=2 then
+                exit_scheduled=true
+                print('[cps1 capture] complete file-size set observed twice; exiting')
+                machine:exit()
+            elseif frame>=last_capture_frame+AUTO_EXIT_GRACE_FRAMES then
+                exit_scheduled=true
+                print('[cps1 capture] C++/Lua file-size set incomplete after grace; exiting for strict local audit')
+                machine:exit()
+            end
         end
         return
     end
