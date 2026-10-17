@@ -45,9 +45,18 @@ class Mame0289BuildRecipeTests(unittest.TestCase):
         self.assertIn("libsdl2-ttf-dev", self.recipe)
         self.assertIn("qt6-base-dev", self.recipe)
 
-    def test_never_collects_game_assets_or_publishes_modified_emulator(self):
+    def test_only_publishes_rom_free_instrumented_emulator_artifact(self):
         self.assertIn("permissions:\n  contents: read", self.recipe)
-        self.assertNotIn("upload-artifact@", self.recipe)
+        self.assertEqual(self.recipe.count("uses: actions/upload-artifact@v4"), 1)
+        self.assertIn("name: mame0289-instrumented-dino-linux-rom-free", self.recipe)
+        self.assertIn("retention-days: 7", self.recipe)
+        self.assertIn("rom-free-dino-linux/", self.recipe)
+        self.assertIn("install -m 0755", self.recipe)
+        self.assertIn("rom-free-empty-set", self.recipe)
+        self.assertIn("Unexpected success verifying an absent dino ROM set", self.recipe)
+        self.assertNotIn("path: $RUNNER_TEMP/mame0289", self.recipe)
+        self.assertNotIn("path: **/*.zip", self.recipe)
+        self.assertNotIn("path: **/*.bin", self.recipe)
         self.assertNotIn("ROM_START(", self.recipe)
         self.assertIn('mame_dino_binary_verify.py', self.recipe)
         self.assertIn('Run session-aware ROM-free verifier regressions', self.recipe)
