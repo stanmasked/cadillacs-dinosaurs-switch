@@ -37,7 +37,14 @@ bool cps1_scene_decode(const uint8_t *blob, size_t length, Cps1Scene *out) {
     s->video_control=get_u16(p); p+=2;
     for (int i=0;i<3;++i) { s->scrollx[i]=get_u16(p);p+=2; }
     for (int i=0;i<3;++i) { s->scrolly[i]=get_u16(p);p+=2; }
-    for (int i=0;i<3;++i) { s->enabled[i]=*p++; }
+    /* The exported binary schema encodes each layer enable as exactly
+     * 0 or 1. Refuse noncanonical values even with a recomputed CRC:
+     * interpreting arbitrary nonzero bytes as true hides corrupt input.
+     */
+    for (int i=0;i<3;++i) {
+        if (*p > 1u) { free(s);return false; }
+        s->enabled[i]=*p++;
+    }
     if (*p++ != 0) { free(s);return false; }
     for (int i=0;i<4;++i) { s->priority[i]=get_u16(p);p+=2; }
     s->rowscroll_offset=get_u16(p);p+=2;
