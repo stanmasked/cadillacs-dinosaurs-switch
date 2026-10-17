@@ -188,6 +188,19 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(
             raw['obj_latch_count_evidence']['obj_byte_fingerprint_verified_count'], 6)
         self.assertFalse(raw['frame_sync_verified'])
+        self.assertEqual(
+            raw['private_capture_completion']['status'],
+            'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY')
+        self.assertTrue(
+            raw['private_capture_completion']['full_check_sequence_completed'])
+        self.assertFalse(
+            raw['private_capture_completion']['pixel_parity_eligible'])
+        self.assertEqual(
+            raw['reference_activity']['changed_reference_intervals'], 5)
+        self.assertEqual(
+            raw['multistream_interval_evidence']['obj_change_intervals'], 0)
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
 
     def test_no_file_output_after_failed_binary_identity_check(self):
         with patch('tools.mame_private_dino_session.inspect_binary',
@@ -223,7 +236,70 @@ class PrivateDinoSessionTests(unittest.TestCase):
             return self.populate_fake_private_capture(args, version=1)
         with self.assertRaisesRegex(ValueError, 'conservative V2'):
             self.run_local(process=old_mame)
-        self.assertTrue((self.workspace / REPORT_NAME).is_file())
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+
+    def test_rgb_check_failure_does_not_publish_partial_report(self):
+        with patch('tools.mame_private_dino_session.reference_activity_diagnostic',
+                   side_effect=ValueError('synthetic RGB late failure')):
+            with self.assertRaisesRegex(ValueError, 'RGB late failure'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+        self.assertTrue((self.workspace / CAPTURE_DIR_NAME).is_dir())
+
+    def test_cross_stream_check_failure_does_not_publish_partial_report(self):
+        with patch('tools.mame_private_dino_session.multistream_interval_evidence',
+                   side_effect=ValueError('synthetic interval late failure')):
+            with self.assertRaisesRegex(ValueError, 'interval late failure'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+
+    def test_malformed_audit_json_does_not_publish_report(self):
+        def write_malformed(argv):
+            out = Path(argv[argv.index('--out') + 1])
+            out.write_bytes(b'{invalid JSON')
+            return 0
+        with patch('tools.mame_private_dino_session.alignment_main',
+                   side_effect=write_malformed):
+            with self.assertRaises(json.JSONDecodeError):
+                self.run_local(process=lambda args, **kw:
+                               subprocess.CompletedProcess(args, 0))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+
+    def test_partial_cli_report_with_error_code_is_not_published(self):
+        def write_then_fail(argv):
+            Path(argv[argv.index('--out') + 1]).write_text('{}')
+            return 2
+        with patch('tools.mame_private_dino_session.alignment_main',
+                   side_effect=write_then_fail):
+            with self.assertRaisesRegex(ValueError, 'incomplete or invalid'):
+                self.run_local(process=lambda args, **kw:
+                               subprocess.CompletedProcess(args, 0))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+
+    def test_report_created_during_emulator_run_is_never_overwritten(self):
+        def fake_emulator_with_foreign_report(args, **kwargs):
+            result = self.populate_fake_private_capture(args)
+            (self.workspace / REPORT_NAME).write_bytes(b'PRIVATE_EXISTING_REPORT')
+            return result
+        with self.assertRaises(FileExistsError):
+            self.run_local(process=fake_emulator_with_foreign_report)
+        self.assertEqual(
+            (self.workspace / REPORT_NAME).read_bytes(),
+            b'PRIVATE_EXISTING_REPORT')
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
 
     def test_cli_preflight_hides_absolute_private_rom_path(self):
         text = io.StringIO()
