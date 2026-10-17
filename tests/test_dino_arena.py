@@ -29,6 +29,8 @@ class Arena(ctypes.Structure):
         ('dummy_attack_frames',ctypes.c_uint8),
         ('dummy_facing_right',ctypes.c_uint8),
         ('player_hits_taken',ctypes.c_uint8),
+        ('player_moving',ctypes.c_uint8),
+        ('dummy_moving',ctypes.c_uint8),
     ]
 
 
@@ -49,6 +51,12 @@ class ArenaPrototypeTests(unittest.TestCase):
         cls.lib.dino_arena_reset.argtypes=[ctypes.POINTER(Arena)]
         cls.lib.dino_arena_step.argtypes=[
             ctypes.POINTER(Arena),ctypes.c_uint32,ctypes.c_uint32]
+        cls.lib.dino_arena_player_pose.argtypes=[ctypes.POINTER(Arena)]
+        cls.lib.dino_arena_player_pose.restype=ctypes.c_int
+        cls.lib.dino_arena_dummy_pose.argtypes=[ctypes.POINTER(Arena)]
+        cls.lib.dino_arena_dummy_pose.restype=ctypes.c_int
+        cls.lib.dino_arena_pose_phase.argtypes=[ctypes.POINTER(Arena)]
+        cls.lib.dino_arena_pose_phase.restype=ctypes.c_uint8
 
     @classmethod
     def tearDownClass(cls):
@@ -282,6 +290,105 @@ class ArenaPrototypeTests(unittest.TestCase):
         self.assertEqual(tuple(getattr(p,k) for k in values),
                          tuple(getattr(q,k) for k in values))
         self.assertEqual(p.ticks,700)
+
+    def test_pose_api_is_idle_by_default_and_handles_null(self):
+        p=self.new()
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),0)
+        self.assertEqual(self.lib.dino_arena_dummy_pose(ctypes.byref(p)),0)
+        self.assertEqual(self.lib.dino_arena_pose_phase(ctypes.byref(p)),0)
+        self.assertEqual(self.lib.dino_arena_player_pose(None),5)
+        self.assertEqual(self.lib.dino_arena_dummy_pose(None),5)
+        self.assertEqual(self.lib.dino_arena_pose_phase(None),0)
+
+    def test_actual_player_displacement_drives_walk_pose_not_held_button(self):
+        p=self.new()
+        self.step(p,held=RIGHT)
+        self.assertEqual((p.player_moving,
+                          self.lib.dino_arena_player_pose(ctypes.byref(p))),(1,1))
+        self.step(p)
+        self.assertEqual((p.player_moving,
+                          self.lib.dino_arena_player_pose(ctypes.byref(p))),(0,0))
+        p.x=368
+        self.step(p,held=RIGHT)
+        self.assertEqual(p.player_moving,0)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),0)
+
+    def test_jump_and_attack_poses_have_explicit_priority(self):
+        p=self.new()
+        self.step(p,held=RIGHT,pressed=JUMP)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),2)
+        self.step(p,held=RIGHT,pressed=ATTACK)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),3)
+        for _ in range(8):self.step(p)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),2)
+        for _ in range(20):self.step(p)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),0)
+
+    def test_enemy_pursuit_and_windup_pose_transitions(self):
+        p=self.new()
+        self.step(p,pressed=SPAR)
+        self.assertEqual((p.dummy_moving,
+                          self.lib.dino_arena_dummy_pose(ctypes.byref(p))),(1,1))
+        p.x=220
+        self.step(p)
+        self.assertEqual(self.lib.dino_arena_dummy_pose(ctypes.byref(p)),6)
+        for _ in range(12):self.step(p)
+        self.assertEqual(self.lib.dino_arena_dummy_pose(ctypes.byref(p)),3)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),4)
+
+    def test_damage_reaction_wins_over_previous_attack_frames(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual(self.lib.dino_arena_dummy_pose(ctypes.byref(p)),4)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),3)
+        self.assertEqual(p.dummy_windup,0)
+
+    def test_ko_wins_over_every_other_animation_flag(self):
+        p=self.new()
+        p.player_hp=0
+        p.player_hitstun=5
+        p.attack_frames=4
+        p.z=17
+        p.player_moving=1
+        p.dummy_hp=0
+        p.dummy_hitstun=5
+        p.dummy_windup=8
+        p.dummy_attack_frames=2
+        p.dummy_moving=1
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),5)
+        self.assertEqual(self.lib.dino_arena_dummy_pose(ctypes.byref(p)),5)
+
+    def test_pose_phase_changes_only_on_six_tick_boundaries(self):
+        p=self.new()
+        for tick in range(25):
+            self.assertEqual(self.lib.dino_arena_pose_phase(ctypes.byref(p)),
+                             (tick//6)&1)
+            self.step(p)
+        self.assertEqual(p.ticks,25)
+
+    def test_pose_queries_never_modify_simulation_state(self):
+        p=self.new()
+        self.step(p,held=RIGHT|DOWN,pressed=SPAR|JUMP)
+        before=tuple(getattr(p,key) for key,_ in Arena._fields_)
+        for _ in range(20):
+            self.lib.dino_arena_player_pose(ctypes.byref(p))
+            self.lib.dino_arena_dummy_pose(ctypes.byref(p))
+            self.lib.dino_arena_pose_phase(ctypes.byref(p))
+        after=tuple(getattr(p,key) for key,_ in Arena._fields_)
+        self.assertEqual(before,after)
+
+    def test_movement_flags_clear_after_ko_and_hitstun(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        for _ in range(12):self.step(p)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),4)
+        self.step(p,held=LEFT)
+        self.assertEqual(p.player_moving,0)
+        p.player_hp=0
+        self.step(p,held=LEFT)
+        self.assertEqual(p.player_moving,0)
+        self.assertEqual(self.lib.dino_arena_player_pose(ctypes.byref(p)),5)
 
     def test_null_pointer_is_safe_for_both_native_functions(self):
         self.lib.dino_arena_reset(None)
