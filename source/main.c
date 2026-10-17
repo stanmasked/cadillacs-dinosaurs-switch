@@ -269,6 +269,15 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
         rectangle(frame,pitch,x-17,y-7,34,8,rgb(26,37,40));
         rectangle(frame,pitch,x-16,y-102,32,94,
                   arena->dummy_hitstun?rgb(247,196,120):rgb(190,126,74));
+        if (arena->dummy_windup) {
+            /* Bright outline telegraphs an imminent sparring attack. */
+            rectangle(frame,pitch,x-20,y-112,4,110,rgb(254,224,69));
+            rectangle(frame,pitch,x+16,y-112,4,110,rgb(254,224,69));
+        }
+        if (arena->dummy_attack_frames) {
+            const int ax=x+(arena->dummy_facing_right?17:-77);
+            rectangle(frame,pitch,ax,y-70,60,18,rgb(246,142,94));
+        }
         rectangle(frame,pitch,x-12,y-113,24,16,rgb(231,202,142));
         /* Three neutral pips represent the dummy's remaining health. */
         for (unsigned i=0;i<arena->dummy_hp;++i)
@@ -278,7 +287,9 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
     const int py=oy+arena->y*scale;
     const int rise=arena->z*scale;
     rectangle(frame,pitch,px-16,py-7,32,7,rgb(27,39,43));
-    rectangle(frame,pitch,px-16,py-rise-74,32,67,rgb(62,180,208));
+    rectangle(frame,pitch,px-16,py-rise-74,32,67,
+              arena->player_hitstun?rgb(251,121,106):
+              arena->player_invuln?rgb(111,136,184):rgb(62,180,208));
     rectangle(frame,pitch,px-12,py-rise-92,24,18,rgb(231,218,164));
     rectangle(frame,pitch,px+(arena->facing_right?9:-15),
               py-rise-63,6,13,rgb(238,233,210));
@@ -289,12 +300,14 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
     rectangle(frame,pitch,0,661,1280,59,rgb(11,18,29));
     char status[115];
     snprintf(status,sizeof(status),
-             "X %03d  DEPTH %03d  JUMP %02d  HITS %03u  DUMMY HP %u",
-             (int)arena->x,(int)arena->y,(int)arena->z,
-             (unsigned)arena->successful_hits,(unsigned)arena->dummy_hp);
+             "X %03d  DEPTH %03d  HITS %03u  PLAYER HP %u  DUMMY HP %u  %s",
+             (int)arena->x,(int)arena->y,
+             (unsigned)arena->successful_hits,(unsigned)arena->player_hp,
+             (unsigned)arena->dummy_hp,
+             arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
     label(frame,pitch,52,698,
-          "DPAD MOVE   A ATTACK   B JUMP   Y RESET   PLUS EXIT",
+          "DPAD MOVE  A ATTACK  B JUMP  X SPAR  Y RESET  PLUS EXIT",
           1,rgb(182,207,219));
     if (have_gfx)
         label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,rgb(169,210,182));
@@ -400,6 +413,7 @@ int main(int argc, char **argv) {
             if (held & HidNpadButton_Down) held_arena|=DINO_ARENA_DOWN;
             if (down & HidNpadButton_A) pending_actions|=DINO_ARENA_ATTACK;
             if (down & HidNpadButton_B) pending_actions|=DINO_ARENA_JUMP;
+            if (down & HidNpadButton_X) pending_actions|=DINO_ARENA_TOGGLE_SPAR;
             arena_clock_carry+=elapsed_ns*60u;
             uint32_t arena_ticks=(uint32_t)(arena_clock_carry/1000000000ULL);
             arena_clock_carry%=1000000000ULL;
