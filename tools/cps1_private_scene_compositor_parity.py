@@ -30,6 +30,12 @@ PIXELS = WIDTH * HEIGHT
 FRAME_BYTES = PIXELS * 4
 GFX_BYTES = 0x400000
 ORDER_CODES = {'sprites': 0, 'scroll1': 1, 'scroll2': 2, 'scroll3': 3}
+GROUP_UNMASKED_CASES = {
+    'priority_group0_unmasked': 0,
+    'priority_group1_unmasked': 1,
+    'priority_group2_unmasked': 2,
+    'priority_group3_unmasked': 3,
+}
 
 
 def _order(*layers):
@@ -72,6 +78,8 @@ def synthetic_scene(name):
         'palette_channels_shift': (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0),
         'scroll1_priority': (('scroll3', 'scroll2', 'scroll1', 'sprites'), 0),
         'scroll1_unmasked': (('scroll3', 'scroll2', 'scroll1', 'sprites'), 0),
+        **{name: (('scroll3', 'scroll1', 'scroll2', 'sprites'), 0)
+           for name in GROUP_UNMASKED_CASES},
     }
     if name not in options:
         raise ValueError('Unsupported synthetic compositor parity case')
@@ -87,6 +95,9 @@ def synthetic_scene(name):
         regs = [0xffff] * 4
     elif name == 'priority_group_selective':
         regs = [0x5555, 0xaaaa, 0x0f0f, 0xf0f0]
+    elif name in GROUP_UNMASKED_CASES:
+        regs = [0x7fff] * 4
+        regs[GROUP_UNMASKED_CASES[name]] = 0
     elif name in ('unmasked_sprite', 'transparent_palette_unused',
                   'palette_channels_shift', 'scroll1_unmasked'):
         regs = [0] * 4
@@ -141,6 +152,7 @@ CASES = (
     'priority_transparent_bit', 'priority_group_selective',
     'transparent_palette_unused', 'palette_channels_shift',
     'scroll1_priority', 'scroll1_unmasked',
+    *GROUP_UNMASKED_CASES,
     'rowscroll_flip', 'sprite_under_layers',
 )
 
@@ -153,6 +165,8 @@ DIFFERENTIAL_EXPECTATIONS = {
     'transparent_palette_changed_rgba_pixels': False,
     'palette_remap_changed_rgba_pixels': True,
     'scroll1_priority_changed_rgba_pixels': True,
+    **{'priority_group{}_individual_changed_rgba_pixels'.format(i): True
+       for i in range(4)},
 }
 
 
@@ -218,6 +232,9 @@ def compare_private_native_scene_compositor(archive):
         baselines = {}
         effects = {}
         paired_cases = {
+            **{name: ('priority_sprite',
+                      'priority_group{}_individual_changed_rgba_pixels'.format(index))
+               for name, index in GROUP_UNMASKED_CASES.items()},
             'unmasked_sprite': ('priority_sprite',
                                 'priority_mask_changed_rgba_pixels'),
             'priority_transparent_bit': ('priority_sprite',
