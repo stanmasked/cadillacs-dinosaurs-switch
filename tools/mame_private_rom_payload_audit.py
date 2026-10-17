@@ -28,6 +28,7 @@ MAX_ZIP_ENTRIES = 128
 MAX_TOTAL_DECODED_BYTES = 32 * 1024 * 1024
 MAX_MEMBER_BYTES = 2 * 1024 * 1024
 READ_CHUNK_SIZE = 65536
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _safe_metadata(st):
@@ -161,6 +162,14 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
     metadata = root.lstat()
     if not stat.S_ISDIR(metadata.st_mode):
         raise ValueError('Private ROM root is not a real directory')
+    resolved = root.resolve(strict=True)
+    source = PROJECT_ROOT.resolve(strict=True)
+    # A copy of commercial game data placed anywhere inside the public
+    # project (or in its parent) can be accidentally tracked or uploaded.
+    # A private ROM directory must be physically isolated from it.
+    if (resolved == source or resolved in source.parents or
+            source in resolved.parents):
+        raise ValueError('Private ROM root must stay outside the project tree')
     game = root / 'dino.zip'
     device = root / 'qsound_hle.zip'
     pair_before = _archive_pair_metadata(game, device)
