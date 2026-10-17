@@ -11,9 +11,10 @@ import re
 PREFIX_V1 = b'CPS1_DINO_LATCH_V1 '
 LINE_RE_V1 = re.compile(rb'CPS1_DINO_LATCH_V1 (0|[1-9][0-9]*)\n\Z')
 LINE_RE_V2 = re.compile(
-    rb'CPS1_DINO_LATCH_V2 (0|[1-9][0-9]*) ([0-9a-f]{16})\n\Z')
+    rb'CPS1_DINO_LATCH_V2 (0|[1-9][0-9]*) ([0-9a-f]{16})\n'\
+    rb'(?:CPS1_DINO_SESSION ([0-9a-f]{32})\n)?\Z')
 MAX_COUNT = (1 << 64) - 1
-MAX_LINE_BYTES = 80
+MAX_LINE_BYTES = 128
 FNV_OFFSET = 14695981039346656037
 FNV_PRIME = 1099511628211
 
@@ -57,6 +58,7 @@ def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
     frames = [first_frame + i * frame_step for i in range(frame_count)]
     counts = []
     versions = []
+    session_ids = []
     for index, frame in enumerate(frames):
         path = root / (f'frame-{frame:08d}.obj-latch-count.txt')
         with path.open('rb') as source:
@@ -74,9 +76,11 @@ def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
             if declared_fnv != actual_fnv:
                 raise ValueError(f'{path.name}: buffered OBJ fingerprint mismatch')
             value = int(match_v2.group(1))
+            session_ids.append(match_v2.group(3))
         elif match_v1:
             version = 1
             value = int(match_v1.group(1))
+            session_ids.append(None)
         else:
             raise ValueError(f'{path.name}: malformed latch-counter sidecar')
         if versions and version != versions[0]:
@@ -87,6 +91,9 @@ def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
             raise ValueError(f'{path.name}: latch counter decreased; possible MAME reset')
         versions.append(version)
         counts.append(value)
+
+    if any(label != session_ids[0] for label in session_ids):
+        raise ValueError('Mixed or missing private MAME session labels')
 
     differences = [after - before for before, after in zip(counts, counts[1:])]
     changes_without_latch = (
@@ -104,6 +111,8 @@ def latch_counter_diagnostic(directory, first_frame, frame_count, frame_step,
         'obj_byte_fingerprint_verified_count': (
             frame_count if versions[0] == 2 else 0),
         'obj_byte_fingerprint_is_cryptographic': False,
+        'capture_session_tagged_samples': (frame_count if session_ids[0] else 0),
+        'capture_session_label_consistent': bool(session_ids[0]),
         'capture_source': 'MAME_0289_CPP_CPS1_OBJRAM_LATCH_CALL_COUNTER',
         'nominal_frame_labels': frames,
         'observed_latch_callback_counts': counts,
