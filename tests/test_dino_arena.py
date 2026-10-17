@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
-LEFT=1;RIGHT=2;UP=4;DOWN=8;ATTACK=16;JUMP=32
+LEFT=1;RIGHT=2;UP=4;DOWN=8;ATTACK=16;JUMP=32;SPAR=64
 
 
 class Arena(ctypes.Structure):
@@ -23,6 +23,12 @@ class Arena(ctypes.Structure):
         ('facing_right',ctypes.c_uint8),('dummy_hp',ctypes.c_uint8),
         ('dummy_hitstun',ctypes.c_uint8),('attack_frames',ctypes.c_uint8),
         ('attack_cooldown',ctypes.c_uint8),
+        ('sparring',ctypes.c_uint8),('player_hp',ctypes.c_uint8),
+        ('player_hitstun',ctypes.c_uint8),('player_invuln',ctypes.c_uint8),
+        ('dummy_windup',ctypes.c_uint8),('dummy_cooldown',ctypes.c_uint8),
+        ('dummy_attack_frames',ctypes.c_uint8),
+        ('dummy_facing_right',ctypes.c_uint8),
+        ('player_hits_taken',ctypes.c_uint8),
     ]
 
 
@@ -161,6 +167,121 @@ class ArenaPrototypeTests(unittest.TestCase):
         self.assertEqual(tuple(getattr(p,k) for k in fields),
                          tuple(getattr(q,k) for k in fields))
         self.assertEqual(p.ticks,300)
+
+    def test_optional_sparring_defaults_off_and_toggles_explicitly(self):
+        p=self.new()
+        self.assertFalse(p.sparring)
+        self.assertEqual(p.player_hp,5)
+        self.assertEqual(p.dummy_hp,3)
+        self.step(p)
+        self.assertEqual(p.dummy_x,250)
+        self.step(p,pressed=SPAR)
+        self.assertTrue(p.sparring)
+        self.assertEqual((p.player_hp,p.dummy_hp),(5,3))
+        self.step(p,pressed=SPAR)
+        self.assertFalse(p.sparring)
+        self.assertEqual((p.dummy_windup,p.dummy_attack_frames),(0,0))
+
+    def test_sparring_enemy_chases_without_overlapping_player(self):
+        p=self.new()
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.dummy_x,249)
+        for _ in range(40):self.step(p)
+        self.assertEqual(p.dummy_x,209)
+        self.assertGreaterEqual(abs(p.dummy_x-p.x),14)
+        self.assertEqual((p.dummy_y,p.player_hp),(151,5))
+
+    def test_same_lane_body_collision_prevents_crossing(self):
+        p=self.new();p.x=235
+        self.step(p,pressed=SPAR)
+        for _ in range(20):self.step(p,held=RIGHT)
+        self.assertEqual(p.x,236)
+        self.assertGreaterEqual(p.dummy_x-p.x,14)
+        self.assertEqual(p.y,151)
+
+    def test_different_depth_lane_can_pass_opponent(self):
+        p=self.new();p.x=235;p.y=185
+        self.step(p,pressed=SPAR)
+        for _ in range(15):self.step(p,held=RIGHT)
+        self.assertGreater(p.x,250)
+
+    def test_enemy_telegraph_then_single_damage_and_invulnerability(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.dummy_windup,12)
+        for _ in range(11):self.step(p)
+        self.assertEqual((p.player_hp,p.player_hits_taken),(5,0))
+        self.step(p)
+        self.assertEqual((p.player_hp,p.player_hits_taken),(4,1))
+        self.assertEqual(p.player_invuln,30)
+        self.assertEqual(p.dummy_attack_frames,7)
+        for _ in range(25):self.step(p)
+        self.assertEqual((p.player_hp,p.player_hits_taken),(4,1))
+
+    def test_moving_away_after_telegraph_dodges_attack(self):
+        p=self.new();p.x=210
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.dummy_windup,12)
+        for _ in range(12):self.step(p,held=LEFT)
+        self.assertEqual(p.player_hp,5)
+        self.assertEqual(p.dummy_windup,0)
+        self.assertGreater(abs(p.x-p.dummy_x),44)
+
+    def test_jump_during_telegraph_dodges_attack(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        for i in range(12):self.step(p,pressed=JUMP if i==0 else 0)
+        self.assertGreater(p.z,20)
+        self.assertEqual((p.player_hp,p.player_hits_taken),(5,0))
+
+    def test_player_hit_interrupts_enemy_attack_and_stuns(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        self.assertEqual(p.dummy_windup,12)
+        self.step(p,pressed=ATTACK)
+        self.assertEqual((p.dummy_hp,p.successful_hits),(2,1))
+        self.assertEqual((p.dummy_windup,p.dummy_hitstun),(0,9))
+        for _ in range(7):self.step(p)
+        self.assertEqual(p.player_hp,5)
+
+    def test_player_ko_freezes_controls_until_reset(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        for _ in range(400):
+            self.step(p)
+            if p.player_hp==0:break
+        self.assertEqual((p.player_hp,p.player_hits_taken),(0,5))
+        x=p.x
+        self.step(p,held=LEFT,pressed=ATTACK|JUMP)
+        self.assertEqual((p.x,p.z,p.attack_frames),(x,0,0))
+        self.lib.dino_arena_reset(ctypes.byref(p))
+        self.assertEqual((p.player_hp,p.dummy_hp,p.sparring),(5,3,0))
+
+    def test_dead_enemy_cannot_telegraph_or_damage(self):
+        p=self.new();p.x=220
+        self.step(p,pressed=SPAR)
+        for _ in range(3):
+            self.step(p,pressed=ATTACK)
+            for __ in range(15):self.step(p)
+        self.assertEqual(p.dummy_hp,0)
+        self.assertEqual(p.dummy_windup,0)
+        hp=p.player_hp
+        for _ in range(120):self.step(p)
+        self.assertEqual(p.player_hp,hp)
+
+    def test_sparring_700_tick_replay_is_byte_identical(self):
+        p=self.new();q=self.new()
+        for t in range(700):
+            held=(RIGHT if t%71<34 else LEFT)|(UP if t%39<17 else DOWN)
+            pressed=(SPAR if t in (0,350) else 0)
+            pressed|=(ATTACK if t%19==0 else 0)
+            pressed|=(JUMP if t%53==0 else 0)
+            self.step(p,held,pressed)
+            self.step(q,held,pressed)
+        values=[name for name,_ in Arena._fields_]
+        self.assertEqual(tuple(getattr(p,k) for k in values),
+                         tuple(getattr(q,k) for k in values))
+        self.assertEqual(p.ticks,700)
 
     def test_null_pointer_is_safe_for_both_native_functions(self):
         self.lib.dino_arena_reset(None)
