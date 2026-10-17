@@ -31,7 +31,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.roms = self.root / 'privately-owned-roms'
         self.roms.mkdir()
         self.workspace = self.root / 'private-workspace'
-        self.workspace.mkdir()
+        self.workspace.mkdir(mode=0o700)
 
     @staticmethod
     def compiled_dino_identity(*args, **kwargs):
@@ -99,6 +99,20 @@ class PrivateDinoSessionTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), b'PRIVATE_DO_NOT_OVERWRITE')
                 path.unlink()
 
+    def test_workspace_must_not_expose_local_game_data_to_other_users(self):
+        if os.name != 'posix':
+            self.skipTest('POSIX permissions required')
+        self.workspace.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, '0700-style'):
+            preflight(self.mame, self.build, self.roms, self.workspace)
+        self.workspace.chmod(0o700)
+
+    def test_executable_symlink_is_rejected_before_resolving(self):
+        link=self.root / 'mame-symlink'
+        link.symlink_to(self.mame)
+        with self.assertRaisesRegex(ValueError, 'symlink'):
+            preflight(link, self.build, self.roms, self.workspace)
+
     def test_missing_mame_source_rom_or_workspace_refused(self):
         params = [
             (self.root / 'no-mame', self.build, self.roms, self.workspace),
@@ -147,6 +161,9 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse(report['obj_latch_age_verified'])
         self.assertFalse(report['pixel_parity_eligible'])
         self.assertTrue((self.workspace / LOG_NAME).is_file())
+        if os.name == 'posix':
+            self.assertEqual((self.workspace / LOG_NAME).stat().st_mode & 0o777, 0o600)
+            self.assertEqual((self.workspace / REPORT_NAME).stat().st_mode & 0o777, 0o600)
         raw = json.loads((self.workspace / REPORT_NAME).read_text())
         self.assertEqual(
             raw['obj_latch_count_evidence']['obj_byte_fingerprint_verified_count'], 6)
