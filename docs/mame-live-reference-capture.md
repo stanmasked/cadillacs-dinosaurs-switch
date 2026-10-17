@@ -961,3 +961,52 @@ original commercial ROMs and does not execute an actual ROM audit**.
 Consult the [official MAME -verifyroms documentation](https://docs.mamedev.org/commandline/commandline-all.html)
 for more on what MAME checks. A successful ROM audit still cannot
 verify genuine gameplay, physical VBlank, OBJ age or Switch pixel parity.
+
+
+## Stage 86 — mandatory *same-invocation* ROM audit before the first private capture
+
+Stage 85 added a separate local MAME `-verifyroms` diagnostic, but its
+result was not linked to the subsequent real-game capture invocation. To
+avoid trusting a historical audit (which might refer to a different MAME
+binary, modified set, or user action), the private launcher now supports a
+**single opt-in guarded launch**:
+
+```sh
+python3 tools/mame_private_dino_session.py \
+  --mame /private/mame0289/dino \
+  --mame-tree /private/mame0289 \
+  --rom-dir /private/owned-mame-roms \
+  --workspace /private/new-empty-dino-workspace \
+  --verify-private-romset-before-capture
+```
+
+Within this one local invocation, the launcher verifies the linked MAME
+0.289 `dino` build, checks the private set's filesystem entry, then
+executes that **same local MAME binary** in `dino -verifyroms` mode,
+with `-noreadconfig`. As in Stage 85, MAME itself reads private original
+game bytes, while Python never opens them. Details go exclusively into
+a fresh local 0600 ROM-verification log. Only a zero MAME exit code
+permits a **second**, separately labeled MAME `dino` game process and
+the usual six-frame Lua/C++ collection. The game command also uses
+`-noreadconfig` so local MAME configuration files cannot silently
+override its declared capture settings.
+
+A missing/invalid set, MAME failure/timeout, identity mismatch or existing
+verification log halts the guarded operation before generating a game
+session token, private capture folder or final diagnostic report. The
+log is never clobbered or echoed to GitHub. A successful local capture
+records `local_mame_verifyroms_exit_zero_before_capture: true`
+in its **private-only** completion report; ordinary unguarded captures
+record `false`. This boolean means only that the local MAME audit
+subprocess exited successfully. It **does not authenticate original
+game ownership or execution**, guarantee the ROM bytes are immutable
+between audit and gameplay, or establish CPS-1 physical frame age,
+video parity or a working Nintendo Switch game.
+
+The original `--verify-private-romset-only` option remains available;
+it cannot be combined with the new guarded-launch option. New ROM-free
+synthetic tests verify process sequence, secure private log, no token
+on audit, timeout/failure refusal before capture-folder creation,
+stale-audit rejection, lack of false claims in the unguarded path,
+CLI privacy and mutually exclusive modes. **No original ROM data is
+run in public GitHub CI.**
