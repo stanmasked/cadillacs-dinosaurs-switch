@@ -27,7 +27,7 @@ _CAPTURE_NAMES = frozenset((
     'gfxram-be.bin', 'cps-a-be.bin', 'cps-b-be.bin',
     'palette-rgb24.bin', 'reference-rgb24.bin',
 ))
-_CRC_FORMAT = re.compile(r'[0-9a-f]{8}\\Z')
+_CRC_FORMAT = re.compile(r'[0-9a-f]{8}\Z')
 
 
 def _register_crc_evidence(snapshot, cps_a, cps_b):
