@@ -9,6 +9,7 @@ import zlib
 
 from tools.mame_obj_sequence_alignment import (
     audit_sequence, read_frames, main, COMPONENTS, CAPTURE_SCHEMA,
+    CAPTURE_SIZES,
 )
 
 
@@ -29,9 +30,17 @@ def make_directory(directory, renders, lua, first=900, step=2):
         frame=first+idx*step
         stem=f'frame-{frame:08d}'
         a,b=split_regs(other)
-        crc={name:'00000000' for name in COMPONENTS}
-        crc['cps-a-be.bin']=f'{zlib.crc32(a) & 0xffffffff:08x}'
-        crc['cps-b-be.bin']=f'{zlib.crc32(b) & 0xffffffff:08x}'
+        # Real capture manifests bind all five components. Use complete
+        # fabricated capture files rather than placeholder digest strings.
+        synthetic={
+            'gfxram-be.bin': bytes([idx % 251]) * CAPTURE_SIZES['gfxram-be.bin'],
+            'cps-a-be.bin': a,
+            'cps-b-be.bin': b,
+            'palette-rgb24.bin': bytes([idx % 127]) * CAPTURE_SIZES['palette-rgb24.bin'],
+            'reference-rgb24.bin': bytes([idx % 199]) * CAPTURE_SIZES['reference-rgb24.bin'],
+        }
+        crc={name: f'{zlib.crc32(blob) & 0xffffffff:08x}'
+             for name,blob in synthetic.items()}
         manifest={
             'game':'dino', 'frame':frame, 'capture_hook':'frame_done',
             'obj_latch':'NOT_CAPTURED', 'pixel_parity_eligible':False,
@@ -39,8 +48,8 @@ def make_directory(directory, renders, lua, first=900, step=2):
             **CAPTURE_SCHEMA,
         }
         (directory/(stem+'.manifest.json')).write_text(json.dumps(manifest))
-        (directory/(stem+'.cps-a-be.bin')).write_bytes(a)
-        (directory/(stem+'.cps-b-be.bin')).write_bytes(b)
+        for filename, data in synthetic.items():
+            (directory/(stem+'.'+filename)).write_bytes(data)
         (directory/(stem+'.render-regs-be.bin')).write_bytes(render)
         (directory/(stem+'.buffered-obj-be.bin')).write_bytes(bytes(2048))
 
