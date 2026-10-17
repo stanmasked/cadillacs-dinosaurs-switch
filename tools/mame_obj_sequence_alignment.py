@@ -293,7 +293,8 @@ def main(argv=None):
             report['obj_latch_count_evidence'] = latch_counter_diagnostic(
                 args.capture_dir, args.first_frame, args.frame_count,
                 args.frame_step,
-                report['obj_buffer_evidence']['changed_obj_slots_per_interval'])
+                report['obj_buffer_evidence']['changed_obj_slots_per_interval'],
+                obj_frames=obj_frames)
         else:
             report['obj_latch_count_evidence'] = {
                 'status': 'NOT_REQUESTED',
