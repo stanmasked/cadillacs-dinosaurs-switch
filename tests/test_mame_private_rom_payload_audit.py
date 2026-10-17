@@ -159,6 +159,51 @@ class PrivateDinoPayloadAuditTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._audit()
 
+    def test_first_archive_changed_during_device_scan_refuses_result(self):
+        original = audit._catalog_payload_check
+
+        def mutate_first_during_second(path, catalog):
+            counts = original(path, catalog)
+            if path.name == 'qsound_hle.zip':
+                # Each per-file scan has finished; only the pair-wide
+                # follow-up gate can catch this later first-ZIP change.
+                with (self.root / 'dino.zip').open('ab') as target:
+                    target.write(b'FABRICATED_TRAILER')
+            return counts
+
+        with patch.object(audit, '_catalog_payload_check',
+                          side_effect=mutate_first_during_second):
+            with self.assertRaisesRegex(ValueError, 'paired ROM archives changed'):
+                self._audit()
+
+    def test_second_archive_swapped_after_game_scan_is_detected(self):
+        original = audit._catalog_payload_check
+
+        def swap_device_between_scans(path, catalog):
+            counts = original(path, catalog)
+            if path.name == 'dino.zip':
+                previous = self.root / 'qsound_hle.zip'
+                replacement = self.root / 'synthetic-replacement.zip'
+                replacement.write_bytes(previous.read_bytes())
+                replacement.replace(previous)
+            return counts
+
+        with patch.object(audit, '_catalog_payload_check',
+                          side_effect=swap_device_between_scans):
+            with self.assertRaisesRegex(ValueError, 'paired ROM archives changed'):
+                self._audit()
+
+    def test_symlinked_device_is_refused_before_any_payload_scan(self):
+        device = self.root / 'qsound_hle.zip'
+        backing = self.root / 'synthetic-device.zip'
+        device.rename(backing)
+        device.symlink_to(backing)
+        with patch.object(audit, '_catalog_payload_check',
+                          side_effect=AssertionError('must not read a ROM')) as read:
+            with self.assertRaisesRegex(ValueError, 'pair entry unsafe'):
+                self._audit()
+        read.assert_not_called()
+
     def test_excessively_large_catalog_member_is_refused(self):
         broken = dict(self.game_catalog)
         broken['fake-program.bin'] = (audit.MAX_MEMBER_BYTES + 1, 0)
