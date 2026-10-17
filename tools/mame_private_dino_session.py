@@ -28,6 +28,7 @@ try:
                                                      require_stable_private_capture)
     from tools.mame_capture_session_binding import require_private_capture_session
     from tools.mame_private_interval_consistency import private_nominal_interval_consistency
+    from tools.mame_private_capture_triage import private_capture_triage
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -37,6 +38,7 @@ except ModuleNotFoundError:
                                                require_stable_private_capture)
     from mame_capture_session_binding import require_private_capture_session
     from mame_private_interval_consistency import private_nominal_interval_consistency
+    from mame_private_capture_triage import private_capture_triage
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -263,6 +265,12 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
                 result, intervals, FIRST_FRAME, FRAME_STEP, FRAME_COUNT))
         result['private_capture_source_stability'] = require_stable_private_capture(
             capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+        # Interpret only validated counts and fixed guidance codes. Never
+        # include original RGB/OBJ, source paths or random session tokens.
+        result['private_capture_triage'] = private_capture_triage(
+            activity, intervals, result['capture_session_binding'],
+            result['private_nominal_interval_consistency'],
+            result['private_capture_source_stability'], frame_count=FRAME_COUNT)
         result['private_capture_completion'] = {
             'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
             'full_check_sequence_completed': True,
@@ -297,6 +305,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         'multistream_interval_evidence': intervals,
         'capture_session_binding': result['capture_session_binding'],
         'private_nominal_interval_consistency': result['private_nominal_interval_consistency'],
+        'private_capture_triage': result['private_capture_triage'],
         'nominal_frame_count': FRAME_COUNT,
         'crc32_lua_components_checked': FRAME_COUNT * 5,
         'bound_cpp_obj_samples': FRAME_COUNT,

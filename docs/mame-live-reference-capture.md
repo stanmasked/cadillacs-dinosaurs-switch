@@ -650,3 +650,36 @@ aggregates, labels, V2 session gate and the local final-publication block.
 This is a check on redundant metadata emitted by the **same MAME process**.
 Its success cannot authenticate commercial gameplay, physical VBlank
 ordering, displayed frame age or pixel parity on Nintendo Switch.
+
+
+## Stage 77 — fixed-vocabulary triage for the first private six-frame capture
+
+The private MAME runner now adds a **small human-actionable summary** under
+`private_capture_triage` after all previous integrity checks succeed.
+The new `tools/mame_private_capture_triage.py` consumes only already
+validated RGB, OBJ and latch interval summaries, plus the six-sample
+same-process label check, cumulative-counter reconciliation and 54-file
+source stability verification. It emits **fixed, non-sensitive reason codes**
+for common follow-up investigations: all-black or static RGB, one-color
+frames, absent OBJ changes, absent latch increments, apparently divergent
+OBJ/callback activity or nonoverlapping RGB/OBJ changes.
+
+Reports with no evident variation are marked
+`LOW_INFORMATION_FOR_PRIVATE_CAPTURE_TRIAGE`. Contrasting observations
+are marked `DIVERGENT_NOMINAL_STREAMS_REQUIRE_INSPECTION`; otherwise
+co-variation is only `CO_VARIATION_OBSERVED_WITHOUT_TIMING_PROOF`. All
+statuses remain diagnostic only, with explicit false active-gameplay,
+original-game authenticity, hardware VBlank, frame-age, synchronization
+and Switch pixel-parity claims. If there are no informational cautions,
+the recommendation is to obtain an **independent VBlank timing reference**.
+The report never copies arbitrary warnings, file paths, ROM/RGB/OBJ
+bytes, image screenshots, session tokens or hash values from its inputs.
+
+Triage is an additional fail-closed gate before exclusive publication
+of the final private JSON. A malformed/contradictory integrity result
+refuses to publish the final report; the private raw capture and log stay
+untouched. ROM-free synthetic cases cover clean and divergent streams,
+black/static/single-color frames, missing safeguards, malformed totals,
+privacy redaction and failure after earlier audit gates. This is a
+**decision aid**, not a substitute for actual private ROM gameplay or
+independently timed original CPS-1 video evidence.

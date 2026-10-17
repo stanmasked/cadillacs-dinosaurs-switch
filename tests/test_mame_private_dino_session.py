@@ -337,6 +337,11 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(consistency['nominal_intervals_checked'], 5)
         self.assertTrue(consistency['cumulative_latch_deltas_match'])
         self.assertFalse(consistency['frame_sync_verified'])
+        triage = report['private_capture_triage']
+        self.assertEqual(triage['status'], 'LOW_INFORMATION_FOR_PRIVATE_CAPTURE_TRIAGE')
+        self.assertIn('INSPECT_PRIVATE_OBJ_ACTIVITY',
+                      triage['next_local_investigation_codes'])
+        self.assertFalse(triage['active_gameplay_verified'])
         self.assertTrue((self.workspace / LOG_NAME).is_file())
         if os.name == 'posix':
             self.assertEqual((self.workspace / LOG_NAME).stat().st_mode & 0o777, 0o600)
@@ -347,6 +352,8 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse(raw['frame_sync_verified'])
         self.assertTrue(raw['capture_session_binding']['shared_session_label_consistent'])
         self.assertEqual(raw['private_nominal_interval_consistency']['nominal_intervals_checked'], 5)
+        self.assertEqual(raw['private_capture_triage']['nominal_frame_count'], 6)
+        self.assertFalse(raw['private_capture_triage']['frame_sync_verified'])
         self.assertNotIn(self.synthetic_session_id, json.dumps(raw))
         self.assertEqual(
             raw['private_capture_completion']['status'],
@@ -420,6 +427,17 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
+
+    def test_late_private_triage_failure_prevents_report_publication(self):
+        with patch('tools.mame_private_dino_session.private_capture_triage',
+                   side_effect=ValueError('synthetic triage contradiction')):
+            with self.assertRaisesRegex(ValueError, 'triage contradiction'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+        self.assertTrue((self.workspace / CAPTURE_DIR_NAME).is_dir())
 
     def test_late_counter_crosscheck_failure_cannot_publish_report(self):
         with patch('tools.mame_private_dino_session.private_nominal_interval_consistency',
