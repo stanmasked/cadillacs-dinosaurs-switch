@@ -559,3 +559,35 @@ When both filesystem and binary verification are successful, a separate
 normal invocation (without either flag) can run a privately owned ROM
 set in the local MAME executable. A synthetically tested build gate does
 not prove game activity, original VBlank timing or pixel parity.
+
+
+## Stage 74 — inspect a private MAME build before obtaining game files
+
+The ROM-free `--verify-build-only` mode no longer requires a ROM directory
+or a capture workspace. It now accepts **only the local executable and its
+source/build tree**:
+
+```sh
+python3 tools/mame_private_dino_session.py \\
+  --mame /private/mame0289/dino \\
+  --mame-tree /private/mame0289 \\
+  --verify-build-only
+```
+
+This verifies that the executable is present, executable and not a symlink,
+that the full upstream source tree is **outside the public checkout**, then
+runs `-listxml dino`, checks the compiled CPS-1 object and inspects the
+actual linked ELF for the three session-aware probe strings. No original
+commercial game data, ROM path, output workspace or local gameplay is
+needed. The command produces only a path-free ROM-free verification result.
+
+The earlier four-path `--verify-build-only` form remains accepted for
+compatibility and still validates its supplied private paths. For
+`--preflight-only` and the **normal game capture**, both `--rom-dir` and
+`--workspace` remain mandatory. Mixed/partial paths fail closed before
+any process or output creation. New synthetic tests cover two-path CLI,
+compatibility, missing paths, symlink rejection and source-tree isolation.
+
+A marker found in the linked ELF proves only presence of the compiled
+literal data; it does not prove its runtime execution, genuine frame
+alignment, original hardware VBlank or Nintendo Switch pixel parity.

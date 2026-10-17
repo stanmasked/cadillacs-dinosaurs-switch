@@ -52,25 +52,33 @@ def _separate(left, right):
                 right.is_relative_to(left))
 
 
-def preflight(mame, mame_source_tree, rom_dir, workspace):
-    """Check only filesystem and path isolation; do not execute/read ROMs."""
+def preflight_mame_build(mame, mame_source_tree):
+    """Check the local emulator build paths; require no ROM or workspace."""
     # Refuse executable symlinks before resolve() erases that fact.
     if Path(mame).expanduser().is_symlink():
         raise ValueError('MAME executable may not be a symlink')
-    paths = tuple(Path(x).expanduser().resolve() for x in (
-        mame, mame_source_tree, rom_dir, workspace))
-    binary, tree, roms, private = paths
+    binary, tree = (Path(x).expanduser().resolve()
+                    for x in (mame, mame_source_tree))
     if (not binary.is_file() or binary.is_symlink() or
             not os.access(binary, os.X_OK)):
         raise ValueError('Instrumented MAME executable is missing or not executable')
     if not tree.is_dir() or not (tree / 'src/mame/capcom/cps1_v.cpp').is_file():
         raise ValueError('Full upstream MAME source directory is missing')
+    if not _separate(tree, PROJECT_ROOT):
+        raise ValueError('Full MAME source tree must stay outside the project')
+    return binary, tree
+
+
+def preflight(mame, mame_source_tree, rom_dir, workspace):
+    """Check only filesystem and path isolation; do not execute/read ROMs."""
+    binary, tree = preflight_mame_build(mame, mame_source_tree)
+    roms, private = (Path(x).expanduser().resolve()
+                     for x in (rom_dir, workspace))
     if not roms.is_dir():
         raise ValueError('Private ROM directory is missing')
-    # On a public repository, even an accidentally added local ROM or
-    # modified upstream MAME source tree could be exposed. Keep BOTH out.
-    if (not _separate(roms, PROJECT_ROOT) or
-            not _separate(tree, PROJECT_ROOT)):
+    # On a public repository, even an accidentally added local ROM
+    # could be exposed; keep original game content out of the repo.
+    if not _separate(roms, PROJECT_ROOT):
         raise ValueError('ROM and full MAME source trees must stay outside the project')
     if not private.is_dir():
         raise ValueError('Private workspace directory must already exist')
@@ -101,7 +109,7 @@ def _require_session_aware_build(binary, tree):
     return identity
 
 
-def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
+def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None,
                             *, timeout_seconds=1800, preflight_only=False,
                             verify_build_only=False):
     """Run full MAME locally, then audit all private files with strict checks."""
@@ -114,8 +122,16 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         raise ValueError('verify_build_only must be boolean')
     if preflight_only and verify_build_only:
         raise ValueError('Choose one ROM-free preflight mode')
-    binary, tree, roms, private = preflight(
-        mame, mame_source_tree, rom_dir, workspace)
+    # A ROM-free build check must work before any owned ROM or private
+    # capture workspace exists. Preserve the old four-path form, with its
+    # full isolation check, for callers that still supply both paths.
+    if verify_build_only and rom_dir is None and workspace is None:
+        binary, tree = preflight_mame_build(mame, mame_source_tree)
+    else:
+        if rom_dir is None or workspace is None:
+            raise ValueError('Game capture requires both private ROM and workspace paths')
+        binary, tree, roms, private = preflight(
+            mame, mame_source_tree, rom_dir, workspace)
     if preflight_only:
         return {
             'status': 'FILESYSTEM_PREFLIGHT_ONLY',
@@ -282,8 +298,10 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mame', type=Path, required=True)
     p.add_argument('--mame-tree', type=Path, required=True)
-    p.add_argument('--rom-dir', type=Path, required=True)
-    p.add_argument('--workspace', type=Path, required=True)
+    p.add_argument('--rom-dir', type=Path,
+                   help='Required for game capture and filesystem-only preflight')
+    p.add_argument('--workspace', type=Path,
+                   help='Required for game capture and filesystem-only preflight')
     p.add_argument('--timeout-seconds', type=int, default=1800)
     preflight_options = p.add_mutually_exclusive_group()
     preflight_options.add_argument(
@@ -291,7 +309,7 @@ def main(argv=None):
         help='Validate isolated paths only; no MAME process or ROM reading')
     preflight_options.add_argument(
         '--verify-build-only', action='store_true',
-        help='Run ROM-free driver/linked-ELF verification without launching dino')
+        help='Verify ROM-free driver/ELF with only --mame and --mame-tree')
     args = p.parse_args(argv)
     try:
         result = execute_private_capture(
