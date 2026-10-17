@@ -15,8 +15,10 @@ import zlib
 
 try:
     from tools.mame_obj_transition_evidence import transition_diagnostic
+    from tools.mame_obj_transition_stability import transition_leave_one_out
 except ModuleNotFoundError:
     from mame_obj_transition_evidence import transition_diagnostic
+    from mame_obj_transition_stability import transition_leave_one_out
 
 REG_A = 'cps-a-be.bin'
 REG_B = 'cps-b-be.bin'
@@ -202,7 +204,9 @@ def main(argv=None):
         transitions = transition_diagnostic(
             render, lua, args.frame_step, args.max_offset_steps)
         report['transition_analysis'] = transitions
-        # Two diagnostics from the same register data, not independent
+        report['transition_stability'] = transition_leave_one_out(
+            render, lua, args.frame_step, args.max_offset_steps)
+        # Three diagnostics from the same register data, not independent
         # physical proof of video/OBJ/frame synchronization.
         if (report['offset_hypothesis_informative'] and
                 transitions['transition_hypothesis_informative']):

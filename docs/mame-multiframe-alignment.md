@@ -284,3 +284,73 @@ MAME-native compile, real dino captures, original framebuffer parity,
 or Nintendo Switch hardware verification. GitHub Actions currently
 fails with `runner_id=0`, `steps=[]` before any tests can run
 (issue #20). No original game files or gameplay captures are committed.
+
+
+## Stage 48 — leave-one-transition-out stability of frame-offset clues
+
+The transition analysis can now be inspected for sensitivity to a
+single coincidental register change, independently of the usual
+`>=75%` real-overlap requirement.
+
+The new `tools/mame_obj_transition_stability.py` implements a
+**bounded leave-one-transition-out (LOO) diagnostic**. For each of
+the `frame_count - 1` render transition *indices*, it omits that
+**one comparison observation** from every candidate offset, then
+re-scores all candidate shifts without reordering frames, stretching
+the time axis, wrapping indices or creating synthetic transitions.
+
+LOO evaluation is skipped if the Stage 47 base analysis did not have
+an informative transition-mask hypothesis. A candidate only survives
+an omitted observation if it is still the **uniquely highest-scoring**
+shift at the *same offset*, has at least three matching active
+transitions and two distinct matching nonzero change masks, and
+still covers at least 75% of the remaining render observations.
+
+The existing `mame_obj_sequence_alignment.py` CLI now includes an
+additional `transition_stability` object:
+
+- `leave_one_out_applicable`: whether the original transition
+  scorer yielded an informative diagnostic offset.
+- `leave_one_out_trial_count`: number of omitted-index trials.
+- `leave_one_out_consistent_trials`: how many reruns preserved the
+  same candidate with adequate evidence.
+- `leave_one_out_unstable_indices`: **render transition indices**
+  (zero-based) whose omission broke that diagnostic hypothesis.
+- `leave_one_out_stable`: true only if **every** omission preserved
+  that offset under the same diversity and overlap guards.
+- `leave_one_out_reason`: explicit
+  `BASE_HYPOTHESIS_INCONCLUSIVE`,
+  `SENSITIVE_TO_OMITTED_TRANSITIONS` or
+  `ALL_OMISSIONS_PRESERVE_DIAGNOSTIC_OFFSET`.
+
+For example, with six frame samples and an otherwise unambiguous
+one-step shift, **four matching transitions** can remain convincing
+when any single comparison is omitted. A nominally best shift relying
+on only **three** matched transitions often falls below that
+minimum as soon as one of those observations is removed. Flat,
+periodic or low-coverage input is rejected *before* LOO scoring.
+
+This method omits one *comparison* at a fixed render transition
+index, **not an arcade frame**; removing a frame and joining its
+neighbors would create a nonexistent two-frame transition. The
+LOO metric intentionally does not do that.
+
+**Limitation:** all leave-one-out trials reuse the *same* CPS-A/B
+register captures and are mathematically correlated. Stability
+does not prove MAME callback order, VBlank sprite age, physical
+raster timing, originality of captured data or screenshot pixel
+parity. As with all other diagnostics,
+`leave_one_out_diagnostic_only:true`,
+`frame_sync_verified:false` and
+`pixel_parity_eligible:false` are unconditional. No automatic
+offset correction is applied to graphics RAM or OBJ.
+
+**Validation:** the source module and eight new unit tests were
+independently saved as byte-for-byte Git-matching local files,
+and the original 15 Stage 47 tests and eight new LOO tests passed
+(**23/23**). A further **1,188 bounded randomized synthetic
+series** of four to 24 frames checked index bounds, absence of
+runtime failures, per-trial accounting and that LOO never promotes
+an inconclusive base result. These synthetic tests do not replace
+a full GitHub Actions run or actual MAME 0.289 gameplay capture.
+The GitHub runner allocation issue remains open as issue #20.
