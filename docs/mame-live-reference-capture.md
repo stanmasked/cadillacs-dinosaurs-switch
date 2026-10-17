@@ -616,3 +616,37 @@ cover each containment case and confirm there are no outputs on refusal.
 Passing these checks is **filesystem isolation only**: it does not mean
 original gameplay, CPS-1 hardware VBlank timing, or Switch renderer parity
 was observed.
+
+
+## Stage 76 — validate cumulative latch counts against nominal RGB/OBJ intervals
+
+After the real upstream MAME 0.289 build compiled successfully with
+session-aware strings visible in the **final linked ELF**, the next
+preparatory step closes an integrity gap in the private six-frame audit.
+The ordinary multistream analyzer compares per-interval callback deltas,
+RGB pixels, OBJ slots and register words. The private launcher now also
+runs `tools/mame_private_interval_consistency.py` before publishing its
+final report. This independent metadata recalculation requires:
+
+- all six nominal frame labels and five bounded interval entries agree;
+- C++ observed cumulative callback counts are uint64, monotone and have
+  exact adjacent differences matching the reported callback deltas;
+- the zero-delta, multi-callback and changed-OBJ-without-callback frame
+  lists exactly match recomputed cumulative counters and OBJ changes;
+- every combined interval's RGB/OBJ/latch booleans and numeric fields
+  match its source stream, and each aggregate total recomputes correctly;
+- all six C++ sidecars are V2 OBJ-fingerprint-bound and session-tagged,
+  with no claim of verified frame synchronization or pixel parity.
+
+A contradiction is an **audit failure**: the completed private JSON is
+never published, staged files are removed, and the original local capture
+and emulator log remain untouched. A passing report includes only the
+metadata-only `private_nominal_interval_consistency` summary, without
+original RGB, buffered OBJ, ROM data, local file paths, SHA-256 digests
+or the random session label. ROM-free synthetic regressions exercise
+counter overflows/decreases, forged callback annotations, interval fields,
+aggregates, labels, V2 session gate and the local final-publication block.
+
+This is a check on redundant metadata emitted by the **same MAME process**.
+Its success cannot authenticate commercial gameplay, physical VBlank
+ordering, displayed frame age or pixel parity on Nintendo Switch.

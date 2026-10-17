@@ -330,6 +330,13 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertIn('NO_OBJ_CHANGES_OBSERVED', intervals['observational_cautions'])
         self.assertFalse(intervals['active_gameplay_verified'])
         self.assertFalse(intervals['frame_sync_verified'])
+        consistency = report['private_nominal_interval_consistency']
+        self.assertEqual(consistency['status'],
+                         'PRIVATE_NOMINAL_COUNTER_CONSISTENCY_ONLY')
+        self.assertEqual(consistency['nominal_frame_samples_checked'], 6)
+        self.assertEqual(consistency['nominal_intervals_checked'], 5)
+        self.assertTrue(consistency['cumulative_latch_deltas_match'])
+        self.assertFalse(consistency['frame_sync_verified'])
         self.assertTrue((self.workspace / LOG_NAME).is_file())
         if os.name == 'posix':
             self.assertEqual((self.workspace / LOG_NAME).stat().st_mode & 0o777, 0o600)
@@ -339,6 +346,7 @@ class PrivateDinoSessionTests(unittest.TestCase):
             raw['obj_latch_count_evidence']['obj_byte_fingerprint_verified_count'], 6)
         self.assertFalse(raw['frame_sync_verified'])
         self.assertTrue(raw['capture_session_binding']['shared_session_label_consistent'])
+        self.assertEqual(raw['private_nominal_interval_consistency']['nominal_intervals_checked'], 5)
         self.assertNotIn(self.synthetic_session_id, json.dumps(raw))
         self.assertEqual(
             raw['private_capture_completion']['status'],
@@ -412,6 +420,17 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
+
+    def test_late_counter_crosscheck_failure_cannot_publish_report(self):
+        with patch('tools.mame_private_dino_session.private_nominal_interval_consistency',
+                   side_effect=ValueError('synthetic counter mismatch')):
+            with self.assertRaisesRegex(ValueError, 'counter mismatch'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+        self.assertTrue((self.workspace / CAPTURE_DIR_NAME).is_dir())
 
     def test_rgb_check_failure_does_not_publish_partial_report(self):
         with patch('tools.mame_private_dino_session.reference_activity_diagnostic',

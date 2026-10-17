@@ -27,6 +27,7 @@ try:
     from tools.mame_private_capture_stability import (private_capture_file_snapshot,
                                                      require_stable_private_capture)
     from tools.mame_capture_session_binding import require_private_capture_session
+    from tools.mame_private_interval_consistency import private_nominal_interval_consistency
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -35,6 +36,7 @@ except ModuleNotFoundError:
     from mame_private_capture_stability import (private_capture_file_snapshot,
                                                require_stable_private_capture)
     from mame_capture_session_binding import require_private_capture_session
+    from mame_private_interval_consistency import private_nominal_interval_consistency
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -253,6 +255,12 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         result['multistream_interval_evidence'] = intervals
         result['capture_session_binding'] = require_private_capture_session(
             capture_dir, session_id, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+        # A second, independent metadata recalculation must agree with the
+        # nominal callback counts, interval annotations and RGB/OBJ fields.
+        # This does not establish physical frame ordering or real gameplay.
+        result['private_nominal_interval_consistency'] = (
+            private_nominal_interval_consistency(
+                result, intervals, FIRST_FRAME, FRAME_STEP, FRAME_COUNT))
         result['private_capture_source_stability'] = require_stable_private_capture(
             capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
         result['private_capture_completion'] = {
@@ -288,6 +296,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         'reference_activity': activity,
         'multistream_interval_evidence': intervals,
         'capture_session_binding': result['capture_session_binding'],
+        'private_nominal_interval_consistency': result['private_nominal_interval_consistency'],
         'nominal_frame_count': FRAME_COUNT,
         'crc32_lua_components_checked': FRAME_COUNT * 5,
         'bound_cpp_obj_samples': FRAME_COUNT,
