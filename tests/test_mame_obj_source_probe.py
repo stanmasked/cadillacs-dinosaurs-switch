@@ -66,13 +66,28 @@ class MameObjSourceProbeTests(unittest.TestCase):
     def test_video_update_records_counter_before_obj_bytes(self):
         source = instrument(MINIMAL_SOURCE)
         self.assertIn('frame-%08llu.obj-latch-count.txt', source)
-        self.assertIn('CPS1_DINO_LATCH_V1 %llu\\n', source)
+        self.assertIn('CPS1_DINO_LATCH_V2 %llu %016llx\\n', source)
         self.assertIn('observed_latch_count', source)
         self.assertLess(source.index('cps1_dino_obj_latch_events.load('),
                         source.index('m_buffered_obj[index]'))
         self.assertIn('existing_latch', source)
         self.assertIn('existing || existing_registers || existing_latch', source)
         self.assertIn('std::fclose(latch_output)', source)
+
+    def test_fingerprint_hashes_same_big_endian_obj_words_before_disk_write(self):
+        source = instrument(MINIMAL_SOURCE)
+        self.assertIn('14695981039346656037ULL', source)
+        self.assertIn('1099511628211ULL', source)
+        self.assertIn('observed_obj_fnv1a64 ^= (word >> 8) & 255U;', source)
+        self.assertIn('observed_obj_fnv1a64 ^= word & 255U;', source)
+        self.assertIn('CPS1_DINO_LATCH_V2', source)
+        self.assertLess(source.index('observed_obj_fnv1a64 ^= (word >> 8)'),
+                        source.index('std::FILE *output = std::fopen(path, "wb")'))
+        self.assertLess(source.index('observed_obj_fnv1a64 ^= (word >> 8)'),
+                        source.index('observed_obj_fnv1a64 ^= word & 255U'))
+        self.assertLess(source.index('cps1_dino_obj_latch_events.load('),
+                        source.index('observed_obj_fnv1a64 ^= (word >> 8)'))
+        self.assertNotIn('CPS1_DINO_LATCH_V1 %llu', source)
 
     def test_latch_copy_anchor_must_be_exactly_unique(self):
         bad = MINIMAL_SOURCE.replace(
