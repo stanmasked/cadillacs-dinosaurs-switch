@@ -82,9 +82,9 @@ two distinct matching register states are observed.
 - `frame_sync_verified` and `pixel_parity_eligible` are
   **unconditionally false** in every report. No native `scene.bin`
   promotion, original MAME parity certification, or Switch build occurs.
-- The audit checks CRC32 of the **two** Lua register binaries, not the
-  five entire components again. Use the separate importer in PR #25
-  for full capture integrity.
+- **Since Stage 52:** the sequence audit checks CRC32 and exact file
+  size for **all five** Lua capture components. The separate importer
+  in PR #25 also checks all five and reconstructs a partial scene.
 
 ## Verification boundary
 
@@ -545,3 +545,63 @@ register sequence has a unique best offset. No generated capture files,
 ROMs or original arcade assets are committed.
 
 GitHub Actions runner allocation remains tracked in issue #20.
+
+
+## Stage 52 — enforce integrity of the complete MAME Lua capture bundle
+
+A direct source comparison against **draft PR #25** confirmed that the
+original `mame_cps1_capture.lua` provides exactly the five `file_crc32`
+entries already expected by the multi-frame CLI, with matching
+`frame_done` callback, eight-digit frame index, dimensions and
+big-endian word format. No change to the collector's capture contract
+is required.
+
+However, before Stage 52, the *sequence* CLI checked the CRC of only
+`cps-a-be.bin` and `cps-b-be.bin`, although the manifest declared
+five component hashes. A swapped, missing or corrupted reference RGB
+frame, palette or graphics RAM file could therefore go unnoticed while
+the register-offset diagnostic proceeded.
+
+**The sequence CLI now fails closed unless every capture sample
+contains all five complete, correctly CRC-bound components:**
+
+| Source file suffix | Exact bytes |
+| --- | ---: |
+| `gfxram-be.bin` | 196,608 |
+| `cps-a-be.bin` | 64 |
+| `cps-b-be.bin` | 64 |
+| `palette-rgb24.bin` | 9,216 |
+| `reference-rgb24.bin` | 258,048 |
+
+The three large files are checked via **64-KiB bounded streaming
+CRC32** rather than loading extra ROM-derived graphics or framebuffer
+data into the Python process. Only the two 64-byte register files
+are loaded for the register comparison. Each file must have exactly
+the expected length and match its manifest's lowercase CRC32. A
+component is checked before any cross-frame alignment scoring or
+JSON output.
+
+Existing Stage 44 and Stage 51 synthetic test fixtures were repaired
+to write all five real-sized **fabricated** component files and their
+computed checksums, not `00000000` placeholder hashes.
+`tests/test_mame_obj_capture_bundle_integrity.py` adds eight
+ROM-free regression methods for valid bundles, CRC mutations,
+missing/truncated/oversized non-register components, frame-swapped
+equal-length graphics RAM, a forged manifest checksum and absence of
+raw payload fields in successful diagnostic JSON.
+
+**Verification completed locally:** extracted Stage 52
+`_check_capture_component()` and `read_frames()` code was exercised
+with an eight-test isolated Python suite using genuine on-disk synthetic
+five-file frames. **8/8 tests passed**, including corruption, truncation,
+oversizing, missing files and swapped equal-size graphics-RAM
+components. The added GitHub end-to-end test module and updated
+original suite **have not yet been executed as a full checked-out
+repository**; CI runner allocation remains blocked under issue #20.
+
+CRC32 verifies consistency with the **declared** manifest, not the
+authenticity of a commercial ROM, actual frame timing, private C++
+probe origin or VBlank-latched OBJ state. In all reports,
+`frame_sync_verified:false` and
+`pixel_parity_eligible:false` remain unchanged. Real captures and
+original-game pixel parity are **not** demonstrated by this stage.
