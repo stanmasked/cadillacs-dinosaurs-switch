@@ -93,3 +93,43 @@ game**. MAME capture + synchronized parity comparison remain necessary.
 - HD asset restoration. This remains a crisp native playback of original
   4-bit indexed graphics, not newly drawn HD art.
 - Validation on physical Switch hardware.
+
+## Stage 99 — shared CPS-1 native multi-size tile decoding
+
+The native Switch scene renderer now delegates Scroll1/2/3 planar pixel
+extraction to `cps1_tile_pixel()` in the same portable `source/cps1_tile.c`
+used for 16x16 sprites. This removes duplicate and potentially drifting
+ROM address/4-bit plane decode logic from `source/cps1_scene.c`.
+Separate native APIs `cps1_decode_tile8()` and `cps1_decode_tile32()`
+cover background tile sizes in addition to the existing 16x16 routine.
+Scroll1's tilemap-index bit 5 selects the left or right 4-byte half-row;
+strict bounds checks reject invalid geometry or unmapped tile codes.
+A failed tile read stays transparent in the scene renderer.
+
+The new opt-in `tools/cps1_private_multisize_tile_parity.py` operates
+only on a **user-owned local** original dino ZIP:
+
+~~~sh
+python3 tools/cps1_private_multisize_tile_parity.py /private/owned/dino.zip
+~~~
+
+It interleaves eight local graphics lanes into a 4-MiB CPS-1 region
+**in RAM only** and compares independently decoded 8x8-left,
+8x8-right, 16x16 and 32x32 pen indices with the same native C
+implementation used by the Switch renderer. Selection includes
+beginning/end, exact graphic-bank seam, even intervals and reproducible
+pseudorandom codes. The output includes only aggregate match counts,
+never private paths, SHA-256 hashes, original pixel data or extracted ROMs.
+
+The privately supplied original dino ZIP yielded **1,539 sampled tile
+variants**, **538,368 compared pen indices**, and **zero mismatches**.
+All sixteen 4-bit pen values were observed in every variant. Public CI
+runs 100% synthetic fixtures, catches deliberate reference-decoder
+errors, and exercises malformed ZIP and native out-of-range refusals.
+
+**Limitation:** this result verifies the sampled indexed tile-decode
+operations, not a game frame. It does not establish correct CPS-1
+runtime palette, tilemap VRAM, row-scroll timings, sprite buffering,
+VBlank, MAME game execution or Nintendo Switch hardware pixel parity.
+Original ROM contents and any raw derived sprites/scenes are not
+included in the public repository or CI.
