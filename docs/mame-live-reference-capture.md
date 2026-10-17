@@ -1593,7 +1593,13 @@ only in process memory; the safe JSON report publishes only
 `qsound_sha1_checked_locally` and
 `qsound_sha1_matches_pinned_mame_catalog` booleans.
 Missing or mismatching sound members cannot produce a catalog-match
-status. This does not alter the original game ROM byte data.
+status. The reporter separately records
+`private_payload_crc_matches_pinned_catalog` and
+`private_payload_all_required_catalog_checks_match`. On a QSound
+SHA-1-only mismatch, the former is **true** (the CRC32 really did
+match), but the latter and the overall match status are **false**.
+That distinction prevents a misleading CRC error explanation.
+This does not alter the original game ROM byte data.
 
 New ROM-free regressions cover a **CRC-correct but SHA-1-mismatched**
 synthetic QSound file and rejection of malformed SHA-1 catalog
