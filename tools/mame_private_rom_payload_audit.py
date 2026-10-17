@@ -8,6 +8,7 @@ all CRC32 values stay in process memory. A catalog match is NOT MAME's
 or observed game execution. Run genuine MAME -verifyroms separately.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,8 @@ MAX_ZIP_ENTRIES = 128
 MAX_TOTAL_DECODED_BYTES = 32 * 1024 * 1024
 MAX_MEMBER_BYTES = 2 * 1024 * 1024
 READ_CHUNK_SIZE = 65536
+# Pinned MAME 0.289 qsoundhle.cpp, ROM_LOAD16_WORD + ROM_IGNORE.
+DEVICE_SHA1 = bytes.fromhex('555f50fe5cdf127619da7d854c03f4a244a0c501')
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -78,8 +81,14 @@ def _archive_pair_metadata(game, device):
     return tuple(observations)
 
 
-def _catalog_payload_check(path, catalog):
-    """Return (verified, missing, mismatch, read_count) without leaking bytes."""
+def _catalog_payload_check(path, catalog, *, sha1_catalog=None):
+    """Return bounded verified/missing/mismatch/read counts, never ROM bytes."""
+    if sha1_catalog is None:
+        sha1_catalog = {}
+    if (not isinstance(sha1_catalog, dict) or
+            any(name not in catalog or type(digest) is not bytes or len(digest) != 20
+                for name, digest in sha1_catalog.items())):
+        raise ValueError('Private ROM SHA1 catalog invalid')
     stream, original = _open_stable_private_zip(path)
     verified = missing = mismatch = read_count = 0
     decoded_total = 0
@@ -111,6 +120,7 @@ def _catalog_payload_check(path, catalog):
                     raise ValueError('Private decoded ROM budget exceeded')
                 decoded_total += expected_size
                 digest = 0
+                sha1 = hashlib.sha1() if name in sha1_catalog else None
                 remaining = expected_size
                 with archive.open(info, 'r') as payload:
                     while remaining:
@@ -119,10 +129,14 @@ def _catalog_payload_check(path, catalog):
                             raise ValueError('Private ZIP member truncated')
                         remaining -= len(block)
                         digest = zlib.crc32(block, digest)
+                        if sha1 is not None:
+                            sha1.update(block)
                     if payload.read(1):
                         raise ValueError('Private ZIP member exceeded expected size')
                 read_count += 1
-                if digest != expected_crc:
+                if (digest != expected_crc or
+                        (sha1 is not None and
+                         sha1.digest() != sha1_catalog[name])):
                     mismatch += 1
                 else:
                     verified += 1
@@ -143,6 +157,8 @@ def _base(status):
         'private_payload_bytes_may_have_been_read_locally': False,
         'private_payload_read_completion_verified': False,
         'private_payload_crc_matches_pinned_catalog': False,
+        'qsound_sha1_checked_locally': False,
+        'qsound_sha1_matches_pinned_mame_catalog': False,
         'mame_verifyroms_executed': False,
         'original_game_authenticity_verified': False,
         'gameplay_executed': False,
@@ -179,7 +195,9 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
         game, EXPECTED)
     if pair_before[1] is not None:
         device_verified, device_missing, device_wrong, device_read = (
-            _catalog_payload_check(device, {DEVICE_MEMBER: DEVICE_HEADER}))
+            _catalog_payload_check(
+                device, {DEVICE_MEMBER: DEVICE_HEADER},
+                sha1_catalog={DEVICE_MEMBER: DEVICE_SHA1}))
     else:
         device_verified, device_missing, device_wrong, device_read = 0, 1, 0, 0
     if _archive_pair_metadata(game, device) != pair_before:
@@ -195,6 +213,8 @@ def audit_private_dino_rom_payloads(rom_directory, *, allow_private_reads=False)
         'private_payload_bytes_may_have_been_read_locally': (game_read + device_read) > 0,
         'private_payload_read_completion_verified': True,
         'private_payload_crc_matches_pinned_catalog': all_verified,
+        'qsound_sha1_checked_locally': device_read > 0,
+        'qsound_sha1_matches_pinned_mame_catalog': device_verified == 1,
         'expected_member_count': len(EXPECTED) + 1,
         'payload_catalog_verified_count': game_verified + device_verified,
         'missing_member_count': game_missing + device_missing,
