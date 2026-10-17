@@ -37,7 +37,27 @@ typedef struct {
     /* Original training combo: consecutive LANDED attacks, 24-tick window.
      * 3rd hit triggers one knockback finisher in optional sparring mode. */
     uint8_t combo_hits, combo_timer, finisher_flash;
+    uint8_t dummy_impact_flash, player_impact_flash; /* visual-only TTL */
+    uint32_t events; /* one 60 Hz simulation tick; cleared before next step */
 } DinoArena;
+
+/* Fixed ROM-free one-tick event vocabulary for future locally authored
+ * effects/SFX. Combinations are bitmasks, and 0 means no new event.
+ * No ROM bytes, original sound, event queue, heap or callback is needed.
+ */
+enum {
+    DINO_EVT_SPAR_TOGGLE=1u<<0,
+    DINO_EVT_JUMP_START=1u<<1,
+    DINO_EVT_LAND=1u<<2,
+    DINO_EVT_PLAYER_SWING=1u<<3,
+    DINO_EVT_DUMMY_HIT=1u<<4,
+    DINO_EVT_FINISHER=1u<<5,
+    DINO_EVT_DUMMY_KO=1u<<6,
+    DINO_EVT_DUMMY_SWING=1u<<7,
+    DINO_EVT_PLAYER_HIT=1u<<8,
+    DINO_EVT_PLAYER_KO=1u<<9,
+    DINO_EVT_DODGE=1u<<10
+};
 
 /* Visual state is derived from 60 Hz simulation, not from art or MAME.
  * All values are stable public integer constants for diagnostic playback. */
