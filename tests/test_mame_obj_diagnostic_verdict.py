@@ -24,9 +24,11 @@ def reports(exact_offset=1, transition_offset=1, stable=True):
         'leave_one_out_stable': bool(stable and transition_offset is not None),
         'leave_one_out_trial_count': 5 if transition_offset is not None else 0,
         'leave_one_out_consistent_trials': (
-            5 if stable and transition_offset is not None else 3),
+            5 if stable and transition_offset is not None else
+            3 if transition_offset is not None else 0),
         'leave_one_out_unstable_indices': (
-            [] if stable and transition_offset is not None else [0, 2]),
+            [] if stable and transition_offset is not None else
+            [0, 2] if transition_offset is not None else []),
         'leave_one_out_diagnostic_only': True,
         'frame_sync_verified': False,
         'pixel_parity_eligible': False,
