@@ -1,0 +1,130 @@
+"""ROM-free verification of real MAME driver metadata and CPS-1 ELF objects."""
+import contextlib
+import io
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+from tools.mame_dino_binary_verify import (
+    MAX_XML_BYTES, inspect_binary, main, validate_dino_xml,
+    verify_compiled_cps1_video_object,
+)
+
+
+def fake_xml(*, build='0.289 (mame0289)', name='dino',
+             source='capcom/cps1.cpp', runnable='yes', extra=''):
+    return (f'<?xml version="1.0"?>\n<mame build="{build}">'
+            f'<machine name="{name}" sourcefile="{source}" runnable="{runnable}">'
+            '<description>Cadillacs and Dinosaurs</description></machine>'
+            f'{extra}</mame>').encode('utf-8')
+
+
+class MameDinoBinaryVerificationTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.build = self.root / 'build' / 'some' / 'mame' / 'capcom'
+        self.build.mkdir(parents=True)
+        self.obj = self.build / 'cps1_v.o'
+        self.obj.write_bytes(b'\x7fELF' + bytes(124))
+
+    def test_valid_0289_dino_xml_keeps_game_parity_false(self):
+        result = validate_dino_xml(fake_xml())
+        self.assertEqual(result['driver'], 'dino')
+        self.assertEqual(result['driver_sourcefile'], 'capcom/cps1.cpp')
+        self.assertTrue(result['listxml_validated'])
+        self.assertFalse(result['real_game_run'])
+        self.assertFalse(result['frame_sync_verified'])
+        self.assertFalse(result['pixel_parity_eligible'])
+
+    def test_embedded_mame_doctype_is_parsed_not_removed(self):
+        xml = (b'<?xml version="1.0"?>\n<!DOCTYPE mame '
+               b'[<!ELEMENT mame (machine*)><!ELEMENT machine ANY>]>\n'
+               + fake_xml()[len(b'<?xml version="1.0"?>\n'):])
+        self.assertEqual(validate_dino_xml(xml)['driver'], 'dino')
+
+    def test_rejects_wrong_build_driver_source_and_nonrunnable(self):
+        for xml in (fake_xml(build='0.290'),
+                    fake_xml(name='dinou'),
+                    fake_xml(source='capcom/cps2.cpp'),
+                    fake_xml(runnable='no'),
+                    fake_xml(extra='<machine name="dinou"/>')):
+            with self.subTest(xml=xml[:70]):
+                with self.assertRaises(ValueError):
+                    validate_dino_xml(xml)
+
+    def test_rejects_truncated_or_oversized_xml(self):
+        for value in (b'', bytes(MAX_XML_BYTES + 1), b'<mame>',
+                      '<mame/>'):
+            with self.subTest(size=len(value)):
+                with self.assertRaises(ValueError):
+                    validate_dino_xml(value)
+
+    def test_compiled_elf_object_must_be_real_and_nonempty(self):
+        meta = verify_compiled_cps1_video_object(self.root)
+        self.assertTrue(meta['compiled_cps1_video_object'])
+        self.assertEqual(meta['compiled_cps1_video_object_bytes'], 128)
+        self.assertFalse(meta['instrumentation_runtime_verified'])
+
+    def test_rejects_missing_duplicate_invalid_or_symlinked_objects(self):
+        for payload in (b'', b'fake' * 50, b'\x7fELF' + bytes(14)):
+            self.obj.write_bytes(payload)
+            with self.subTest(case=len(payload)):
+                with self.assertRaises(ValueError):
+                    verify_compiled_cps1_video_object(self.root)
+        self.obj.write_bytes(b'\x7fELF' + bytes(124))
+        duplicate = self.root / 'cps1_v.o'
+        duplicate.write_bytes(self.obj.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'exactly one'):
+            verify_compiled_cps1_video_object(self.root)
+        duplicate.unlink()
+        self.obj.unlink()
+        duplicate.symlink_to(self.root / 'missing.o')
+        with self.assertRaises(ValueError):
+            verify_compiled_cps1_video_object(self.root)
+
+    def test_rejects_missing_build_tree(self):
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            verify_compiled_cps1_video_object(self.root / 'not-there')
+
+    def make_fake_binary(self, xml, exit_code=0):
+        executable = self.root / 'fake-mame'
+        # The complete output is manufactured; this tests the checker
+        # in isolation and does NOT simulate actual MAME compilation.
+        code = ('#!' + sys.executable + '\n'
+                'import sys\n'
+                f'sys.stdout.buffer.write({xml!r})\n'
+                f'raise SystemExit({exit_code})\n')
+        executable.write_text(code)
+        executable.chmod(0o755)
+        return executable
+
+    def test_end_to_end_subprocess_accepts_runnable_dino_metadata(self):
+        binary = self.make_fake_binary(fake_xml())
+        result = inspect_binary(binary, self.root)
+        self.assertTrue(result['compiled_cps1_video_object'])
+        self.assertTrue(result['listxml_validated'])
+        self.assertFalse(result['instrumentation_runtime_verified'])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main([str(binary), str(self.root)]), 0)
+
+    def test_cli_rejects_bad_exit_xml_and_nonexistent_binary(self):
+        for xml, rc in ((fake_xml(), 1), (fake_xml(name='dinou'), 0)):
+            binary = self.make_fake_binary(xml, exit_code=rc)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main([str(binary), str(self.root)]), 2)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main([str(self.root / 'missing'), str(self.root)]), 2)
+
+    def test_rejects_noninteger_or_zero_metadata_timeout(self):
+        binary = self.make_fake_binary(fake_xml())
+        for timeout in (0, True, 121, '100'):
+            with self.subTest(timeout=timeout):
+                with self.assertRaises(ValueError):
+                    inspect_binary(binary, self.root, timeout_seconds=timeout)
+
+
+if __name__ == '__main__':
+    unittest.main()
