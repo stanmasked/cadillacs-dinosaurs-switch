@@ -37,6 +37,7 @@ try:
     from tools.mame_private_cli_errors import write_private_failure
     from tools.mame_private_capture_failure_summary import safe_capture_failure_report
     from tools.mame_private_auto_exit_evidence import private_mame_auto_exit_log_observation
+    from tools.mame_private_auto_exit_reconciliation import reconcile_auto_exit_with_capture
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -55,6 +56,7 @@ except ModuleNotFoundError:
     from mame_private_cli_errors import write_private_failure
     from mame_private_capture_failure_summary import safe_capture_failure_report
     from mame_private_auto_exit_evidence import private_mame_auto_exit_log_observation
+    from mame_private_auto_exit_reconciliation import reconcile_auto_exit_with_capture
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
@@ -412,6 +414,10 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
             activity, intervals, result['capture_session_binding'],
             result['private_nominal_interval_consistency'],
             result['private_capture_source_stability'], frame_count=FRAME_COUNT)
+        auto_exit_reconciliation = (
+            reconcile_auto_exit_with_capture(
+                auto_exit_log_observation, strict_audit_passed=True)
+            if auto_exit_after_capture else None)
         result['private_capture_completion'] = {
             'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
             'full_check_sequence_completed': True,
@@ -425,6 +431,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
             'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
             'auto_exit_after_capture_requested': auto_exit_after_capture,
             'auto_exit_log_observation': auto_exit_log_observation,
+            'auto_exit_post_run_reconciliation': auto_exit_reconciliation,
             'nominal_frame_count': FRAME_COUNT,
             'crc32_lua_components_checked': FRAME_COUNT * 5,
             'v2_bound_obj_samples': FRAME_COUNT,
@@ -473,6 +480,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
         'auto_exit_after_capture_requested': auto_exit_after_capture,
         'auto_exit_log_observation': auto_exit_log_observation,
+        'auto_exit_post_run_reconciliation': auto_exit_reconciliation,
         'original_game_authenticity_verified': False,
         'obj_latch_age_verified': False,
         'frame_sync_verified': False,
@@ -545,8 +553,11 @@ def main(argv=None):
             failure = safe_capture_failure_report(
                 exc, args.workspace, include_progress=True)
             if args.auto_exit_after_capture:
-                failure['auto_exit_log_observation'] = (
-                    private_mame_auto_exit_log_observation(args.workspace))
+                evidence = private_mame_auto_exit_log_observation(args.workspace)
+                failure['auto_exit_log_observation'] = evidence
+                failure['auto_exit_post_run_reconciliation'] = (
+                    reconcile_auto_exit_with_capture(
+                        evidence, failure_progress=failure.get('capture_progress')))
             print(json.dumps(failure), file=sys.stderr)
         else:
             write_private_failure(exc, sys.stderr)
