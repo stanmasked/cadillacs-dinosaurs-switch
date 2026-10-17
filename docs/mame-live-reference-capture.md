@@ -591,3 +591,28 @@ compatibility, missing paths, symlink rejection and source-tree isolation.
 A marker found in the linked ELF proves only presence of the compiled
 literal data; it does not prove its runtime execution, genuine frame
 alignment, original hardware VBlank or Nintendo Switch pixel parity.
+
+
+## Stage 75 — keep private game ROMs away from MAME source and public builds
+
+The private capture path preflight now rejects an original-game ROM folder
+nested **inside** the disposable upstream MAME source/build tree, as well as
+an enclosing ROM directory that contains that tree or the instrumented
+executable. These are previously unguarded data-placement mistakes: a later
+MAME build-tree archive, cleanup or copy could accidentally include licensed
+ROM files, even though the game session itself remains local.
+
+The two-path `--verify-build-only` check also refuses an instrumented MAME
+executable located **inside this project's public Git checkout**, even if
+the upstream MAME source tree lies elsewhere. A broad `git add` should not
+be able to scoop up a modified emulator executable.
+
+The checks take place before local game execution and before the private
+capture directory, log or diagnostic report is created. They use only
+filesystem path and type metadata, never read any ROM content, and preserve
+the legacy ROM-free two-path build verification. Synthetic regression tests
+cover each containment case and confirm there are no outputs on refusal.
+
+Passing these checks is **filesystem isolation only**: it does not mean
+original gameplay, CPS-1 hardware VBlank timing, or Switch renderer parity
+was observed.

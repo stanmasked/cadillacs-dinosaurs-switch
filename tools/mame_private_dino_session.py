@@ -66,6 +66,11 @@ def preflight_mame_build(mame, mame_source_tree):
         raise ValueError('Full upstream MAME source directory is missing')
     if not _separate(tree, PROJECT_ROOT):
         raise ValueError('Full MAME source tree must stay outside the project')
+    # A modified executable accidentally stored inside the public Git
+    # checkout could later be committed by a broad git add. Prevent this
+    # even when its associated build/source tree is elsewhere.
+    if not _separate(binary, PROJECT_ROOT):
+        raise ValueError('MAME executable must stay outside the project')
     return binary, tree
 
 
@@ -76,6 +81,11 @@ def preflight(mame, mame_source_tree, rom_dir, workspace):
                      for x in (rom_dir, workspace))
     if not roms.is_dir():
         raise ValueError('Private ROM directory is missing')
+    # Do not place commercially owned ROM data in the disposable MAME
+    # source/build tree, which may be copied, cleaned or archived later.
+    # Also refuse a ROM tree that contains the MAME executable itself.
+    if not _separate(roms, tree) or not _separate(roms, binary):
+        raise ValueError('Private ROM directory must be separate from MAME build')
     # On a public repository, even an accidentally added local ROM
     # could be exposed; keep original game content out of the repo.
     if not _separate(roms, PROJECT_ROOT):

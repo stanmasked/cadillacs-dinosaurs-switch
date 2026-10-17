@@ -192,6 +192,45 @@ class PrivateDinoSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'outside the project'):
             preflight(self.mame, self.build, PROJECT_ROOT, self.workspace)
 
+    def test_rom_directory_nested_in_mame_build_is_rejected_without_output(self):
+        nested = self.build / 'private-roms'
+        nested.mkdir()
+        with patch('tools.mame_private_dino_session.inspect_binary') as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'separate from MAME build'):
+                execute_private_capture(
+                    self.mame, self.build, nested, self.workspace,
+                    preflight_only=True)
+            identity.assert_not_called()
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_mame_source_tree_inside_rom_dir_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'separate from MAME build'):
+            preflight(self.mame, self.build, self.root, self.workspace)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_public_checkout_must_not_contain_modified_mame_executable(self):
+        public = self.root / 'simulated-public-checkout'
+        public.mkdir()
+        mame = public / 'dino'
+        mame.write_bytes(b'ROM-free fake MAME binary')
+        mame.chmod(0o755)
+        with patch('tools.mame_private_dino_session.PROJECT_ROOT', public), \
+             patch('tools.mame_private_dino_session.inspect_binary') as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'executable must stay outside'):
+                execute_private_capture(mame, self.build,
+                                        verify_build_only=True)
+            identity.assert_not_called()
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_rom_tree_containing_mame_executable_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'separate from MAME build'):
+            preflight(self.mame, self.build, self.root, self.workspace)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
     def test_existing_capture_report_or_log_never_overwritten(self):
         for name in (CAPTURE_DIR_NAME, REPORT_NAME, LOG_NAME):
             path = self.workspace / name
