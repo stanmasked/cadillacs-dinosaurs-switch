@@ -260,6 +260,8 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED')
         self.assertTrue(result['mame_verifyroms_exit_zero'])
         self.assertTrue(result['private_rom_metadata_stable_after_audit'])
+        self.assertTrue(result['private_rom_content_sha256_stable_after_audit'])
+        self.assertTrue(result['rom_bytes_read_by_python'])
         self.assertFalse(result['game_executed'])
         self.assertFalse(result['capture_verified'])
         self.assertFalse(result['original_game_authenticity_verified'])

@@ -83,11 +83,15 @@ class GuardedCaptureTests(unittest.TestCase):
         self.assertEqual(len(seen[1][1]), 32)
         self.assertTrue(out['local_mame_verifyroms_exit_zero_before_capture'])
         self.assertTrue(out['private_rom_entry_metadata_stable_during_capture'])
+        self.assertTrue(out['private_rom_content_sha256_stable_during_capture'])
+        self.assertTrue(out['private_rom_bytes_read_by_python'])
         self.assertFalse(out['original_game_authenticity_verified'])
         self.assertFalse(out['frame_sync_verified'])
         private_report = json.loads((self.workspace / REPORT_NAME).read_text())
         self.assertTrue(private_report['private_capture_completion'][
             'local_mame_verifyroms_exit_zero_before_capture'])
+        self.assertTrue(private_report['private_capture_completion'][
+            'private_rom_content_sha256_stable_during_capture'])
         self.assertNotIn('FAKE_PRIVATE_MAME_AUDIT', json.dumps(private_report))
         self.assertEqual((self.workspace / VERIFY_LOG_NAME).read_bytes(),
                          b'FAKE_PRIVATE_MAME_AUDIT')
@@ -224,6 +228,8 @@ class GuardedCaptureTests(unittest.TestCase):
                 self.mame, self.tree, self.roms, self.workspace)
         self.assertFalse(out['local_mame_verifyroms_exit_zero_before_capture'])
         self.assertFalse(out['private_rom_entry_metadata_stable_during_capture'])
+        self.assertFalse(out['private_rom_content_sha256_stable_during_capture'])
+        self.assertFalse(out['private_rom_bytes_read_by_python'])
         self.assertFalse(json.loads((self.workspace / REPORT_NAME).read_text())[
             'private_capture_completion']['local_mame_verifyroms_exit_zero_before_capture'])
         self.assertFalse((self.workspace / VERIFY_LOG_NAME).exists())

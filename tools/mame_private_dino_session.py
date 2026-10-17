@@ -32,6 +32,8 @@ try:
     from tools.mame_private_rom_entry import require_private_dino_entry
     from tools.mame_private_rom_metadata import (snapshot_private_dino_rom_entries,
                                                  require_stable_private_dino_rom_entries)
+    from tools.mame_private_rom_content import (snapshot_private_dino_rom_content,
+                                                require_stable_private_dino_rom_content)
     from tools.mame_private_cli_errors import write_private_failure
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
@@ -46,6 +48,8 @@ except ModuleNotFoundError:
     from mame_private_rom_entry import require_private_dino_entry
     from mame_private_rom_metadata import (snapshot_private_dino_rom_entries,
                                            require_stable_private_dino_rom_entries)
+    from mame_private_rom_content import (snapshot_private_dino_rom_content,
+                                          require_stable_private_dino_rom_content)
     from mame_private_cli_errors import write_private_failure
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -250,16 +254,17 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
     # reads the ROM contents; its verbose output stays in a 0600 local log.
     if verify_private_romset_only:
         _require_session_aware_build(binary, tree)
-        rom_before = snapshot_private_dino_rom_entries(roms)
+        rom_before = snapshot_private_dino_rom_content(roms)
         _run_private_mame_rom_verification(binary, roms, private, timeout_seconds)
-        require_stable_private_dino_rom_entries(roms, rom_before)
+        require_stable_private_dino_rom_content(roms, rom_before)
         return {
             'status': 'PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED',
             'diagnostic_only': True,
             'mame_verifyroms_exit_zero': True,
             'game_set_entry_observed': True,
             'private_rom_metadata_stable_after_audit': True,
-            'rom_bytes_read_by_python': False,
+            'private_rom_content_sha256_stable_after_audit': True,
+            'rom_bytes_read_by_python': True,
             'mame_reads_private_roms_locally': True,
             'rom_authenticity_independently_verified': False,
             'original_game_authenticity_verified': False,
@@ -280,11 +285,11 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
     # allocating the game session token or creating any capture files.
     rom_before = None
     if verify_private_romset_before_capture:
-        rom_before = snapshot_private_dino_rom_entries(roms)
+        rom_before = snapshot_private_dino_rom_content(roms)
         _run_private_mame_rom_verification(binary, roms, private, timeout_seconds)
         # If the game set was modified during the audit, no game session
         # token or capture directory is ever created.
-        require_stable_private_dino_rom_entries(roms, rom_before)
+        require_stable_private_dino_rom_content(roms, rom_before)
 
     # The sole launcher-issued random label is passed to both Lua and C++
     # as process environment, never printed, logged or saved as a nonce.
@@ -319,7 +324,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         raise ValueError('Local MAME exited unsuccessfully; check private log locally')
     if rom_before is not None:
         # Gameplay must not mutate or substitute the just-audited set.
-        require_stable_private_dino_rom_entries(roms, rom_before)
+        require_stable_private_dino_rom_content(roms, rom_before)
 
     # First require the complete local 54-file Lua/C++ capture set.
     # This stays entirely in process memory and stores no original-game
@@ -395,6 +400,9 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
                 verify_private_romset_before_capture),
             'private_rom_entry_metadata_stable_during_capture': (
                 verify_private_romset_before_capture),
+            'private_rom_content_sha256_stable_during_capture': (
+                verify_private_romset_before_capture),
+            'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
             'nominal_frame_count': FRAME_COUNT,
             'crc32_lua_components_checked': FRAME_COUNT * 5,
             'v2_bound_obj_samples': FRAME_COUNT,
@@ -418,7 +426,7 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
         if rom_before is not None:
             # Recheck immediately before atomically publishing the private
             # success report; no late mutation may be reported as stable.
-            require_stable_private_dino_rom_entries(roms, rom_before)
+            require_stable_private_dino_rom_content(roms, rom_before)
         # Unlike os.replace(), hard-link creation refuses a concurrent
         # existing target; the finalized report can never be clobbered.
         os.link(complete, report)
@@ -438,6 +446,9 @@ def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None
             verify_private_romset_before_capture),
         'private_rom_entry_metadata_stable_during_capture': (
             verify_private_romset_before_capture),
+        'private_rom_content_sha256_stable_during_capture': (
+            verify_private_romset_before_capture),
+        'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
         'original_game_authenticity_verified': False,
         'obj_latch_age_verified': False,
         'frame_sync_verified': False,

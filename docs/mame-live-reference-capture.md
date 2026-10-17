@@ -1087,3 +1087,40 @@ Synthetic regression tests cover overwritten ROM archives during MAME
 verification and during simulated gameplay, unchanged guarded sessions,
 and deliberately unguarded captures without false stability claims.
 The code and CI remain ROM-free; no actual commercial game runs on GitHub.
+
+
+## Stage 89 — ROM SHA-256 content stability inside private guarded MAME sessions
+
+The metadata-only stability guard introduced in Stage 88 could miss
+changes if an adversary or filesystem restored size and timestamps.
+Stage 89 adds a **bounded, private SHA-256 byte comparison** to the
+opt-in local original-game ROM verification and guarded capture modes.
+
+`tools/mame_private_rom_content.py` streams up to 256 MiB of ordinary
+`dino.zip` or flat unpacked `dino/` game-set bytes in chunks of 1 MiB,
+using no-follow file opening, fstat checks before/after each read,
+plus the Stage 88 name/type/inode/size/time snapshot. It keeps SHA-256
+digest **bytes only in RAM**, never prints, persists, shares or adds
+a hash/path/file content to either the private capture report or CI.
+The check is repeated after the MAME `-verifyroms` subprocess,
+after local game exit and immediately before private success-report
+publication. Any mismatch prevents game execution or report publication.
+The separate verify-only mode now also requires stable byte content.
+
+**Disclosure of changed semantics:** guarded and verify-only Python
+launches now intentionally **read the private ROM bytes locally**
+for stability hashing, in addition to the MAME process reading the
+original set. The old verify-only field `rom_bytes_read_by_python:false`
+is now **true**, and new bool-only report fields include
+`private_rom_content_sha256_stable_after_audit`,
+`private_rom_content_sha256_stable_during_capture` and
+`private_rom_bytes_read_by_python`. Unguarded, preflight-only and
+build-only modes do not read private ROM contents or falsely claim
+byte stability.
+
+This establishes only content stability across sampled times:
+hashing cannot prevent a malicious file swap between observations,
+nor prove game ownership, official provenance, physical CPS-1 VBlank,
+buffered OBJ sprite age or Switch image parity. Public CI exercises
+only fabricated synthetic byte strings and never checks genuine
+commercial game files or uploads any game material.
