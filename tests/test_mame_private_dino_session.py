@@ -42,10 +42,13 @@ class PrivateDinoSessionTests(unittest.TestCase):
         }
 
     def run_local(self, *, process=None):
+        def fake_runner(args, **kwargs):
+            self.synthetic_session_id = kwargs['env']['CPS1_DINO_CAPTURE_SESSION']
+            return process(args, **kwargs)
         with patch('tools.mame_private_dino_session.inspect_binary',
                    side_effect=self.compiled_dino_identity), \
              patch('tools.mame_private_dino_session.subprocess.run',
-                   side_effect=process) as runner:
+                   side_effect=fake_runner) as runner:
             result = execute_private_capture(
                 self.mame, self.build, self.roms, self.workspace,
                 timeout_seconds=120)
@@ -57,7 +60,13 @@ class PrivateDinoSessionTests(unittest.TestCase):
         for i in range(6):
             stem = f'frame-{900 + i*2:08d}'
             obj = (root / f'{stem}.buffered-obj-be.bin').read_bytes()
+            stamp = self.synthetic_session_id
+            manifest_path = root / f'{stem}.manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            manifest['capture_session'] = stamp
+            manifest_path.write_text(json.dumps(manifest))
             line = (f'CPS1_DINO_LATCH_V2 {20+i*2} {obj_fnv1a64(obj)}\n'
+                    f'CPS1_DINO_SESSION {stamp}\n'
                     if version == 2 else f'CPS1_DINO_LATCH_V1 {20+i*2}\n')
             (root / f'{stem}.obj-latch-count.txt').write_text(line)
         return subprocess.CompletedProcess(args, 0)
@@ -161,6 +170,12 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(report['crc32_lua_components_checked'], 30)
         self.assertEqual(report['bound_cpp_obj_samples'], 6)
         self.assertTrue(report['game_executed'])
+        self.assertTrue(
+            report['capture_session_binding']['shared_session_label_consistent'])
+        self.assertEqual(
+            report['capture_session_binding']['lua_manifest_session_samples'], 6)
+        self.assertEqual(
+            report['capture_session_binding']['cpp_latch_session_samples'], 6)
         self.assertFalse(report['original_game_authenticity_verified'])
         self.assertFalse(report['obj_latch_age_verified'])
         self.assertFalse(report['pixel_parity_eligible'])
@@ -188,6 +203,8 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(
             raw['obj_latch_count_evidence']['obj_byte_fingerprint_verified_count'], 6)
         self.assertFalse(raw['frame_sync_verified'])
+        self.assertTrue(raw['capture_session_binding']['shared_session_label_consistent'])
+        self.assertNotIn(self.synthetic_session_id, json.dumps(raw))
         self.assertEqual(
             raw['private_capture_completion']['status'],
             'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY')
