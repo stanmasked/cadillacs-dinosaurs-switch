@@ -143,14 +143,16 @@ def instrument(source):
         raise ValueError('MAME 0.289 CPS-1 probe anchors are missing or ambiguous')
     if 'void cps_state::cps1_objram_latch(int state)' not in source:
         raise ValueError('CPS-1 VBlank-latched OBJ implementation not found')
-    result = source.replace(INCLUDE,
-                            INCLUDE + '#include <atomic>\\n#include <cstdio>\\n#include <cstring>\\n'
-                            + 'static std::atomic<unsigned long long> '
-                            'cps1_dino_obj_latch_events{0};\\n', 1)
+    result = source.replace(
+        INCLUDE,
+        INCLUDE + '#include <atomic>\n#include <cstdio>\n#include <cstring>\n'
+        + 'static std::atomic<unsigned long long> '
+          'cps1_dino_obj_latch_events{0};\n',
+        1)
     result = result.replace(
         LATCH_HOOK,
-        LATCH_HOOK + '\\t\\tif (std::strcmp(machine().system().name, "dino") == 0)\\n'
-        + '\\t\\t\\tcps1_dino_obj_latch_events.fetch_add(1, std::memory_order_relaxed);\\n',
+        LATCH_HOOK + '\t\tif (std::strcmp(machine().system().name, "dino") == 0)\n'
+        + '\t\t\tcps1_dino_obj_latch_events.fetch_add(1, std::memory_order_relaxed);\n',
         1)
     return result.replace(HOOK,
                           '\tfind_last_sprite();\n' + PROBE +
