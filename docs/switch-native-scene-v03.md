@@ -286,3 +286,26 @@ It does not establish that any input came from an authentic
 MAME gameplay frame, observed VBlank, hardware sprite latch
 or the Nintendo Switch framebuffer. The earlier Stage 100
 four-case original-graphics comparison remains separate.
+
+## Stage 112 — native scene-enable schema validation
+
+The portable `source/cps1_scene.c` reader, used unchanged by the
+Nintendo Switch NRO, now accepts only **0** and **1** for each of
+the three Scroll1/2/3 enable bytes in the `CPS1SCN1` payload.
+The Python exporter already writes this canonical boolean encoding,
+but the native reader previously accepted any nonzero flag.
+
+This matters even for a scene with a **valid recomputed CRC32**:
+an invalid flag must not silently change an inactive tile layer
+into an active one when reading a local capture. The native loader
+returns false, leaves the caller's output scene entirely unchanged,
+and never renders an invalid scene. It preserves the existing strict
+reserved-byte check and all other binary layout fields.
+
+Two **ROM-free** native C regression tests compile the actual
+Switch C source on a Linux host, mutate each enable byte to
+2, 128 and 255 while recomputing the payload CRC32, assert
+fail-closed/no output mutation, and confirm all eight valid
+three-layer Boolean-enable combinations remain accepted.
+This does not prove original MAME frame timing, arcade game
+execution or physical Nintendo Switch framebuffer accuracy.
