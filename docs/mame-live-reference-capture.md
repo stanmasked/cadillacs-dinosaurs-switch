@@ -484,3 +484,42 @@ is added to the public repository. For complete private
 session integrity, the label check is followed by the Stage
 69 file-stability check and Stage 68 exclusive final JSON
 publication; use a new empty private workspace per run.
+
+
+## Stage 71 — full-tree MAME 0.289 with session-aware C++
+
+GitHub Actions run
+[39047853025](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39047853025)
+successfully built the **genuine pinned MAME 0.289 `dino` subtarget**
+from the upstream source tree with the current generated C++ patch.
+It passed source reconstruction, ROM-free `-listxml dino` and compiled
+`cps1_v.o` marker verification for `CPS1_DINO_LATCH_V2`,
+`CPS1_DINO_SESSION` and `CPS1_DINO_CAPTURE_SESSION`.
+Current-head Python CI passed 404/404 tests and the devkitPro Nintendo
+Switch NRO build passed. This is a **successful compilation**, not a
+real MAME original-game launch or a measured VBlank correlation.
+
+## Stage 72 — prove probe markers also survived final ELF linking
+
+A freshly compiled and session-marked `cps1_v.o` does not by itself
+prove the `dino` executable used for the next capture was actually
+linked against that object: a stale or replaced executable might still
+pass driver XML plus build-tree object inspection.
+
+The ROM-free verifier therefore scans the **actual linked executable**
+for all three expected C++ strings. It first checks the ELF signature,
+bounds the file size, and streams the bytes in bounded chunks with
+cross-chunk overlap instead of loading the potentially large executable
+into memory. A V2-only executable, missing session sidecar code marker,
+missing session environment marker, truncated/non-ELF executable or
+symlink fails without launching any original game ROM.
+
+The private local capture launcher now also explicitly requires the
+session-aware compiled object and linked executable booleans before
+creating its capture directory, log or final report. ROM-free
+regressions cover marker boundaries, false positives from an updated
+object paired with an old linked executable, and fail-closed launcher
+preflight. Neither a linked string nor the shared process environment
+is an independent authentication of MAME execution, physical VBlank,
+arcade-game identity, or pixel parity: all of those claims stay false.
+No executable, ROM or captured game bytes are published.

@@ -38,6 +38,9 @@ class PrivateDinoSessionTests(unittest.TestCase):
         return {
             'driver': 'dino',
             'compiled_instrumented_latch_v2_format': True,
+            'compiled_session_label_probe_marker': True,
+            'compiled_session_environment_probe_marker': True,
+            'linked_dino_executable_probe_markers': True,
             'listxml_validated': True,
         }
 
@@ -231,6 +234,23 @@ class PrivateDinoSessionTests(unittest.TestCase):
                 execute_private_capture(
                     self.mame, self.build, self.roms, self.workspace)
         self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_pre_session_or_unlinked_build_rejected_before_game_or_outputs(self):
+        valid = self.compiled_dino_identity()
+        for key in ('compiled_session_label_probe_marker',
+                    'compiled_session_environment_probe_marker',
+                    'linked_dino_executable_probe_markers'):
+            identity = dict(valid)
+            identity[key] = False
+            with self.subTest(key=key):
+                with patch('tools.mame_private_dino_session.inspect_binary',
+                           return_value=identity), \\
+                     patch('tools.mame_private_dino_session.subprocess.run') as game:
+                    with self.assertRaisesRegex(ValueError, 'verification failed'):
+                        execute_private_capture(
+                            self.mame, self.build, self.roms, self.workspace)
+                    game.assert_not_called()
+                self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_successful_process_without_complete_capture_fails_closed(self):
         with self.assertRaisesRegex(ValueError, 'missing or unexpected files'):

@@ -111,8 +111,11 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
     # -listxml, not any arcade game, and never loads ROM bytes.
     identity = inspect_binary(binary, tree)
     if (identity.get('driver') != 'dino' or
-            identity.get('compiled_instrumented_latch_v2_format') is not True):
-        raise ValueError('MAME identity/compiled V2 probe verification failed')
+            identity.get('compiled_instrumented_latch_v2_format') is not True or
+            identity.get('compiled_session_label_probe_marker') is not True or
+            identity.get('compiled_session_environment_probe_marker') is not True or
+            identity.get('linked_dino_executable_probe_markers') is not True):
+        raise ValueError('MAME identity/session-aware linked probe verification failed')
 
     # The sole launcher-issued random label is passed to both Lua and C++
     # as process environment, never printed, logged or saved as a nonce.
