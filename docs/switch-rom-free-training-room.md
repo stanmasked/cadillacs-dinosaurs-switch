@@ -187,3 +187,48 @@ This stage does **not** reproduce the original Cadillacs and
 Dinosaurs combo system. It is an invented training mechanic
 and is not proof of original gameplay, original animations,
 physical Switch runtime, audio or MAME framebuffer parity.
+
+## Stage 118 — exact one-tick event signals and impact feedback
+
+The invented training-room simulation now records a **one-tick combat
+event bitmask** in `DinoArena.events`. It resets at the beginning of
+each fixed 60 Hz step, then sets zero or more independent flags for:
+
+- Sparring mode switch; jump start; actual landing
+- Started player attack; *confirmed* dummy hit; third-hit finisher;
+  first dummy knockout
+- Released opponent attack; actual player damage; first player
+  knockout; completed opponent swing that was dodged/blocked
+
+An attack input during cooldown **never** produces a new swing event.
+A whiff creates a swing event but never a hit. The three-hit
+finisher may share a single tick with a dummy-hit and KO event;
+only the actual health transition produces the KO event.
+A completed opponent windup emits precisely one swing and
+either a player-hit event or a dodge/no-damage event. Mode toggle
+events do not retain previously reported combat events.
+These flags represent only **this tick**, not a buffered event
+queue and not original CPS-1 sound or effect timings.
+
+The core keeps separate, fixed-duration graphical feedback:
+`dummy_impact_flash` (6 ticks) and
+`player_impact_flash` (8 ticks). The homebrew NRO renders
+small newly designed geometric sparks next to the actor who
+was hit. They remain visible across presentation frames even
+though the event bitmask is cleared on the next simulation tick.
+The public implementation includes **no arcade audio**, no
+ROM-derived sound sequences, original sprites or game states.
+
+Eleven new host-C regressions check exact event boundaries,
+jump takeoff and one landing, whiffs and cooldown, landed hits,
+third-hit finisher + KO co-occurrence, sparring toggle reset,
+opponent attack and damage, last-moment jump dodge, player KO
+only once, opponent KO without an automatic finisher, spark
+timer expiry and deterministic 500-tick event replay.
+Prior stage 117 passed 743 tests; this addition brings the
+expected total to **754**, subject to GitHub Actions.
+
+This event vocabulary is an original scaffolding for future
+independently authored video/audio effects; it is not proof
+of original game hit timings, game audio, MAME execution or
+physical Nintendo Switch runtime.
