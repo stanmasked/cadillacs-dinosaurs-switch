@@ -254,3 +254,35 @@ source ROM data or emulator-side effects are stored on GitHub;
 runtime palette provenance, original buffered-OBJ timing, actual
 MAME game video and physical Nintendo Switch framebuffer parity
 remain unverified.
+
+## Stage 103 — fail closed on impure differential scene inputs
+
+The fourteen-scene native/Python comparison now verifies **input
+purity** as well as full pixel agreement and observable effects.
+All ten paired controls are checked before result publication:
+priority variants may change only the four relevant CPS-B masks;
+a single-group variant must change exactly its designated register;
+the pen-15 priority case may only add bit 15; transparent-pen
+palette variants may alter only palette entries at pen 15,
+excluding the explicit backdrop 0xbff; opaque-color variants
+may alter only nontransparent RGB entries. Every other scene
+field, including layer ordering, VRAM tilemap words, Scroll2
+rowscroll, scroll registers and buffered OBJ sprite data, must
+stay identical between members of a differential pair.
+
+An extra change is now visible in the fixed-schema report through
+differential_inputs_verified=false and necessarily refuses
+differential_coverage_verified or a successful parity status,
+even if both compositors agree on every generated pixel.
+ROM-free tests also mutate sprite data, tilemaps, layer control,
+palette entries, unknown fields and intentional single-group
+mask stimuli to check those refusals. The report still carries
+only fixed-code statuses and aggregate counts; it does not
+include private paths, input state, original game ROM bytes,
+reconstructed frames, sprites or full-resolution pixel output.
+
+This change is strictly synthetic controlled-state validation.
+It does not establish that any input came from an authentic
+MAME gameplay frame, observed VBlank, hardware sprite latch
+or the Nintendo Switch framebuffer. The earlier Stage 100
+four-case original-graphics comparison remains separate.
