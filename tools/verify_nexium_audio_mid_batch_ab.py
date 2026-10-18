@@ -99,19 +99,24 @@ def exposure_profile(report):
     """Extract validated render exposure, without pretending clocks matched."""
     windows=report['checkpoint_batch_position_intervals']
     mode=report['checkpoint_mode_intervals']
+    releases=report['checkpoint_release_position_intervals']
     if (not isinstance(windows,list) or len(windows)!=6 or
-            not isinstance(mode,list) or len(mode)!=6):
-        raise ValueError('missing exposure windows')
+            not isinstance(mode,list) or len(mode)!=6 or
+            not isinstance(releases,list) or len(releases)!=6):
+        raise ValueError('missing exposure or page-return windows')
     result=[]
-    for i,(w,m) in enumerate(zip(windows,mode)):
+    for i,(w,m,r) in enumerate(zip(windows,mode,releases)):
         first=integer(w['first_tick_steps'],'first tick exposure')
         later=integer(w['later_tick_steps'],'later tick exposure')
         single=integer(m['single_tick_render_steps'],'single tick exposure')
         first_skips=integer(w['first_tick_skips'],'first tick skips')
         later_skips=integer(w['later_tick_skips'],'later tick skips')
+        later_returns=integer(r['batched_later_released_pages'],
+                              'later tick page returns')
         if (first+later+single!=150 or
                 first_skips>first or later_skips>later or
-                w['tick_start']!=150*i or w['tick_end']!=150*(i+1)):
+                w['tick_start']!=150*i or w['tick_end']!=150*(i+1) or
+                r['tick_start']!=150*i or r['tick_end']!=150*(i+1)):
             raise ValueError('inconsistent 150-tick exposure partition')
         result.append({
             'tick_start':150*i,
@@ -121,7 +126,12 @@ def exposure_profile(report):
             'later_batch_ticks':later,
             'first_batch_skips':first_skips,
             'later_batch_skips':later_skips,
+            'later_batch_page_returns':later_returns,
         })
+    if (sum(w['later_batch_page_returns'] for w in result)!=
+            integer(report['batched_later_released_pages'],
+                    'later page-return total')):
+        raise ValueError('inconsistent 150-tick later page-return ledger')
     return result
 
 
@@ -147,6 +157,19 @@ def compare_batch_exposure(a,b):
                       for w in skip_windows) if matched else None)
     regressions=(sum(w['extra_minus_baseline_later_skips']>0
                      for w in skip_windows) if matched else None)
+    ack_windows=([
+        {
+            'tick_start':x['tick_start'],
+            'tick_end':x['tick_end'],
+            'extra_minus_baseline_later_page_returns':(
+                y['later_batch_page_returns']-x['later_batch_page_returns']),
+        }
+        for x,y in zip(left,right)
+    ] if matched else None)
+    more_returns=(sum(w['extra_minus_baseline_later_page_returns']>0
+                      for w in ack_windows) if matched else None)
+    fewer_returns=(sum(w['extra_minus_baseline_later_page_returns']<0
+                       for w in ack_windows) if matched else None)
     return {
         'per_150tick_batch_exposure_matched':matched,
         'matched_exposure_later_skip_window_deltas':skip_windows,
@@ -154,6 +177,11 @@ def compare_batch_exposure(a,b):
         'matched_exposure_later_skip_windows_worsened':regressions,
         'matched_exposure_later_skip_directions_mixed':(
             improvements>0 and regressions>0 if matched else None),
+        'matched_exposure_later_ack_window_deltas':ack_windows,
+        'matched_exposure_later_ack_windows_increased':more_returns,
+        'matched_exposure_later_ack_windows_decreased':fewer_returns,
+        'matched_exposure_later_ack_directions_mixed':(
+            more_returns>0 and fewer_returns>0 if matched else None),
         'exact_frame_pacing_matched':False,
         'baseline_150tick_batch_exposure':left,
         'experimental_150tick_batch_exposure':right,
@@ -164,8 +192,8 @@ def compare_batch_exposure(a,b):
             sum(y['later_batch_skips']-x['later_batch_skips']
                 for x,y in zip(left,right)) if matched else None),
         'matched_exposure_later_ack_count_delta':(
-            b['batched_later_released_pages']-
-            a['batched_later_released_pages'] if matched else None),
+            sum(w['extra_minus_baseline_later_page_returns']
+                for w in ack_windows) if matched else None),
     }
 
 
