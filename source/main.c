@@ -435,6 +435,37 @@ static void fallback_text(PadState *pad) {
     consoleExit(NULL);
 }
 
+
+#ifdef DINO_EMULATOR_SELFTEST
+/* Real ARM64 guest-only telemetry: PCM synthesis, libnx queue admission
+ * and actual speaker playback must remain three distinct claims.
+ * This is excluded from the normal player-facing homebrew build. */
+static void guest_report_row(FILE *stream, const char *event,
+                             uint32_t ticks, const DinoArena *arena,
+                             uint64_t state_witness) {
+    DinoSoundDiagnostics audio;
+    dino_switch_sound_diagnostics(&audio);
+    fprintf(stream,
+            "%s,%u,%d,%u,%u,%016llX,%016llX,%u,"
+            "%u,%u,%u,%u,%u,%u,%u,%u\n",
+            event,(unsigned)ticks,arena->x,
+            (unsigned)arena->player_hp,
+            (unsigned)arena->successful_hits,
+            (unsigned long long)state_witness,
+            (unsigned long long)dino_switch_sound_pcm_witness(),
+            (unsigned)dino_switch_sound_pcm_ticks(),
+            (unsigned)audio.simulated_ticks,
+            (unsigned)audio.active,
+            (unsigned)audio.queue_valid,
+            (unsigned)audio.pending,
+            (unsigned)audio.submitted,
+            (unsigned)audio.released,
+            (unsigned)audio.skipped,
+            (unsigned)audio.audio_errors);
+    fflush(stream);
+}
+#endif
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -503,12 +534,10 @@ int main(int argc, char **argv) {
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
         if (guest_witness) {
             fputs("event,ticks,player_x,player_hp,hits,state_fnv64,"
-                  "pcm_fnv64,pcm_blocks\n",guest_witness);
-            fprintf(guest_witness,"START,0,%d,%u,0,%016llX,%016llX,0\n",
-                    arena.x,(unsigned)arena.player_hp,
-                    (unsigned long long)demo_witness,
-                    (unsigned long long)dino_switch_sound_pcm_witness());
-            fflush(guest_witness);
+                  "pcm_fnv64,pcm_blocks,audio_ticks,audio_active,"
+                  "audio_queue_valid,audio_pending,audio_submitted,"
+                  "audio_released,audio_skipped,audio_errors\n",guest_witness);
+            guest_report_row(guest_witness,"START",0u,&arena,demo_witness);
         }
         demo_active=true;
     }
@@ -672,27 +701,13 @@ int main(int argc, char **argv) {
             if (!guest_first_frame && arena.ticks>0) {
                 /* This proves guest code reached framebufferEnd, not
                  * that a host screenshot or visible GPU image exists. */
-                fprintf(guest_witness,
-                        "FRAME_SUBMITTED,%u,%d,%u,%u,%016llX,%016llX,%u\n",
-                        (unsigned)arena.ticks,arena.x,
-                        (unsigned)arena.player_hp,
-                        (unsigned)arena.successful_hits,
-                        (unsigned long long)demo_witness,
-                        (unsigned long long)dino_switch_sound_pcm_witness(),
-                        (unsigned)dino_switch_sound_pcm_ticks());
-                fflush(guest_witness);
+                guest_report_row(guest_witness,"FRAME_SUBMITTED",
+                                 arena.ticks,&arena,demo_witness);
                 guest_first_frame=true;
             }
             if (!guest_done && demo_complete) {
-                fprintf(guest_witness,
-                        "REPLAY_DONE,%u,%d,%u,%u,%016llX,%016llX,%u\n",
-                        (unsigned)demo_ticks,arena.x,
-                        (unsigned)arena.player_hp,
-                        (unsigned)arena.successful_hits,
-                        (unsigned long long)demo_witness,
-                        (unsigned long long)dino_switch_sound_pcm_witness(),
-                        (unsigned)dino_switch_sound_pcm_ticks());
-                fflush(guest_witness);
+                guest_report_row(guest_witness,"REPLAY_DONE",
+                                 demo_ticks,&arena,demo_witness);
                 guest_done=true;
             }
         }
