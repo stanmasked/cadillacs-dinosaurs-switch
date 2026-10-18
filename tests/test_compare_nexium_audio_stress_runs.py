@@ -737,6 +737,51 @@ class MultiRunAudioTests(unittest.TestCase):
         self.assertFalse(result['original_arcade_audio_verified'])
 
 
+    def test_released_more_than_submitted_can_use_two_initial_pages(self):
+        # The measured 900 ticks may begin with already-queued buffers.
+        # Their acknowledgements count in releases, not submissions.
+        for extra in (1,2):
+            with self.subTest(extra=extra):
+                sample=fixture()
+                sample['audout_blocks_released']+=extra
+                sample=with_fixed_ack_headroom(sample,start=2)
+                totals,_,_,_,_,_,headroom=check.validate(sample)
+                self.assertEqual(
+                    totals['audout_blocks_released']-
+                    totals['audout_blocks_submitted'],extra)
+                self.assertEqual(sample['queue_pending_at_stress_start'],2)
+                self.assertEqual(sample['queue_pending_at_stress_end'],2-extra)
+                self.assertEqual(headroom[1],extra)
+
+    def test_release_overhang_exceeding_two_pages_is_rejected(self):
+        sample=fixture()
+        sample['audout_blocks_released']+=3
+        with self.assertRaises(ValueError):
+            check.validate(sample)
+
+    def test_full_position_release_ledger_allows_initial_page_ack(self):
+        sample=with_released_page_positions(
+            with_batch_position_poll(with_batch_position(
+                with_release_probe(fixture(),25))))
+        sample['audout_blocks_released']+=1
+        sample['single_frame_released_pages']+=1
+        sample['checkpoint_release_position_intervals'][0][
+            'single_frame_released_pages']+=1
+        sample=with_fixed_ack_headroom(sample,start=2)
+        totals,_,_,_,_,position_returns,headroom=check.validate(sample)
+        self.assertEqual(totals['audout_blocks_released'],601)
+        self.assertEqual(position_returns['single_frame_released_pages'],511)
+        self.assertEqual(sample['queue_pending_at_stress_end'],1)
+        self.assertEqual(headroom[1],1)
+
+    def test_preexisting_pages_do_not_authorize_forged_queue_endpoints(self):
+        sample=fixture()
+        sample['audout_blocks_released']+=1
+        sample=with_fixed_ack_headroom(sample,start=2)
+        sample['queue_pending_at_stress_start']=0
+        with self.assertRaises(ValueError):
+            check.validate(sample)
+
     def test_fixed_ack_headroom_uses_actual_pending_at_start(self):
         self.save(self.one,with_fixed_ack_headroom(fixture(),1))
         self.save(self.two,with_fixed_ack_headroom(fixture(1),2))
