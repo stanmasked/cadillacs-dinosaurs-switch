@@ -4,6 +4,7 @@
  */
 #include "../source/dino_arena.h"
 #include "../source/dino_sfx.h"
+#include "../source/dino_replay.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -41,6 +42,11 @@ void dino_host_step(uint32_t held,uint32_t pressed) {
         pcm_hash^=(uint8_t)(v>>8);
         pcm_hash*=FNV_PRIME;
     }
+}
+void dino_host_demo_step(uint32_t tick) {
+    uint32_t held=0,pressed=0;
+    if (dino_replay_input(tick,&held,&pressed))
+        dino_host_step(held,pressed);
 }
 void dino_host_status(HostArenaStatus *out) {
     if (!out) return;
