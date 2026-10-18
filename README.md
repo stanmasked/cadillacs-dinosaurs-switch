@@ -367,4 +367,6 @@ python tools/compare_nexium_audio_baseline_repeats.py \
   --out /private/baseline-repeatability.json
 ```
 
-Seven ROM-free synthetic unit tests cover valid difference reporting, differing initial pending queues, missing queue witness, improper A/B variant, duplicate metadata, falsified queue endpoints and CLI fail-closed behavior. This tool measures **baseline drift**, not treatment effects; no guest audio buffer policy, original ROM, user screenshots or approved packaging artwork changed.
+Seven ROM-free synthetic unit tests cover valid difference reporting, differing initial pending queues, rejection of missing required Stage-157 fixed-ACK headroom witnesses, improper A/B variant, duplicate metadata, falsified queue endpoints and CLI fail-closed behavior. This tool measures **baseline drift**, not treatment effects; no guest audio buffer policy, original ROM, user screenshots or approved packaging artwork changed.
+
+The Stage-178 Python CI initially found one test-case inconsistency: the new comparison delegates to the established strict guest baseline validator, which requires a complete fixed-ACK headroom witness. A legacy report without that witness therefore cannot be classified as a comparable Stage-157 baseline. The test now correctly expects an explicit inconclusive rejection instead of falsely asserting that such metadata are sufficient. No change is made to the audio engine or the underlying accepted guest format.
