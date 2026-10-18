@@ -34,8 +34,15 @@ Switch hardware or GPU emulation. See
 
 For ROM-free testing in an installed Nintendo Switch emulator, follow
 [the emulator launch and manual smoke-test guide](docs/switch-emulator-smoke.md).
-It includes a strict NRO format check, a bounded launcher probe and
-controller/visual/audio review steps. A launch probe reports **only
+The NRO now includes a **180-tick built-in demo**: enter the ROM-free
+training room, press **Minus (-)**, and inspect the frozen final frame
+(`C REPLAY 180/180 DONE`, player HP 4, three confirmed hits). **Y**
+resets. The input trace comes from the *same C module* exercised
+by the desktop gameplay tests, eliminating divergent host/console
+scripts. This is preparation for testing in a real Switch emulator;
+it is not proof that one has been run.
+The emulator guide includes NRO format and SHA-256 verification,
+a bounded launcher probe and controller/visual/audio review steps. A launch probe reports **only
 process survival**, never a false emulator gameplay pass.
 
 ## Build
