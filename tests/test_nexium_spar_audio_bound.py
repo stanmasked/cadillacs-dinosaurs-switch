@@ -194,7 +194,7 @@ class SparAudioResponseTests(unittest.TestCase):
                              text=True, check=False)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(json.loads(self.out.read_text())['status'],
-                         'GUEST_SPAR_AND_HOST_PCM_RESPONSE_OBSERVED')
+                         'GUEST_SPAR_AND_530HZ_MONITOR_TONE_OBSERVED')
         self.timeline.unlink()
         res = subprocess.run(args, cwd=self.root, capture_output=True,
                              text=True, check=False)
