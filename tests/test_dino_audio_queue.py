@@ -150,6 +150,59 @@ class SoundQueueTests(unittest.TestCase):
         self.assertEqual(tuple(q.busy),(1,0,1,0))
         self.assertEqual(q.pending,2)
 
+
+    def test_first_tick_admission_can_fill_two_page_cap_before_later(self):
+        q=self.fresh()
+        self.assertTrue(self.submit(q,0))
+        self.assertTrue(self.submit(q,1))
+        self.assertTrue(self.release(q,0))  # Fixed exogenous pre-first ACK
+        self.assertEqual(q.pending,1)
+        first=self.pick(q)
+        self.assertGreaterEqual(first,0)
+        self.assertTrue(self.submit(q,first))
+        self.assertEqual(q.pending,2)
+        self.assertEqual(self.pick(q),-1)  # No ACK between the two steps
+        self.dll.dino_audio_queue_skip(ctypes.byref(q))
+        self.assertEqual((q.submitted,q.released,q.skipped),(3,1,1))
+        self.assertLessEqual(q.pending,2)
+
+    def test_reserving_page_for_later_shifts_skip_not_total_admissions(self):
+        q=self.fresh()
+        self.assertTrue(self.submit(q,0))
+        self.assertTrue(self.submit(q,1))
+        self.assertTrue(self.release(q,0))
+        # Hypothetical: skip first while free, NOT production behavior.
+        self.dll.dino_audio_queue_skip(ctypes.byref(q))
+        self.assertEqual(q.pending,1)
+        later=self.pick(q)
+        self.assertEqual(later,0)
+        self.assertTrue(self.submit(q,later))
+        self.assertEqual((q.submitted,q.released,q.skipped,q.pending),
+                         (3,1,1,2))
+
+    def test_second_tick_needs_actual_ack_if_first_filled_queue(self):
+        q=self.fresh()
+        self.assertTrue(self.submit(q,0))
+        self.assertTrue(self.submit(q,1))
+        self.assertTrue(self.release(q,0))
+        self.assertTrue(self.submit(q,self.pick(q)))
+        self.assertEqual(self.pick(q),-1)
+        self.assertTrue(self.release(q,1))  # Distinct second-tick ACK
+        self.assertEqual(self.pick(q),1)
+        self.assertTrue(self.submit(q,1))
+        self.assertEqual((q.submitted,q.released,q.skipped,q.pending),
+                         (4,2,0,2))
+
+    def test_no_releases_means_no_duplicate_slot_rewrite(self):
+        q=self.fresh()
+        self.assertTrue(self.submit(q,0))
+        self.assertTrue(self.submit(q,1))
+        before=bytes(q)
+        for _ in range(2):
+            self.assertEqual(self.pick(q),-1)
+            self.assertFalse(self.submit(q,2))
+        self.assertEqual(bytes(q),before)
+
     def test_skip_counter_only_changes_explicitly_and_reset_clears_all(self):
         q=self.fresh()
         self.submit(q,0)

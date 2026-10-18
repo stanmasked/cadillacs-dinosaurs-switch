@@ -804,3 +804,37 @@ On two independently successful NeXium ARM64 homebrew executions at commit caf00
 The standalone ROM-free comparator now validates optional Stage 145 tick-position and Stage 146 nested release-poll JSON metadata. It recomputes all six 150-tick first/later steps, drops, and rounded rates; checks first/later/single mode release-poll identities against previously verified Stage 143 totals; and rejects missing keys, non-Boolean declared presence, forged interval distributions, and inconsistent stage dependencies. Mixed legacy/current report sets remain usable for earlier analyses but suppress **all** pooled statistics whose evidence is missing in any report. Complete valid sets produce aggregated first/later skip counts and buffer-recovery counts. Reports still carry `UNAUTHENTICATED_ROM_FREE_CROSS_RUN_COMPARISON`; valid metadata cannot independently authenticate an emulator run or prove a counterfactual fix.
 
 This stage modifies only the host-side analyzer, ROM-free synthetic tests and documentation. It makes no game simulation, renderer, physical PCM or Nintendo Switch audio queue changes; no commercial ROM/game images or raw PCM are committed.
+
+## Stage 148 — fixed-release two-tick capacity experiment (ROM-free)
+
+Stages 145–146 consistently observed later-batch skips in NeXium,
+including 69 and 72 later-step omissions in separate 900-tick guest runs,
+with no release-poll recovery on those later steps. The Stage 147
+host-side JSON checker independently validates these categories.
+
+The new optional diagnostic `tools/audit_audout_two_tick_capacity.py`
+runs a **purely synthetic, fixed-external-release** thought experiment.
+For example, a two-page queue starts full, gets exactly one acknowledgment
+before the first simulated tick and none before the later tick:
+
+```sh
+python tools/audit_audout_two_tick_capacity.py \
+  --initial-pending 2 --first-releases 1 --later-releases 0
+```
+
+The current eager admission admits tick one and skips tick two.
+A hypothetical "reserve later" strategy rejects tick one and admits
+tick two: the **same single lost audio tick** under these assumptions.
+Adding a truly independent second acknowledgment would admit both,
+but the tool cannot cause, guarantee or schedule such an acknowledgment.
+The model never simulates device execution, waiting, sample playback,
+timing feedback, frame pacing, waveform content or speaker audibility.
+It also cannot claim the release sequence would stay unchanged after
+a real admission-policy modification.
+
+New portable host tests exercise the **actual existing C queue policy**
+under corresponding artificial release schedules and check that pages
+are not reused before acknowledgement. The production NRO and audio
+queue code are unchanged. No commercial ROM, user assets, PCM samples,
+private paths, original sprites or controller histories are included.
+This is an infeasibility/pressure diagnostic, not a measured audio fix.
