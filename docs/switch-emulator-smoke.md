@@ -470,3 +470,46 @@ This is NOT a hardware Switch/Joy-Con/Pro Controller latency,
 physical display first-light measurement, direct emulator HID delay,
 audible output timing, original Capcom arcade parity or sound latency.
 Host load and capture frequency influence the observed bound.
+
+
+## Stage 135 — sampled Pulse-monitor response to actual guest spar action
+
+After the established NeXium 180-tick replay, keyboard reset/move,
+A attack and B jump, the test starts a **second, optional** recorder
+for the isolated PulseAudio null-sink monitor. The ROM-free sound
+engine already defines an original training-room spar-toggle cue:
+an approximately 530 Hz triangle tone lasting five 60 Hz ticks.
+This cue is not from the Capcom arcade game, ROM, or QSound assets.
+
+A separate host monotonic clock is sampled just **before** sending
+the X11 V key (emulated Switch X / spar mode). The host script first
+samples the monitor for at least 400 ms and rejects non-silent
+baselines or insufficient PCM. It then sends the spar-toggle
+command and watches for at least 20 meaningful PCM sample frames.
+If detected, the elapsed time is rounded up to milliseconds and
+reported as a coarse **host key-command to sampled Pulse monitor read
+upper bound**. The bound includes host keyboard dispatch, the
+emulator, guest libnx audio queue, Pulse server scheduling, recorder
+pipe buffers and host monitoring overhead. It is not the precise
+instant the original tone was generated or heard.
+
+The new verifier requires independent proof that the running ARM64
+NRO actually processed the ordered reset/movement/attack/jump/spar
+events, matching the original 31/31 HID summary. No original
+commercial audio, raw waveform, host keyboard recording, private
+paths or absolute timing information is uploaded. Only two small
+sanitized JSON files (raw host diagnosis and bound evidence) can be
+retained.
+
+Silent/unsupported Pulse monitors, prior jump/landing audio in the
+quiet baseline, lack of observed tone and inconsistent guest events
+must produce **INCONCLUSIVE**, not invented latency or sound
+success. If the optional recorder cannot start, the final spar key
+is still delivered to preserve the older, independently verified
+HID test.
+
+Even if the report succeeds, it does NOT establish physical Switch,
+Joy-Con, headphone/loudspeaker output, acoustic onset, calibrated DAC
+latency, game-quality audio or fidelity to Capcom's QSound originals.
+This remains a ROM-free training prototype and a host-software
+measurement.
