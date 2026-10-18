@@ -41,9 +41,11 @@ def verify(raw_audio, guest_timeline, guest_controller):
     elapsed = h.get('host_monitor_read_upper_bound_ms')
     reads = h.get('monitor_read_chunks')
     coherence = h.get('tone_coherence_milli')
+    windows = h.get('tone_windows_scanned')
     if (type(elapsed) is not int or not 1 <= elapsed <= 4000 or
             type(reads) is not int or not 1 <= reads <= 512 or
-            type(coherence) is not int or not 600 <= coherence <= 1000):
+            type(coherence) is not int or not 600 <= coherence <= 1000 or
+            type(windows) is not int or not 1 <= windows <= 32):
         raise ValueError('monitor response or tone is outside bounded contract')
     g = timeline.verify(guest_timeline, guest_controller)
     if g.get('status') != 'GUEST_HID_ORDER_WITNESSED':
@@ -55,6 +57,7 @@ def verify(raw_audio, guest_timeline, guest_controller):
         'host_monitor_read_chunks': reads,
         'spar_tone_reference_hz': 530,
         'spar_tone_coherence_milli': coherence,
+        'tone_windows_scanned': windows,
         'quiet_baseline_verified': True,
         'ordered_guest_spar_event_verified': True,
         'host_read_and_pipe_overhead_included': True,
