@@ -147,28 +147,34 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
         if [ -n "$window" ]; then
           xdotool windowfocus "$window" || true
           import -window "$window" "$4" 2>/dev/null || true
-          # Wait until the independent NRO 180-tick replay has
-          # completed, THEN send normal host X11 keyboard events.
-          # Defaults from NeXium controller_config.rs: Z=Y reset,
-          # Right=DPad Right, C=A attack, X=B jump, V=X spar.
-          # If the emulator does not actually deliver these through
-          # HID, the guest witness will stay INCONCLUSIVE.
+          # After the 180-tick guest replay, use a single host
+          # monotonic clock to time sampled X11 pixel response to
+          # the keyboard Right event. The new probe also delivers
+          # Y reset + A/B/X actions and records only a bounded JSON
+          # summary, never screenshots or raw keyboard events.
           sleep 10
-          xdotool windowactivate --sync "$window" || true
-          xdotool windowfocus "$window" || true
-          xdotool keydown z; sleep 0.25; xdotool keyup z
-          sleep 1
-          xdotool keydown Right; sleep 0.75; xdotool keyup Right
-          sleep 0.3
-          xdotool keydown c; sleep 0.25; xdotool keyup c
-          sleep 0.3
-          xdotool keydown x; sleep 0.25; xdotool keyup x
-          sleep 0.3
-          xdotool keydown v; sleep 0.25; xdotool keyup v
+          python3 tools/nexium_host_input_pixel.py \
+              --window "$window" --out "$5" || true
+          # A missing pixel sampler must never prevent the existing
+          # guest-HID test from receiving all five original actions.
+          # Only the guest-written timeline can prove HID delivery.
+          if ! grep -q HOST_PIXEL_CHANGE_OBSERVED_UNBOUND "$5" 2>/dev/null; then
+            xdotool windowactivate --sync "$window" || true
+            xdotool windowfocus "$window" || true
+            xdotool keydown z; sleep 0.25; xdotool keyup z
+            sleep 1
+            xdotool keydown Right; sleep 0.75; xdotool keyup Right
+            sleep 0.3
+            xdotool keydown c; sleep 0.25; xdotool keyup c
+            sleep 0.3
+            xdotool keydown x; sleep 0.25; xdotool keyup x
+            sleep 0.3
+            xdotool keydown v; sleep 0.25; xdotool keyup v
+          fi
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -222,6 +228,15 @@ python3 tools/verify_nexium_hid_timeline.py \
     --report "$out/guest-hid-timeline.csv" \
     --summary "$out/guest-controller.csv" \
     --out "$out/guest-hid-timeline-evidence.json"
+
+# Accept the software-only host-window sample bound ONLY after the
+# guest's ordered HID witness is verified. The result is explicitly
+# NOT an actual controller, hardware display or audio latency.
+python3 tools/verify_nexium_host_input_bound.py \
+    --host "$out/host-pixel-raw.json" \
+    --timeline "$out/guest-hid-timeline.csv" \
+    --controller "$out/guest-controller.csv" \
+    --out "$out/host-input-bound-evidence.json"
 
 # A guest-written CSV alone proves native execution, but not pixels.
 # Check that the actual 1280x720 NeXium window contains expected
