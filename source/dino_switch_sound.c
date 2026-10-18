@@ -1,5 +1,6 @@
 #include "dino_switch_sound.h"
 #include "dino_sfx.h"
+#include "dino_pcm_witness.h"
 #include "dino_audio_queue.h"
 #include <switch.h>
 
@@ -21,6 +22,7 @@ static uint8_t s_pcm[AUDIO_SLOTS][AUDIO_CAPACITY]
 static int16_t s_discard[DINO_SFX_TICK_FRAMES*2];
 static bool s_initialized, s_started;
 static uint32_t s_audio_errors, s_simulated_ticks;
+static uint64_t s_pcm_witness=DINO_PCM_WITNESS_INIT;
 
 void dino_switch_sound_close(void) {
     if (s_started) {
@@ -38,6 +40,7 @@ bool dino_switch_sound_open(void) {
     /* Idempotent initialization must not reset a live effect envelope. */
     if (s_initialized) return s_started;
     dino_sfx_reset(&s_synth);
+    s_pcm_witness=DINO_PCM_WITNESS_INIT;
     if (R_FAILED(audoutInitialize())) {
         ++s_audio_errors;
         return false;
@@ -106,6 +109,10 @@ void dino_switch_sound_step(uint32_t events) {
     if (slot<0) dino_audio_queue_skip(&s_queue);
     int16_t *output=slot>=0 ? (int16_t*)s_pcm[slot] : s_discard;
     dino_sfx_render_tick(&s_synth,output,DINO_SFX_TICK_FRAMES);
+    /* Measure generated samples even if audout is stopped, full or slow.
+     * Device delivery / audibility is deliberately a separate question. */
+    s_pcm_witness=dino_pcm_witness_feed(
+        s_pcm_witness,output,DINO_SFX_TICK_FRAMES);
     if (slot>=0) {
         /* Flush the full 0x1000 page before handing it to audout.
          * Exactly 3200 bytes contain the active stereo PCM frame. */
@@ -132,4 +139,11 @@ void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out) {
         out->released=snapshot.released;
         out->skipped=snapshot.skipped;
     }
+}
+
+uint64_t dino_switch_sound_pcm_witness(void) {
+    return s_pcm_witness;
+}
+uint32_t dino_switch_sound_pcm_ticks(void) {
+    return s_synth.ticks;
 }
