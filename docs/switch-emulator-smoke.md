@@ -144,3 +144,37 @@ This is a meaningful *precondition* for eventual genuine Switch
 emulation. A success claim requires actual emulator execution and
 observation of the final NRO frame, not a host simulation test or
 a unit test of the control trace.
+
+## Stage 127 — deterministic on-screen cross-platform state fingerprint
+
+The ROM-free 180-step controller trace now emits a **canonical state
+fingerprint** using `source/dino_replay_witness.c`. At every 60 Hz
+gameplay tick, the exact same code serializes a selected set of
+integer combat state fields and event flags explicitly as
+**little-endian 32-bit values**, in a documented fixed order, then
+updates a 64-bit FNV-1a digest. This method never hashes C struct
+padding, memory addresses, emulator-private data, ROM bytes, or
+original Capcom gameplay.
+
+The actual Switch NRO's frozen replay frame now displays
+`STATE FNV64 <16 hexadecimal digits>`. The host preview's
+`--headless --ticks 180` JSON also reports
+`gameplay_witness_fnv64` produced by the exact same portable C.
+The two values should match after the same 180 replay steps.
+This will help distinguish state divergence from renderer-only
+differences when a compatible Switch emulator becomes available.
+
+The fingerprint covers, in order: simulated tick, actor X/Y/Z
+and jump velocity, dummy X/Y, accumulated hits, event mask, two
+health values, combo count, sparring flag and current pose values.
+A Python-independent little-endian implementation verifies the
+C hash after **every** replay step in the host CI, not just at
+the final frame. Changing any one of several critical scripted
+inputs must change the final digest. Null arena pointers must
+leave the digest unchanged.
+
+**Evidence boundary:** a matching value in an actually displayed
+Switch emulator frame would confirm only parity of these selected
+simulation values and event sequence. It would not independently
+verify actual GPU pixel output, audible PCM or original MAME
+Cadillacs and Dinosaurs gameplay.
