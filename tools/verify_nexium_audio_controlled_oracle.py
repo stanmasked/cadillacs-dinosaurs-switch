@@ -45,6 +45,8 @@ def load_bounded_json(path,minimum,maximum):
 def oracle(plan):
     """Compute occupancy and ACK accounting without calling native C."""
     plan_source.verify_plan(plan)
+    if not exactly_equal(plan,plan_source.make_plan()):
+        raise ValueError('noncanonical deterministic plan field types')
     pending=2
     submitted=2
     released=skipped=poll_releases=0
