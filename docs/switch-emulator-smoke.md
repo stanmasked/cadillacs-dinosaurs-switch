@@ -371,3 +371,37 @@ insufficient activity, malformed data, large files and symlinks.
 
 This check is diagnostic-only; it does not modify the regular NRO,
 the arcade reference path, approved artwork or the main branch.
+
+
+## Stage 132 — actual external HID input through NeXium (optional)
+
+The diagnostic-only NRO attempts a second verification after the
+independent built-in 180-tick replay is complete. The NeXium CI window
+first captures the proven ROM-free gameplay screenshot. It then sends
+ordinary X11 keyboard events using the default keyboard bindings
+published in NeXium's open-source `controller_config.rs`:
+Z = Switch Y (reset), ArrowRight = D-pad Right, C = Switch A
+(attack), X = Switch B (jump) and V = Switch X (toggle sparring).
+
+**Crucially, the script's attempt to send keys is not evidence.** Only
+the running guest's `padGetButtonsDown` / `padGetButtons` interface
+can reset the arena, cause an actual character movement, and generate
+the appropriate ROM-free attack, jump and sparring event flags. A
+separate guest-created `cadillacs-controller-selftest.csv` is written
+with a reset checkpoint and an `INPUT_DONE` record *only* when all
+four effects are observed inside the NRO. The file contains only a
+short bitmask, player X-coordinate and sparring state; no personal
+controller history or host keyboard timestamps.
+
+The independent `verify_nexium_guest_controller.py` rejects absent
+files, partial sequences, mixed/extra rows, incorrect flags or player
+coordinates, malformed fields and symlinks. It returns
+`GUEST_HID_EFFECTS_WITNESSED` only for a complete native guest report;
+otherwise it records `INCONCLUSIVE_NO_GUEST_HID_EFFECTS`. An
+inconclusive optional input test does not invalidate separately proven
+180-tick guest execution, host pixels, or virtual-sink sound.
+
+This optional test cannot measure input latency or confirm hardware
+Joy-Con/Pro Controller compatibility. Nor does it validate original
+commercial-game controls. The standard consumer NRO does not enable
+the CI-only witness or write controller diagnostic files.
