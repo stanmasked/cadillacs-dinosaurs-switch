@@ -4,7 +4,12 @@ No original MAME PCM, commercial sound ROM, synthesized arcade tune or
 Switch hardware is required. C sample generation is deterministic.
 """
 import ctypes
+import contextlib
+import io
 from pathlib import Path
+import wave
+
+from tools import dino_sfx_preview
 import shutil
 import subprocess
 import tempfile
@@ -170,6 +175,37 @@ class OriginalSfxTests(unittest.TestCase):
         self.assertEqual(e.ticks,0)
         self.pcm(e)
         self.assertEqual(e.ticks,1)
+
+    def test_private_local_wav_preview_has_valid_pcm_header_and_is_deterministic(self):
+        first=dino_sfx_preview.render_preview()
+        second=dino_sfx_preview.render_preview()
+        self.assertEqual(first,second)
+        self.assertEqual(len(first),11*30*800*4)
+        e=self.fresh()
+        self.trigger(e,EVENTS[0])
+        pcm=self.pcm(e)
+        # Compare the first real native C output sample block bytewise.
+        native=bytes((ctypes.c_int16*len(pcm))(*pcm))
+        self.assertEqual(first[:len(native)],native)
+        self.assertNotEqual(first[:3200],bytes(3200))
+
+    def test_wav_preview_cli_writes_valid_file_once_without_overwrite(self):
+        with tempfile.TemporaryDirectory(prefix='synthetic-wav-preview-') as folder:
+            out=Path(folder)/'owned-training-effects.wav'
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    dino_sfx_preview.main(['--out',str(out)]),0)
+            with wave.open(str(out),'rb') as header:
+                self.assertEqual((header.getnchannels(),
+                                  header.getsampwidth(),
+                                  header.getframerate()),(2,2,48000))
+                self.assertEqual(header.getnframes(),11*30*800)
+                self.assertNotEqual(header.readframes(800),bytes(3200))
+            content=out.read_bytes()
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(
+                    dino_sfx_preview.main(['--out',str(out)]),2)
+            self.assertEqual(out.read_bytes(),content)
 
     def test_null_pointers_do_not_crash(self):
         self.dll.dino_sfx_reset(None)
