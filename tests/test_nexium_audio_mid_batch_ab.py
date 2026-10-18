@@ -374,6 +374,100 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertIsNone(
             profile['matched_exposure_and_returns_later_skip_count_delta'])
 
+    def test_all_three_release_positions_match_in_normal_fixture(self):
+        report=ab.compare(self.a,self.b)
+        self.assertTrue(report['matched_exposure_later_return_counts_matched'])
+        self.assertTrue(
+            report['matched_exposure_all_position_return_counts_matched'])
+        self.assertFalse(
+            report['matched_exposure_any_position_return_shift_confounds_skip_comparison'])
+        self.assertEqual(
+            report['matched_exposure_and_returns_later_skip_count_delta'],-6)
+        self.assertEqual(len(report['matched_exposure_return_position_window_deltas']),6)
+        self.assertFalse(report['causal_audio_improvement_verified'])
+
+    def test_first_vs_single_returns_can_confuse_equal_later_returns(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        releases=experimental['checkpoint_release_position_intervals'][0]
+        releases['single_frame_released_pages']-=1
+        releases['batched_first_released_pages']+=1
+        experimental['single_frame_released_pages']-=1
+        experimental['batched_first_released_pages']+=1
+        report=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(report['per_150tick_batch_exposure_matched'])
+        self.assertTrue(report['matched_exposure_later_return_counts_matched'])
+        self.assertFalse(report['matched_exposure_all_position_return_counts_matched'])
+        self.assertFalse(
+            report['matched_exposure_return_shift_confounds_skip_comparison'])
+        self.assertTrue(
+            report['matched_exposure_any_position_return_shift_confounds_skip_comparison'])
+        self.assertEqual(
+            report['matched_exposure_return_position_window_deltas'][0],{
+                'tick_start':0,'tick_end':150,
+                'extra_minus_baseline_single_frame_page_returns':-1,
+                'extra_minus_baseline_first_batch_page_returns':1,
+                'extra_minus_baseline_later_batch_page_returns':0,
+            })
+        self.assertIsNone(
+            report['matched_exposure_and_returns_later_skip_count_delta'])
+        self.assertIsNone(
+            report['matched_exposure_and_returns_later_skip_window_deltas'])
+
+    def test_equal_global_first_returns_can_hide_window_reallocation(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        windows=experimental['checkpoint_release_position_intervals']
+        windows[0]['batched_first_released_pages']-=1
+        windows[1]['batched_first_released_pages']+=1
+        report=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(report['matched_exposure_later_return_counts_matched'])
+        self.assertFalse(report['matched_exposure_all_position_return_counts_matched'])
+        self.assertEqual(report['matched_exposure_later_ack_count_delta'],0)
+        self.assertIsNone(
+            report['matched_exposure_and_returns_later_skip_count_delta'])
+        self.assertEqual(
+            [w['extra_minus_baseline_first_batch_page_returns']
+             for w in report['matched_exposure_return_position_window_deltas']],
+            [-1,1,0,0,0,0])
+
+    def test_first_and_single_page_return_ledgers_fail_closed(self):
+        for position,total in (
+                ('single_frame_released_pages','single_frame_released_pages'),
+                ('batched_first_released_pages','batched_first_released_pages')):
+            for kind in ('window_total','global_total','boolean','negative'):
+                with self.subTest(position=position,kind=kind):
+                    report=complete(False)
+                    if kind=='window_total':
+                        report['checkpoint_release_position_intervals'][0][position]+=1
+                    elif kind=='global_total':
+                        report[total]+=1
+                    elif kind=='boolean':
+                        report['checkpoint_release_position_intervals'][0][position]=True
+                    else:
+                        report['checkpoint_release_position_intervals'][0][position]=-1
+                    with self.assertRaises(ValueError):
+                        ab.exposure_profile(report)
+
+    def test_exposure_drift_nulls_return_position_matching(self):
+        baseline=complete(False)
+        experimental=complete(True)
+        experimental['checkpoint_batch_position_intervals'][0][
+            'later_tick_steps']=24
+        experimental['checkpoint_batch_position_intervals'][0][
+            'first_tick_steps']=24
+        experimental['checkpoint_mode_intervals'][0][
+            'single_tick_render_steps']=102
+        report=ab.compare_batch_exposure(baseline,experimental)
+        self.assertFalse(report['per_150tick_batch_exposure_matched'])
+        self.assertIsNone(report['matched_exposure_return_position_window_deltas'])
+        self.assertIsNone(
+            report['matched_exposure_all_position_return_counts_matched'])
+        self.assertIsNone(
+            report['matched_exposure_any_position_return_shift_confounds_skip_comparison'])
+        self.assertIsNone(
+            report['matched_exposure_and_returns_later_skip_count_delta'])
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
