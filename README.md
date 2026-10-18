@@ -24,6 +24,12 @@ python3 tools/dino_sfx_preview.py --out /your/private/folder/dino-training-effec
 Actual speaker/headphone output on a physical Switch remains unverified;
 audio hardware failures leave the technical prototype playable without sound.
 
+For ROM-free testing in an installed Nintendo Switch emulator, follow
+[the emulator launch and manual smoke-test guide](docs/switch-emulator-smoke.md).
+It includes a strict NRO format check, a bounded launcher probe and
+controller/visual/audio review steps. A launch probe reports **only
+process survival**, never a false emulator gameplay pass.
+
 ## Build
 Install [devkitPro switch-dev](https://www.switchbrew.org/wiki/Setting_up_Development_Environment),
 export DEVKITPRO, then run `make`. Expected result:
