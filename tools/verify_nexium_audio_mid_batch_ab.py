@@ -145,19 +145,40 @@ def exposure_profile(report):
             'single_ticks':single,
             'first_batch_ticks':first,
             'later_batch_ticks':later,
+            'single_skips':single_skips,
             'first_batch_skips':first_skips,
             'later_batch_skips':later_skips,
             'single_frame_page_returns':single_returns,
             'first_batch_page_returns':first_returns,
             'later_batch_page_returns':later_returns,
         })
+    # The standalone arithmetic helper also reconciles every subwindow
+    # with its 900-tick total. This is defense in depth: production uses
+    # the independent full ledger validator before calling this helper.
     for position,field in (
+            ('single_ticks','single_tick_render_steps'),
+            ('first_batch_ticks','batched_first_tick_steps'),
+            ('later_batch_ticks','batched_later_tick_steps'),
+            ('single_skips','skips_in_single_tick_render_frames'),
+            ('first_batch_skips','batched_first_tick_skips'),
+            ('later_batch_skips','batched_later_tick_skips'),
             ('single_frame_page_returns','single_frame_released_pages'),
             ('first_batch_page_returns','batched_first_released_pages'),
             ('later_batch_page_returns','batched_later_released_pages')):
         if (sum(w[position] for w in result)!=
                 integer(report[field],position+' total')):
-            raise ValueError('inconsistent 150-tick page-return ledger: '+position)
+            raise ValueError('inconsistent 150-tick summary ledger: '+position)
+    if (sum(w['first_batch_ticks']+w['later_batch_ticks']
+            for w in result)!=integer(report['batched_render_steps'],
+                                      'total batch exposure') or
+            sum(w['single_ticks']+w['first_batch_ticks']+
+                w['later_batch_ticks'] for w in result)!=
+            integer(report['simulation_ticks'],'total simulation ticks') or
+            sum(w['first_batch_skips']+w['later_batch_skips']
+                for w in result)!=integer(
+                    report['skips_in_batched_render_frames'],
+                    'total batched frame skips')):
+        raise ValueError('inconsistent global 900-tick exposure ledger')
     return result
 
 
