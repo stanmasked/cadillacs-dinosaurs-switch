@@ -7,7 +7,7 @@ claim that an emulator run has already succeeded.
 ## 1. Obtain the correct NRO
 
 Open the [Nintendo Switch native bootstrap GitHub Actions runs](
-https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/workflows/switch-native.yml)
+https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions)
 and download the NRO build artifact from a successful run for the
 specific source commit under test. The artifact includes a SHA-256
 checksum. Verify it locally, and use the `cadillacs-dinosaurs-switch.nro`
