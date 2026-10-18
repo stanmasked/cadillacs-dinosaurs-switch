@@ -97,7 +97,7 @@ def verify(path, guest_timeline, guest_controller):
             start[22]>start[21] or
             start[21]-start[22]!=start[11]):
         raise ValueError('starting release-poll counters inconsistent')
-    if has_batch_position_probe and start[23:]!=[0]*4:
+    if has_batch_position_probe and start[23:27]!=[0]*4:
         raise ValueError('batch position witness starts nonzero')
     if has_position_poll_probe and start[27:]!=[0]*4:
         raise ValueError('batch position poll baseline must start at zero')
