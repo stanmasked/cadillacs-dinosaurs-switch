@@ -147,7 +147,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
         if [ -n "$window" ]; then
           xdotool windowfocus "$window" || true
           import -window "$window" "$4" 2>/dev/null || true
-          # Wait until the NRO's independent 180-tick replay has
+          # Wait until the independent NRO 180-tick replay has
           # completed, THEN send normal host X11 keyboard events.
           # Defaults from NeXium controller_config.rs: Z=Y reset,
           # Right=DPad Right, C=A attack, X=B jump, V=X spar.
