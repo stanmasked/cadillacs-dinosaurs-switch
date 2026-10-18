@@ -18,7 +18,7 @@ else:
     import verify_nexium_audio_mode_binding as binding
 
 
-def validate_binding(report_path, binding_path, mode):
+def validate_binding(report_path, binding_path, mode, nro_path):
     # Read only a bounded ordinary file; do not follow symlinks.
     path=Path(binding_path)
     if path.is_symlink() or not path.is_file() or not 64<=path.stat().st_size<=8192:
@@ -32,20 +32,25 @@ def validate_binding(report_path, binding_path, mode):
         raise ValueError('invalid mode attestation JSON') from exc
     # This recomputes raw SHA-256 and validates the entire 900-tick guest
     # record and selected mode, including actual guest extra-poll counts.
-    expected=binding.attest(mode,report_path)
+    expected=binding.attest(mode,report_path,nro_path)
     if type(actual) is not dict or actual!=expected:
         raise ValueError('mode attestation does not match guest evidence')
     return expected
 
 
-def compare(base_report,base_binding,extra_report,extra_binding):
-    base=validate_binding(base_report,base_binding,'baseline')
-    extra=validate_binding(extra_report,extra_binding,'extra-poll')
+def compare(base_report,base_binding,extra_report,extra_binding,
+            base_nro,extra_nro):
+    base=validate_binding(base_report,base_binding,'baseline',base_nro)
+    extra=validate_binding(extra_report,extra_binding,'extra-poll',extra_nro)
+    if base['guest_nro_sha256']==extra['guest_nro_sha256']:
+        raise ValueError('baseline and experimental NRO binaries are identical')
     result=ab.compare(base_report,extra_report)
     return {
         'schema':'dino-nexium-bound-audio-ab-v1',
         'status':'UNCONTROLLED_BOUND_GUEST_AUDIO_COMPARISON_DESCRIPTIVE_ONLY',
         'baseline_report_sha256':base['guest_report_sha256'],
+        'baseline_guest_nro_sha256':base['guest_nro_sha256'],
+        'experimental_guest_nro_sha256':extra['guest_nro_sha256'],
         'experimental_report_sha256':extra['guest_report_sha256'],
         'baseline_guest_poll_calls':base['guest_poll_calls'],
         'experimental_guest_poll_calls':extra['guest_poll_calls'],
@@ -62,11 +67,14 @@ def main(argv=None):
     for name in ('baseline-report','baseline-binding',
                  'experimental-report','experimental-binding'):
         p.add_argument('--'+name,required=True,type=Path)
+    p.add_argument('--baseline-nro',type=Path,required=True)
+    p.add_argument('--experimental-nro',type=Path,required=True)
     p.add_argument('--out',type=Path)
     a=p.parse_args(argv)
     try:
         result=compare(a.baseline_report,a.baseline_binding,
-                       a.experimental_report,a.experimental_binding)
+                       a.experimental_report,a.experimental_binding,
+                       a.baseline_nro,a.experimental_nro)
         line=json.dumps(result,sort_keys=True)+'\n'
         if a.out is not None:
             with a.out.open('x',encoding='ascii') as f:

@@ -186,6 +186,7 @@ jobs:
           python3 tools/verify_nexium_audio_mode_binding.py \
             --selected-mode "$DINO_AUDIO_MODE" \
             --report emulator-evidence/guest-audio-stress-evidence.json \
+            --nro emulator-input/cadillacs-dinosaurs-switch.nro \
             --out emulator-evidence/guest-audio-mode-binding.json
       - name: Preserve verified result or honest inconclusive evidence
         if: always()
@@ -234,6 +235,16 @@ jobs:
         with:
           name: dino-ne-xium-actual-nro-guest-evidence-extra-poll
           path: paired/extra-poll
+      - name: Download baseline NRO build artifact for hash verification
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro-baseline
+          path: paired/build-baseline
+      - name: Download experimental NRO build artifact for hash verification
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro-extra-poll
+          path: paired/build-extra-poll
       - name: Verify bound guest evidence and compare two modes
         run: |
           python3 -m unittest discover -s tests -p 'test_nexium_audio_paired_artifacts.py' -v
@@ -242,6 +253,8 @@ jobs:
             --baseline-binding paired/baseline/guest-audio-mode-binding.json \
             --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-audio-comparison.json
       - name: Save descriptive result or inconclusive evidence
         if: always()

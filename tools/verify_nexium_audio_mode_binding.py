@@ -20,7 +20,32 @@ else:
 MODES=('baseline','extra-poll')
 
 
-def attest(selected_mode, report_path):
+def hash_switch_nro(nro_path):
+    """Hash bounded NRO bytes, rejecting symlinks and non-NRO files."""
+    path=Path(nro_path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('unavailable guest NRO file')
+    if not 128<=path.stat().st_size<=64*1024*1024:
+        raise ValueError('invalid guest NRO file size')
+    digest=hashlib.sha256()
+    total=0
+    with path.open('rb') as source:
+        header=source.read(0x14)
+        if len(header)!=0x14 or header[0x10:0x14]!=b'NRO0':
+            raise ValueError('invalid guest NRO header')
+        digest.update(header)
+        total+=len(header)
+        while chunk:=source.read(1024*1024):
+            total+=len(chunk)
+            if total>64*1024*1024:
+                raise ValueError('guest NRO exceeds size limit')
+            digest.update(chunk)
+    if total!=path.stat().st_size:
+        raise ValueError('guest NRO size changed during read')
+    return digest.hexdigest()
+
+
+def attest(selected_mode, report_path, nro_path=None):
     if selected_mode not in MODES:
         raise ValueError('unsupported requested NRO audio mode')
     raw,report=cross.read_report(Path(report_path))
@@ -31,6 +56,8 @@ def attest(selected_mode, report_path):
         'status':'SELECTED_AUDIO_MODE_WITNESSED_BY_GUEST',
         'selected_mode':selected_mode,
         'guest_report_sha256':hashlib.sha256(raw).hexdigest(),
+        'guest_nro_sha256':(hash_switch_nro(nro_path) if nro_path is not None
+                            else None),
         'guest_poll_enabled':selected_mode=='extra-poll',
         'guest_poll_calls':witness['additional_nonblocking_poll_calls'],
         'guest_poll_released_pages':witness['pages_released_by_additional_polls'],
@@ -47,10 +74,11 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--selected-mode',required=True,choices=MODES)
     parser.add_argument('--report',type=Path,required=True)
+    parser.add_argument('--nro',type=Path)
     parser.add_argument('--out',type=Path)
     args=parser.parse_args(argv)
     try:
-        result=attest(args.selected_mode,args.report)
+        result=attest(args.selected_mode,args.report,args.nro)
         line=json.dumps(result,sort_keys=True)+'\n'
         if args.out is not None:
             # Exclusive creation protects the original guest evidence and

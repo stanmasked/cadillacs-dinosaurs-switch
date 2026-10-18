@@ -2,6 +2,7 @@
 from contextlib import redirect_stdout
 from io import StringIO
 import hashlib
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -180,6 +181,27 @@ class GuestAudioModeBindingTests(unittest.TestCase):
             'name: dino-ne-xium-actual-nro-guest-evidence-${{ matrix.audio_mode }}',
             workflow)
         self.assertIn('      fail-fast: false',workflow)
+
+    def test_real_nro_digest_is_bound_to_selected_guest_report(self):
+        self.write(False)
+        nro=Path(self.temp.name)/'switch-baseline.nro'
+        nro.write_bytes(b'\x00'*16+b'NRO0'+b'ROM_FREE_GUEST'*16)
+        result=binding.attest('baseline',self.report,nro)
+        self.assertEqual(result['guest_nro_sha256'],
+                         hashlib.sha256(nro.read_bytes()).hexdigest())
+
+    def test_nro_mutation_and_symlink_are_rejected(self):
+        self.write(False)
+        nro=Path(self.temp.name)/'switch-test.nro'
+        nro.write_bytes(b'\x00'*16+b'BAD!'+b'BAD_HEADER'*16)
+        with self.assertRaises(ValueError):
+            binding.attest('baseline',self.report,nro)
+        nro.unlink()
+        target=Path(self.temp.name)/'real.nro'
+        target.write_bytes(b'\x00'*16+b'NRO0'+b'ROM_FREE'*16)
+        nro.symlink_to(target)
+        with self.assertRaises(ValueError):
+            binding.attest('baseline',self.report,nro)
 
     def test_cli_guest_mode_mismatch_fails_closed(self):
         self.write(False)

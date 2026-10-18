@@ -20,21 +20,26 @@ class PairedGuestAudioTests(unittest.TestCase):
         self.b=root/'experimental.json'
         self.aa=root/'baseline-mode.json'
         self.bb=root/'experimental-mode.json'
+        self.base_nro=root/'baseline.nro'
+        self.extra_nro=root/'extra-poll.nro'
+        self.base_nro.write_bytes(b'\x00'*16+b'NRO0'+b'BASELINE'*32)
+        self.extra_nro.write_bytes(b'\x00'*16+b'NRO0'+b'EXTRA_POLL'*32)
         self.write()
 
     def tearDown(self):
         self.temp.cleanup()
 
     def write(self):
-        for file,mode_file,enabled,variation,selected in (
-                (self.a,self.aa,False,0,'baseline'),
-                (self.b,self.bb,True,1,'extra-poll')):
+        for file,mode_file,nro,enabled,variation,selected in (
+                (self.a,self.aa,self.base_nro,False,0,'baseline'),
+                (self.b,self.bb,self.extra_nro,True,1,'extra-poll')):
             file.write_text(json.dumps(complete(enabled,variation),sort_keys=True)+'\n')
             mode_file.write_text(
-                json.dumps(binding.attest(selected,file),sort_keys=True)+'\n')
+                json.dumps(binding.attest(selected,file,nro),sort_keys=True)+'\n')
 
     def analyze(self):
-        return paired.compare(self.a,self.aa,self.b,self.bb)
+        return paired.compare(self.a,self.aa,self.b,self.bb,
+                              self.base_nro,self.extra_nro)
 
     def test_valid_pair_matches_sha256_without_causality_claim(self):
         result=self.analyze()
@@ -51,7 +56,8 @@ class PairedGuestAudioTests(unittest.TestCase):
 
     def test_swap_bound_mode_evidence_fails_closed(self):
         with self.assertRaises(ValueError):
-            paired.compare(self.a,self.bb,self.b,self.aa)
+            paired.compare(self.a,self.bb,self.b,self.aa,
+                           self.base_nro,self.extra_nro)
 
     def test_forged_sha256_or_selected_mode_is_rejected(self):
         for field,bad in (('guest_report_sha256','0'*64),
@@ -83,6 +89,23 @@ class PairedGuestAudioTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.analyze()
 
+    def test_changed_guest_nro_detected_after_attestation(self):
+        self.base_nro.write_bytes(self.base_nro.read_bytes()+b'X')
+        with self.assertRaises(ValueError):
+            self.analyze()
+
+    def test_identical_guest_nro_modes_rejected_even_if_report_modes_differ(self):
+        self.extra_nro.write_bytes(self.base_nro.read_bytes())
+        self.write()
+        with self.assertRaisesRegex(ValueError,'binaries are identical'):
+            self.analyze()
+
+    def test_guest_nro_symlink_refused(self):
+        self.extra_nro.unlink()
+        self.extra_nro.symlink_to(self.base_nro)
+        with self.assertRaises(ValueError):
+            self.analyze()
+
     def test_cli_writes_new_file_without_touching_inputs(self):
         output=Path(self.temp.name)/'result.json'
         originals=[p.read_bytes() for p in (self.a,self.aa,self.b,self.bb)]
@@ -91,6 +114,8 @@ class PairedGuestAudioTests(unittest.TestCase):
             rc=paired.main([
                 '--baseline-report',str(self.a),'--baseline-binding',str(self.aa),
                 '--experimental-report',str(self.b),'--experimental-binding',str(self.bb),
+                '--baseline-nro',str(self.base_nro),
+                '--experimental-nro',str(self.extra_nro),
                 '--out',str(output)])
         self.assertEqual(rc,0)
         self.assertEqual(output.read_text(),captured.getvalue())
@@ -104,6 +129,8 @@ class PairedGuestAudioTests(unittest.TestCase):
             rc=paired.main([
                 '--baseline-report',str(self.a),'--baseline-binding',str(self.aa),
                 '--experimental-report',str(self.b),'--experimental-binding',str(self.bb),
+                '--baseline-nro',str(self.base_nro),
+                '--experimental-nro',str(self.extra_nro),
                 '--out',str(output)])
         self.assertEqual(rc,1)
         result=json.loads(output.read_text())
@@ -118,6 +145,8 @@ class PairedGuestAudioTests(unittest.TestCase):
             rc=paired.main([
                 '--baseline-report',str(self.a),'--baseline-binding',str(self.aa),
                 '--experimental-report',str(self.b),'--experimental-binding',str(self.bb),
+                '--baseline-nro',str(self.base_nro),
+                '--experimental-nro',str(self.extra_nro),
                 '--out',str(self.a)])
         self.assertEqual(rc,1)
         self.assertEqual(self.a.read_bytes(),original)
