@@ -4,6 +4,7 @@ This controlled host test is not an emulator run or physical Switch audio.
 """
 import ctypes
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -142,6 +143,8 @@ class MatchedProductionAudoutTests(unittest.TestCase):
             before.append(snapshot.simulated_ticks)
         tick=0
         later=0
+        previous=[self.state(lib) for lib in (baseline,extra)]
+        windows=[]
         for frames in scenario['frame_sizes']:
             for inside in range(frames):
                 credit=scenario['pre_tick_external_release_credits'][tick]
@@ -166,7 +169,22 @@ class MatchedProductionAudoutTests(unittest.TestCase):
                 self.assertEqual(baseline.mock_audout_integrity_errors(),0)
                 self.assertEqual(extra.mock_audout_integrity_errors(),0)
                 tick+=1
+                if tick%150==0:
+                    states=[a,b]
+                    row={'tick_start':tick-150,'tick_end':tick}
+                    for name,current,old in zip(
+                            ('baseline','extra-poll'),states,previous):
+                        row[name]={
+                            key:getattr(current,key)-getattr(old,key)
+                            for key in ('submitted','released','skipped')
+                        }
+                        self.assertEqual(
+                            sum(row[name][k] for k in ('submitted','skipped')),
+                            150)
+                    windows.append(row)
+                    previous=states
         self.assertEqual(tick,900)
+        self.assertEqual(len(windows),6)
         self.assertEqual(later,540)
         self.assertEqual(extra.dino_switch_sound_guest_mid_batch_calls(),later)
         self.assertEqual(baseline.dino_switch_sound_guest_mid_batch_calls(),0)
@@ -181,6 +199,40 @@ class MatchedProductionAudoutTests(unittest.TestCase):
                          self.state(baseline).skipped,902)
         self.assertEqual(self.state(extra).submitted+
                          self.state(extra).skipped,902)
+        for name in ('baseline','extra-poll'):
+            self.assertEqual(
+                sum(row[name]['skipped'] for row in windows),
+                self.state(baseline if name=='baseline' else extra).skipped)
+        output=os.environ.get('DINO_CONTROLLED_AUDOUT_RESULT')
+        if output:
+            # Only after all 900 native ticks, ownership checks and
+            # per-window conservation have passed. Never overwrite.
+            result={
+                'schema':'dino-controlled-native-audout-comparison-v1',
+                'status':'DETERMINISTIC_TWO_C_ADAPTERS_MATCHED_HOST_INPUTS',
+                'scope':'SYNTHETIC_HOST_C_ADAPTER_ONLY',
+                'stimulus_sha256':scenario['stimulus_sha256'],
+                'start_pending_pages':2,
+                'total_measured_ticks':900,
+                'later_batch_experimental_poll_calls':later,
+                'extra_poll_page_releases':
+                    extra.dino_switch_sound_guest_mid_batch_releases(),
+                'per_150tick_counters':windows,
+                'baseline_skipped':self.state(baseline).skipped,
+                'experimental_skipped':self.state(extra).skipped,
+                'baseline_submitted_during_stress':
+                    self.state(baseline).submitted-2,
+                'experimental_submitted_during_stress':
+                    self.state(extra).submitted-2,
+                'host_input_schedule_matched':True,
+                'observed_queue_accounting_equal':True,
+                'guest_frame_pacing_matched_verified':False,
+                'emulator_audio_improvement_verified':False,
+                'physical_switch_audio_verified':False,
+                'original_arcade_audio_verified':False,
+            }
+            with Path(output).open('x',encoding='ascii') as dest:
+                dest.write(json.dumps(result,sort_keys=True)+'\n')
 
 
 if __name__=='__main__':

@@ -259,8 +259,21 @@ jobs:
       - name: Verify bound guest evidence and compare two modes
         run: |
           python3 -m unittest discover -s tests -p 'test_nexium_audio_paired_artifacts.py' -v
-          python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_mock.py' -v
+          DINO_CONTROLLED_AUDOUT_RESULT=controlled-host-audout-result.json \
+            python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_mock.py' -v
           python3 tools/nexium_audio_control_plan.py --out controlled-host-audout-plan.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          plan=json.loads(Path('controlled-host-audout-plan.json').read_text())
+          result=json.loads(Path('controlled-host-audout-result.json').read_text())
+          assert result['stimulus_sha256']==plan['stimulus_sha256']
+          assert result['total_measured_ticks']==plan['total_simulation_ticks']
+          assert len(result['per_150tick_counters'])==6
+          assert result['host_input_schedule_matched'] is True
+          assert result['guest_frame_pacing_matched_verified'] is False
+          print('ROM-free controlled native C adapter provenance verified')
+          PY
           python3 tools/verify_nexium_audio_paired_artifacts.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
             --baseline-binding paired/baseline/guest-audio-mode-binding.json \
@@ -277,5 +290,6 @@ jobs:
           path: |
             paired-audio-comparison.json
             controlled-host-audout-plan.json
+            controlled-host-audout-result.json
           if-no-files-found: warn
           retention-days: 7
