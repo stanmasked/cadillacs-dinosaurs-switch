@@ -55,6 +55,30 @@ jobs:
           assert not report['switch_audio_verified']
           print('Native C gameplay/frame/audio evidence PASS; Switch emulation NOT attempted')
           PY
+      - name: Install virtual X11 and desktop Tk for genuine GUI smoke
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xauth python3-tk
+      - name: Exercise live Tk keyboard and rendered PhotoImage pixels
+        run: |
+          xvfb-run -a python3 tools/dino_host_preview.py --gui-smoke \
+            > rom-free-preview/tk-gui-witness.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('rom-free-preview/tk-gui-witness.json').read_text())
+          assert report['schema']=='dino-native-gui-smoke-v1'
+          assert report['runtime']=='tk_desktop_not_switch_emulator'
+          assert (report['ticks'],report['player_x'])==(9,98)
+          assert report['image_dimensions']==[768,448]
+          assert report['tk_image_rendered'] is True
+          assert report['held_input_verified'] is True
+          assert report['edge_input_verified'] is True
+          assert report['switch_emulator_verified'] is False
+          assert report['switch_gpu_verified'] is False
+          assert report['switch_audio_verified'] is False
+          print('Real Xvfb Tk UI, keyboard and pixels verified; Switch emulation NOT claimed')
+          PY
       - name: Publish ROM-free synthetic frame + metadata
         uses: actions/upload-artifact@v4
         with:
@@ -62,5 +86,6 @@ jobs:
           path: |
             rom-free-preview/training-room.ppm
             rom-free-preview/host-witness.json
+            rom-free-preview/tk-gui-witness.json
           if-no-files-found: error
           retention-days: 7
