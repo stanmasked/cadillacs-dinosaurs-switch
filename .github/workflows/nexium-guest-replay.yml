@@ -16,6 +16,7 @@ on:
       - 'tools/nexium_host_input_pixel.py'
       - 'tools/nexium_host_spar_audio.py'
       - 'tools/verify_nexium_spar_audio_bound.py'
+      - 'tools/verify_nexium_audio_stress.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
       - 'tests/test_nexium_host_audio.py'
@@ -23,6 +24,7 @@ on:
       - 'tests/test_nexium_hid_timeline.py'
       - 'tests/test_nexium_host_input_pixel.py'
       - 'tests/test_nexium_spar_audio_bound.py'
+      - 'tests/test_nexium_audio_stress.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -36,6 +38,7 @@ on:
       - 'tools/nexium_host_input_pixel.py'
       - 'tools/nexium_host_spar_audio.py'
       - 'tools/verify_nexium_spar_audio_bound.py'
+      - 'tools/verify_nexium_audio_stress.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
       - 'tests/test_nexium_host_audio.py'
@@ -43,6 +46,7 @@ on:
       - 'tests/test_nexium_hid_timeline.py'
       - 'tests/test_nexium_host_input_pixel.py'
       - 'tests/test_nexium_spar_audio_bound.py'
+      - 'tests/test_nexium_audio_stress.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 permissions:
@@ -101,6 +105,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_hid_timeline.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_input_pixel.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
       - name: Install Xvfb and software Vulkan dependencies for NeXium
         run: |
           sudo apt-get update -qq
@@ -138,6 +143,8 @@ jobs:
             emulator-evidence/host-pixel-raw.json
             emulator-evidence/host-spar-raw.json
             emulator-evidence/host-spar-audio-evidence.json
+            emulator-evidence/guest-audio-stress-evidence.json
+            emulator-evidence/guest-audio-stress.csv
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn
           retention-days: 7
