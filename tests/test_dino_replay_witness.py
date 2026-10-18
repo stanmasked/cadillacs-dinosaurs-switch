@@ -106,6 +106,10 @@ class ReplayWitnessTests(unittest.TestCase):
         arena,digest=self.replay()
         result=host.headless(180)
         self.assertEqual(result['gameplay_witness_fnv64'],f'{digest:016x}')
+        # Independently frozen from a real native-C CI witness at stage 127;
+        # this guards against accidental changes to the scripted mechanics.
+        self.assertEqual(result['gameplay_witness_fnv64'],
+                         '5bca2ff01fb244f6')
         self.assertEqual(result['ticks'],arena.ticks)
         self.assertFalse(result['switch_emulator_verified'])
 
