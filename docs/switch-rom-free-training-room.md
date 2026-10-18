@@ -279,3 +279,25 @@ audibility, latency, underrun frequency and device behavior.
 The GitHub NRO job verifies compilation, not physical playback.
 The prototype has no Capcom QSound audio, soundtrack, original
 sound effects, original sound timing or licensed samples.
+
+### Listening on a computer without a Switch or ROM
+
+Use the optional host preview tool to generate a local WAV containing
+all **eleven newly authored cue sounds** in sequence, separated by
+brief silence:
+
+```sh
+python3 tools/dino_sfx_preview.py --out /your/private/folder/dino-training-effects.wav
+```
+
+A host **GCC** installation is required. The tool compiles the exact
+portable C synthesizer under an ephemeral temporary directory and writes
+a standard **48 kHz, 16-bit, stereo WAV**. It does not ship prerecorded
+commercial sound, nor does it load any existing WAV or ROM. The output
+path must be given explicitly, its directory must exist, and an
+existing file will **never be overwritten**.
+
+Two additional ROM-free tests independently verify WAV header
+dimensions and sample count, byte-for-byte reproducibility, agreement
+with the sound engine's direct PCM output, and the no-overwrite rule.
+The expanded expected full test count is **768**, subject to CI.
