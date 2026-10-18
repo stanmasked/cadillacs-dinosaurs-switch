@@ -132,8 +132,28 @@ def compare_batch_exposure(a,b):
     fields=('single_ticks','first_batch_ticks','later_batch_ticks')
     matched=all(all(x[k]==y[k] for k in fields)
                 for x,y in zip(left,right))
+    # Only compare skips inside matching coarse tick populations. A pooled
+    # total can hide opposing per-window changes even when exposure matches.
+    skip_windows=([
+        {
+            'tick_start':x['tick_start'],
+            'tick_end':x['tick_end'],
+            'extra_minus_baseline_later_skips':(
+                y['later_batch_skips']-x['later_batch_skips']),
+        }
+        for x,y in zip(left,right)
+    ] if matched else None)
+    improvements=(sum(w['extra_minus_baseline_later_skips']<0
+                      for w in skip_windows) if matched else None)
+    regressions=(sum(w['extra_minus_baseline_later_skips']>0
+                     for w in skip_windows) if matched else None)
     return {
         'per_150tick_batch_exposure_matched':matched,
+        'matched_exposure_later_skip_window_deltas':skip_windows,
+        'matched_exposure_later_skip_windows_improved':improvements,
+        'matched_exposure_later_skip_windows_worsened':regressions,
+        'matched_exposure_later_skip_directions_mixed':(
+            improvements>0 and regressions>0 if matched else None),
         'exact_frame_pacing_matched':False,
         'baseline_150tick_batch_exposure':left,
         'experimental_150tick_batch_exposure':right,
