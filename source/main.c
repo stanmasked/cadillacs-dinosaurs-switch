@@ -643,13 +643,15 @@ int main(int argc, char **argv) {
                      * The replay trace never contributes to this witness. */
                     if ((held & HidNpadButton_Right) && arena.x>90)
                         guest_controller_flags|=2u;
-                    if ((down & HidNpadButton_A) &&
+                    /* Edge-triggered inputs may be buffered across a
+                     * render frame that contains no 60Hz simulation tick. */
+                    if ((step_pressed&DINO_ARENA_ATTACK) &&
                         (arena.events&DINO_EVT_PLAYER_SWING))
                         guest_controller_flags|=4u;
-                    if ((down & HidNpadButton_B) &&
+                    if ((step_pressed&DINO_ARENA_JUMP) &&
                         (arena.events&DINO_EVT_JUMP_START))
                         guest_controller_flags|=8u;
-                    if ((down & HidNpadButton_X) &&
+                    if ((step_pressed&DINO_ARENA_TOGGLE_SPAR) &&
                         (arena.events&DINO_EVT_SPAR_TOGGLE) && arena.sparring)
                         guest_controller_flags|=16u;
                     if (guest_controller_flags==31u &&
