@@ -20,6 +20,7 @@ static uint8_t s_pcm[AUDIO_SLOTS][AUDIO_CAPACITY]
     __attribute__((aligned(0x1000)));
 static int16_t s_discard[DINO_SFX_TICK_FRAMES*2];
 static bool s_initialized, s_started;
+static uint32_t s_audio_errors, s_simulated_ticks;
 
 void dino_switch_sound_close(void) {
     if (s_started) {
@@ -37,12 +38,16 @@ bool dino_switch_sound_open(void) {
     /* Idempotent initialization must not reset a live effect envelope. */
     if (s_initialized) return s_started;
     dino_sfx_reset(&s_synth);
-    if (R_FAILED(audoutInitialize())) return false;
+    if (R_FAILED(audoutInitialize())) {
+        ++s_audio_errors;
+        return false;
+    }
     s_initialized=true;
     if (audoutGetSampleRate()!=DINO_SFX_RATE ||
         audoutGetChannelCount()!=2 ||
         audoutGetPcmFormat()!=PcmFormat_Int16 ||
         R_FAILED(audoutStartAudioOut())) {
+        ++s_audio_errors;
         dino_switch_sound_close();
         return false;
     }
@@ -61,6 +66,7 @@ bool dino_switch_sound_open(void) {
 void dino_switch_sound_step(uint32_t events) {
     /* Envelopes progress once per 60Hz game tick, even if a stalled
      * console is unable to accept another PCM buffer this frame. */
+    ++s_simulated_ticks;
     dino_sfx_events(&s_synth,events);
     int slot=-1;
     if (s_started) {
@@ -68,6 +74,7 @@ void dino_switch_sound_step(uint32_t events) {
             AudioOutBuffer *released=NULL;
             u32 count=0;
             if (R_FAILED(audoutGetReleasedAudioOutBuffer(&released,&count))) {
+                ++s_audio_errors;
                 dino_switch_sound_close();
                 break;
             }
@@ -76,6 +83,7 @@ void dino_switch_sound_step(uint32_t events) {
              * Multiple releases in one result cannot be accounted for
              * safely by this adapter: fail closed to preserve ownership. */
             if (count!=1 || !released) {
+                ++s_audio_errors;
                 dino_switch_sound_close();
                 break;
             }
@@ -88,6 +96,7 @@ void dino_switch_sound_step(uint32_t events) {
                 break;
             }
             if (!known) {
+                ++s_audio_errors;
                 dino_switch_sound_close();
                 break;
             }
@@ -102,7 +111,25 @@ void dino_switch_sound_step(uint32_t events) {
          * Exactly 3200 bytes contain the active stereo PCM frame. */
         armDCacheFlush(s_pcm[slot],AUDIO_CAPACITY);
         if (R_FAILED(audoutAppendAudioOutBuffer(&s_buffers[slot])) ||
-            !dino_audio_queue_submit(&s_queue,(unsigned)slot))
+            !dino_audio_queue_submit(&s_queue,(unsigned)slot)) {
+            ++s_audio_errors;
             dino_switch_sound_close(); /* no wait/no stale PCM backlog */
+        }
+    }
+}
+
+void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out) {
+    if (!out) return;
+    *out=(DinoSoundDiagnostics){0};
+    out->simulated_ticks=s_simulated_ticks;
+    out->audio_errors=s_audio_errors;
+    out->active=(uint8_t)s_started;
+    DinoAudioQueueStats snapshot;
+    if (dino_audio_queue_snapshot(&s_queue,&snapshot)) {
+        out->queue_valid=1;
+        out->pending=snapshot.pending;
+        out->submitted=snapshot.submitted;
+        out->released=snapshot.released;
+        out->skipped=snapshot.skipped;
     }
 }
