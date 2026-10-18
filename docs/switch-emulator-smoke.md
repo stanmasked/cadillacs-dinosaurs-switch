@@ -523,13 +523,17 @@ and the native guest HID sequence ended with a SPAR event. That is
 useful for observing audio activity, but alone cannot exclude every
 unrelated game cue that might arrive after pressing V.
 
-Stage 136 therefore keeps at most 2048 contiguous stereo frames from
-the first significant post-key monitor sample, without writing any raw
-audio to disk. It computes the normalized energy coherence of the
-left-channel fundamental against the known 530 Hz tone synthesized by
-the ROM-free SPAR_TOGGLE event. A score below 0.60 or a missing full
-analysis window remains **INCONCLUSIVE**, not a successful sound
-response. A threshold-only noise spike, different-frequency tone or
+Stage 136 scans at most 32 overlapping windows of 2048 stereo
+frames (1024-frame hop) after the first significant post-key monitor
+sample, without writing raw audio to disk. The bounded memory buffer
+permits the first candidate to contain an older, delayed jump or landing
+effect, while a later candidate can still reveal the actual SPAR cue.
+It computes normalized energy coherence of the left-channel fundamental
+against the known 530 Hz tone synthesized by the ROM-free
+SPAR_TOGGLE event. Without a full qualifying window scoring at least
+0.60 the result remains **INCONCLUSIVE**, not a successful sound
+response. Only a bounded summary of windows scanned and best
+coherence is retained for diagnostics, never raw audio. A threshold-only noise spike, different-frequency tone or
 unexpected silent signal cannot establish the 530 Hz marker.
 The sanitized report contains only a coarse integer coherence score,
 expected reference frequency and the host monitor-read response bound.
