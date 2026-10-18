@@ -49,6 +49,7 @@ class HostArena:
         self.path=Path(self.temp.name)/'dinohost.so'
         sources=['source/dino_arena.c','source/dino_sfx.c',
                  'source/dino_replay.c','source/dino_replay_witness.c',
+                 'source/dino_pcm_witness.c',
                  'tools/dino_host_bridge.c']
         cmd=[compiler,'-std=c11','-O2','-Wall','-Wextra','-Werror',
              '-fPIC','-shared','-Isource',
