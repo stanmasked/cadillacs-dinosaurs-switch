@@ -65,6 +65,73 @@ class PairedGuestAudioTests(unittest.TestCase):
         self.assertFalse(result['causal_audio_improvement_verified'])
         self.assertFalse(result['physical_switch_audio_verified'])
 
+    def test_six_window_skip_diagnostics_conserve_guest_totals(self):
+        result=self.analyze()
+        diag=result['window_skip_diagnostics']
+        rows=diag['per_150tick_skip_deltas']
+        self.assertEqual(len(rows),6)
+        self.assertEqual([r['tick_start'] for r in rows],
+                         [0,150,300,450,600,750])
+        self.assertEqual(sum(r['baseline_skips'] for r in rows),
+                         result['descriptive_comparison']['baseline'][
+                             'audio_blocks_skipped'])
+        self.assertEqual(sum(r['experimental_skips'] for r in rows),
+                         result['descriptive_comparison']['experimental'][
+                             'audio_blocks_skipped'])
+        self.assertFalse(diag['causal_audio_improvement_verified'])
+
+    def test_one_stress_window_can_dominate_unmatched_run_difference(self):
+        # Reproduce the observed six-window counts using synthetic metadata;
+        # never pass live private guest data into the public unit tests.
+        baseline=[13,12,16,17,16,18]
+        experimental=[19,19,25,20,120,24]
+        comparison={
+            'baseline_150tick_batch_exposure':[],
+            'experimental_150tick_batch_exposure':[],
+            'baseline':{'audio_blocks_skipped':sum(baseline)},
+            'experimental':{'audio_blocks_skipped':sum(experimental)},
+            'per_150tick_batch_exposure_matched':False,
+        }
+        for i,(a,b) in enumerate(zip(baseline,experimental)):
+            common={'tick_start':i*150,'tick_end':(i+1)*150}
+            comparison['baseline_150tick_batch_exposure'].append(
+                {**common,'single_skips':a,
+                 'first_batch_skips':0,'later_batch_skips':0})
+            comparison['experimental_150tick_batch_exposure'].append(
+                {**common,'single_skips':b,
+                 'first_batch_skips':0,'later_batch_skips':0})
+        result=paired.window_skip_diagnostics(comparison)
+        worst=result['largest_positive_skip_excess_window']
+        self.assertEqual((worst['tick_start'],worst['tick_end']),(600,750))
+        self.assertEqual((worst['share_numerator'],worst['share_denominator']),
+                         (104,135))
+        self.assertFalse(result['matched_six_window_batch_exposure'])
+        self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_window_analysis_rejects_misaligned_or_forged_skip_totals(self):
+        summary=self.analyze()['descriptive_comparison']
+        import copy
+        wrong=copy.deepcopy(summary)
+        wrong['experimental_150tick_batch_exposure'][1]['tick_end']=301
+        with self.assertRaisesRegex(ValueError,'misaligned'):
+            paired.window_skip_diagnostics(wrong)
+        wrong=copy.deepcopy(summary)
+        wrong['baseline']['audio_blocks_skipped']+=1
+        with self.assertRaisesRegex(ValueError,'do not reconcile'):
+            paired.window_skip_diagnostics(wrong)
+
+    def test_window_analysis_rejects_missing_and_out_of_range_intervals(self):
+        import copy
+        summary=self.analyze()['descriptive_comparison']
+        wrong=copy.deepcopy(summary)
+        wrong['experimental_150tick_batch_exposure'].pop()
+        with self.assertRaisesRegex(ValueError,'six 150-tick'):
+            paired.window_skip_diagnostics(wrong)
+        wrong=copy.deepcopy(summary)
+        wrong['experimental_150tick_batch_exposure'][0]['single_skips']=-1
+        with self.assertRaisesRegex(ValueError,'invalid guest skip counts'):
+            paired.window_skip_diagnostics(wrong)
+
     def test_swap_bound_mode_evidence_fails_closed(self):
         with self.assertRaises(ValueError):
             paired.compare(self.a,self.bb,self.b,self.aa,
