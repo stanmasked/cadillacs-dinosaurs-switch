@@ -25,6 +25,11 @@ typedef struct {
     uint32_t skipped;
     uint8_t active;
     uint8_t queue_valid;
+    /* Queue admission reasons, not measured audio output. */
+    uint32_t full_queue_skips;
+    uint32_t inactive_backend_skips;
+    uint32_t unexpected_slot_skips;
+    uint32_t max_consecutive_skips;
 } DinoSoundDiagnostics;
 void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out);
 #endif
