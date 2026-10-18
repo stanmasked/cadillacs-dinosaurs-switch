@@ -164,6 +164,23 @@ class HostGameExecutionTests(unittest.TestCase):
         self.assertFalse(result['switch_gpu_verified'])
         self.assertFalse(result['switch_audio_verified'])
 
+    def test_fixed_60hz_scheduler_preserves_fractional_tick_budget(self):
+        clock=host.FixedTickScheduler()
+        self.assertEqual(clock.advance(0),0)
+        self.assertEqual(clock.advance(16_000_000),0)
+        self.assertEqual(clock.advance(666_667),1)
+        self.assertEqual(clock.advance(83_333_333),5)
+        self.assertEqual(clock.advance(0),0)
+        self.assertEqual(clock.dropped_ticks,0)
+
+    def test_fixed_scheduler_clamps_huge_delay_without_runaway_catchup(self):
+        clock=host.FixedTickScheduler()
+        self.assertEqual(clock.advance(5_000_000_000),8)
+        self.assertEqual(clock.dropped_ticks,7)
+        self.assertEqual(clock.carry,0)
+        self.assertEqual(clock.advance(-123),0)
+        self.assertEqual(clock.advance(16_666_667),1)
+
     def test_cli_machine_report_does_not_claim_emulator(self):
         text=io.StringIO()
         with contextlib.redirect_stdout(text):
