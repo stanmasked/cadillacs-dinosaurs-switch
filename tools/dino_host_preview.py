@@ -36,6 +36,7 @@ class Status(ctypes.Structure):
         ('combo',ctypes.c_uint32),('player_hp',ctypes.c_uint32),
         ('enemy_hp',ctypes.c_uint32),('sparring',ctypes.c_uint32),
         ('pcm_digest',ctypes.c_uint64),
+        ('gameplay_digest',ctypes.c_uint64),
     ]
 
 
@@ -47,7 +48,8 @@ class HostArena:
         self.temp=tempfile.TemporaryDirectory(prefix='dino-native-host-')
         self.path=Path(self.temp.name)/'dinohost.so'
         sources=['source/dino_arena.c','source/dino_sfx.c',
-                 'source/dino_replay.c','tools/dino_host_bridge.c']
+                 'source/dino_replay.c','source/dino_replay_witness.c',
+                 'tools/dino_host_bridge.c']
         cmd=[compiler,'-std=c11','-O2','-Wall','-Wextra','-Werror',
              '-fPIC','-shared','-Isource',
              *(str(ROOT/x) for x in sources),'-o',str(self.path)]
@@ -116,6 +118,7 @@ def headless(ticks=180,out_frame=None):
             'combo':state.combo,'sparring':bool(state.sparring),
             'frame_rgb_sha256':hashlib.sha256(frame).hexdigest(),
             'pcm_fnv64':f'{state.pcm_digest:016x}',
+            'gameplay_witness_fnv64':f'{state.gameplay_digest:016x}',
             'switch_gpu_verified':False,
             'switch_audio_verified':False,
             'switch_emulator_verified':False,
