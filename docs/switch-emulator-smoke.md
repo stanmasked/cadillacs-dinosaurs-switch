@@ -513,3 +513,33 @@ Joy-Con, headphone/loudspeaker output, acoustic onset, calibrated DAC
 latency, game-quality audio or fidelity to Capcom's QSound originals.
 This remains a ROM-free training prototype and a host-software
 measurement.
+
+
+## Stage 136 — discriminate the actual ROM-free 530 Hz spar cue
+
+The original stage-135 monitor contract detected any meaningful
+post-key PCM, provided its preceding Pulse monitor baseline was silent
+and the native guest HID sequence ended with a SPAR event. That is
+useful for observing audio activity, but alone cannot exclude every
+unrelated game cue that might arrive after pressing V.
+
+Stage 136 therefore keeps at most 2048 contiguous stereo frames from
+the first significant post-key monitor sample, without writing any raw
+audio to disk. It computes the normalized energy coherence of the
+left-channel fundamental against the known 530 Hz tone synthesized by
+the ROM-free SPAR_TOGGLE event. A score below 0.60 or a missing full
+analysis window remains **INCONCLUSIVE**, not a successful sound
+response. A threshold-only noise spike, different-frequency tone or
+unexpected silent signal cannot establish the 530 Hz marker.
+The sanitized report contains only a coarse integer coherence score,
+expected reference frequency and the host monitor-read response bound.
+
+The input-to-monitor value still includes X11 keyboard dispatch,
+emulator scheduling, guest libnx audout, host Pulse scheduling and
+monitor read/analysis overhead. It is an upper bound of **sampled
+software audio monitor response**, NOT an onset timestamp, acoustic
+latency, physical Nintendo Switch output or Capcom QSound parity.
+Unaltered guest HID and original 180-tick replay checks still gate
+the interpretation. This strengthening does not replace or re-label
+the independently confirmed stage-135 numbers as frequency-verified:
+those earlier measurements were threshold-only.
