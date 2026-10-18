@@ -468,6 +468,59 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertIsNone(
             report['matched_exposure_and_returns_later_skip_count_delta'])
 
+    def test_exposure_helper_rejects_misaligned_mode_window(self):
+        for change in ('shift_start','short_end','boolean_start'):
+            with self.subTest(change=change):
+                report=complete(False)
+                mode=report['checkpoint_mode_intervals'][0]
+                if change=='shift_start':
+                    mode['tick_start']=1
+                elif change=='short_end':
+                    mode['tick_end']=149
+                else:
+                    mode['tick_start']=False
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
+    def test_exposure_helper_rejects_corrupted_mode_batch_totals(self):
+        cases=(
+            ('batched_render_steps',49),
+            ('skips_in_batched_render_frames',29),
+            ('skips_in_single_tick_render_frames',101),
+            ('batched_render_steps',True),
+            ('skips_in_batched_render_frames',-1),
+        )
+        for field,bad in cases:
+            with self.subTest(field=field,bad=bad):
+                report=complete(False)
+                report['checkpoint_mode_intervals'][0][field]=bad
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
+    def test_all_source_window_boundaries_are_canonical_in_helper(self):
+        for source in (
+                'checkpoint_batch_position_intervals',
+                'checkpoint_mode_intervals',
+                'checkpoint_release_position_intervals'):
+            with self.subTest(source=source):
+                report=complete(False)
+                report[source][2]['tick_end']=450.0
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
+    def test_balanced_original_mode_ledgers_remain_accepted(self):
+        report=complete(True,1)
+        profile=ab.exposure_profile(report)
+        self.assertEqual(len(profile),6)
+        self.assertEqual(
+            sum(w['single_ticks']+w['first_batch_ticks']+
+                w['later_batch_ticks'] for w in profile),900)
+        self.assertEqual(
+            sum(w['first_batch_skips']+w['later_batch_skips']
+                for w in profile),174)
+        self.assertEqual(sum(w['later_batch_page_returns']
+                             for w in profile),30)
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
