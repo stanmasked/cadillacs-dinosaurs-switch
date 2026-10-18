@@ -295,6 +295,98 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
                          hash_with_delays)
         self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
 
+
+    def check_fixed_release_schedule(self, schedule):
+        """Independent integer queue oracle versus the actual production C."""
+        pending=submitted=released=skipped=0
+        sound_before=self.lib.dino_switch_sound_pcm_ticks()
+        for tick,grant in enumerate(schedule):
+            if type(grant) is not int or not 0 <= grant <= 2:
+                raise ValueError('bad synthetic release grant')
+            returned=min(pending,grant)
+            pending-=returned
+            released+=returned
+            if pending<2:
+                pending+=1
+                submitted+=1
+            else:
+                skipped+=1
+            out=self.step(1<<(tick%10),releases=grant)
+            self.assertEqual(out.pending,pending,'tick '+str(tick))
+            self.assertEqual(self.delta('submitted'),submitted)
+            self.assertEqual(self.delta('released'),released)
+            self.assertEqual(self.delta('skipped'),skipped)
+            self.assertEqual(self.delta('simulated_ticks'),tick+1)
+            self.assertEqual(self.lib.dino_switch_sound_pcm_ticks()-
+                             sound_before,tick+1)
+            self.assertEqual(self.lib.mock_audout_flushes(),submitted)
+        self.assertEqual(self.lib.mock_audout_page_layout_ok(),1)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+        return submitted,released,skipped
+
+    def test_900_ticks_uninterrupted_full_queue_preserves_pcm_ownership(self):
+        stats=self.check_fixed_release_schedule([0]*900)
+        self.assertEqual(stats,(2,0,898))
+
+    def test_900_ticks_first_only_release_every_two_step_frame(self):
+        # One external release before first tick, none before second.
+        # After startup, loss stays concentrated on second ticks.
+        schedule=[0,0]+[1,0]*449
+        stats=self.check_fixed_release_schedule(schedule)
+        self.assertEqual(stats[0]+stats[2],900)
+        self.assertGreater(stats[2],0)
+        self.assertEqual(self.state().pending,2)
+
+    def test_900_ticks_triple_step_frames_first_ack_only(self):
+        # Render frames of three game ticks are an artificial schedule;
+        # no extra time or polling between consecutive simulation steps.
+        schedule=[0,0]+[1,0,0]*299+[1]
+        self.assertEqual(len(schedule),900)
+        submitted,released,skipped=self.check_fixed_release_schedule(schedule)
+        self.assertEqual(submitted+skipped,900)
+        self.assertGreater(skipped,submitted//2)
+        self.assertEqual(submitted-released,2)
+
+    def test_900_ticks_burst_release_credits_are_not_carried_forever(self):
+        schedule=[2 if tick%11==0 else 0 for tick in range(900)]
+        submitted,released,skipped=self.check_fixed_release_schedule(schedule)
+        self.assertEqual(submitted+skipped,900)
+        self.assertGreater(skipped,700)
+        self.assertLessEqual(self.state().pending,2)
+
+    def test_900_ticks_each_tick_one_external_ack_needs_no_queue_growth(self):
+        submitted,released,skipped=self.check_fixed_release_schedule(
+            [1]*900)
+        self.assertEqual((submitted,released,skipped),(900,899,0))
+        self.assertEqual(self.state().pending,1)
+
+    def test_900_ticks_seeded_deterministic_release_mix_matches_oracle(self):
+        import random
+        generator=random.Random(0xCAD1D150)
+        schedule=[generator.choice((0,0,0,1,1,2))
+                  for _ in range(900)]
+        submitted,released,skipped=self.check_fixed_release_schedule(schedule)
+        self.assertEqual(submitted+skipped,900)
+        self.assertGreater(released,0)
+        self.assertGreater(skipped,0)
+        self.assertEqual(self.state().pending,submitted-released)
+
+    def test_pcm_witness_unchanged_across_900_tick_release_schedules(self):
+        events=[1<<((i*7)%10) for i in range(900)]
+        for i,event in enumerate(events):
+            self.step(event,releases=1 if i else 0)
+        all_admitted_hash=self.lib.dino_switch_sound_pcm_witness()
+        self.assertEqual(self.delta('skipped'),0)
+        self.lib.dino_switch_sound_close()
+        self.lib.mock_audout_reset()
+        self.assertTrue(self.lib.dino_switch_sound_open())
+        for event in events:
+            self.step(event,releases=0)
+        self.assertEqual(self.delta('skipped'),898)
+        self.assertEqual(self.lib.dino_switch_sound_pcm_witness(),
+                         all_admitted_hash)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
     def test_active_sound_adapter_open_is_idempotent(self):
         self.step(1<<3)
         start=self.lib.dino_switch_sound_pcm_ticks()

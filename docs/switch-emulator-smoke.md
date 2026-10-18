@@ -980,3 +980,29 @@ noncausal proof flags. Changes are confined to the host comparator,
 negative tests and documentation. No additional libnx polls, queue
 capacity, game pacing or PCM samples were introduced, and no original
 commercial arcade resource is distributed.
+
+## Stage 154 — deterministic 900-tick release schedules against production C
+
+Earlier Stage 151 NeXium runs have shown that on later ticks of batched
+frames device acknowledgments are **rare but not mathematically zero**.
+This calls for validating the audio adapter across sequences of missing,
+single and double page-return acknowledgments, not optimizing based on
+one particularly favorable capture.
+
+New ROM-free tests run the **unchanged production** C audio backend
+against a Python integer queue oracle for 900 consecutive synthesized
+game ticks. Seven independent scenarios cover a fully stalled queue,
+a one-return-first/two-step pattern, synthetic three-step batches,
+infrequent two-page bursts, one return each tick, seeded deterministic
+mixed releases, and PCM-witness identity across two drastically
+different release schedules. Every simulated tick checks pending<=2,
+submission and skip accounting, unchanged PCM clock, page ownership,
+no early page overwrite, and aligned buffer flushes.
+
+The test-double externally supplies the release schedule; it cannot
+make a physical audout service acknowledge pages. All scenarios
+preserve 900 generated PCM ticks and never queue backlog of stale
+blocks. A successful result does not establish a real device's
+release timing, sound output, hardware latency, or causal effects
+of a proposed scheduling change. No NRO adapter or commercial
+game asset is changed.
