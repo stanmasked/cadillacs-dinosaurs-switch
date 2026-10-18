@@ -467,6 +467,13 @@ def compare(paths):
     pp_later_full=pp_later_recovered=0
     release_positioned=0
     released_sums=dict.fromkeys(RELEASE_POSITION_COUNTS,0)
+    # Diagnostic coincidence counts, NOT inferred hardware completion time.
+    eligible_later_windows=0
+    later_zero_ack_windows=0
+    later_zero_ack_and_skip_windows=0
+    later_ack_and_skip_windows=0
+    runs_with_later_skip_no_ack=0
+    runs_with_zero_later_ack=0
     for path in paths:
         raw, report = read_report(path)
         digest = hashlib.sha256(raw).digest()
@@ -479,6 +486,27 @@ def compare(paths):
             release_positioned+=1
             for key in released_sums:
                 released_sums[key]+=released_by_tick[key]
+            run_no_ack_skips=0
+            for pos_window,release_window in zip(
+                    report['checkpoint_batch_position_intervals'],
+                    report['checkpoint_release_position_intervals']):
+                later_steps=pos_window['later_tick_steps']
+                later_skips=pos_window['later_tick_skips']
+                ack=release_window['batched_later_released_pages']
+                if not later_steps:
+                    continue  # No exposure: zero ACK is uninformative.
+                eligible_later_windows+=1
+                if ack==0:
+                    later_zero_ack_windows+=1
+                    if later_skips:
+                        later_zero_ack_and_skip_windows+=1
+                        run_no_ack_skips+=1
+                elif later_skips:
+                    later_ack_and_skip_windows+=1
+            if run_no_ack_skips:
+                runs_with_later_skip_no_ack+=1
+            if released_by_tick['batched_later_released_pages']==0:
+                runs_with_zero_later_ack+=1
         if positions is not None:
             positioned+=1
             p_first+=positions['first_tick_steps']
@@ -525,6 +553,25 @@ def compare(paths):
         'total_guest_simulation_ticks': 900 * len(paths),
         'combined_full_queue_skips': pool['full_queue_skips'],
         'reports_with_release_tick_position_probe':release_positioned,
+        # Only complete Stage 151 collections can describe all windows.
+        'eligible_later_tick_release_windows':(
+            eligible_later_windows if release_positioned==len(paths)
+            else None),
+        'windows_with_later_ticks_and_zero_ack':(
+            later_zero_ack_windows if release_positioned==len(paths)
+            else None),
+        'windows_with_later_skips_and_zero_ack':(
+            later_zero_ack_and_skip_windows
+            if release_positioned==len(paths) else None),
+        'windows_with_later_skips_and_nonzero_ack':(
+            later_ack_and_skip_windows
+            if release_positioned==len(paths) else None),
+        'runs_with_later_skips_and_zero_ack_window':(
+            runs_with_later_skip_no_ack
+            if release_positioned==len(paths) else None),
+        'runs_with_zero_later_page_returns':(
+            runs_with_zero_later_ack
+            if release_positioned==len(paths) else None),
         'all_reports_have_release_tick_position_probe':
             release_positioned==len(paths),
         'pooled_single_frame_released_pages':(

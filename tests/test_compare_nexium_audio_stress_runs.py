@@ -606,6 +606,99 @@ class MultiRunAudioTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             check.compare([self.one,self.two])
 
+    def stage151(self,variant=0,later_ack_per_window=5):
+        record=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture(variant),25))))
+        # Preserve exact per-window and global release totals while
+        # moving ACK observations from later to single-tick steps.
+        shift=5-later_ack_per_window
+        if not 0<=later_ack_per_window<=5:
+            raise ValueError('unsupported synthetic test delta')
+        record['single_frame_released_pages']+=6*shift
+        record['batched_later_released_pages']-=6*shift
+        for window in record['checkpoint_release_position_intervals']:
+            window['single_frame_released_pages']+=shift
+            window['batched_later_released_pages']-=shift
+        return record
+
+    def test_no_later_ack_is_separated_from_no_capacity_recovery(self):
+        self.save(self.one,self.stage151(0,0))
+        self.save(self.two,self.stage151(1,5))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['eligible_later_tick_release_windows'],12)
+        self.assertEqual(result['windows_with_later_ticks_and_zero_ack'],6)
+        self.assertEqual(result['windows_with_later_skips_and_zero_ack'],6)
+        self.assertEqual(result['windows_with_later_skips_and_nonzero_ack'],6)
+        self.assertEqual(result['runs_with_later_skips_and_zero_ack_window'],1)
+        self.assertEqual(result['runs_with_zero_later_page_returns'],1)
+        self.assertEqual(result['pooled_batched_later_released_pages'],30)
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_all_later_ack_windows_without_ack_are_counted(self):
+        self.save(self.one,self.stage151(0,0))
+        self.save(self.two,self.stage151(1,0))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['eligible_later_tick_release_windows'],12)
+        self.assertEqual(result['windows_with_later_ticks_and_zero_ack'],12)
+        self.assertEqual(result['windows_with_later_skips_and_zero_ack'],12)
+        self.assertEqual(result['windows_with_later_skips_and_nonzero_ack'],0)
+        self.assertEqual(result['runs_with_zero_later_page_returns'],2)
+        self.assertEqual(result['pooled_batched_later_released_pages'],0)
+
+    def test_nonzero_later_ack_can_coexist_with_later_skips(self):
+        self.save(self.one,self.stage151(0,5))
+        self.save(self.two,self.stage151(1,5))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['windows_with_later_skips_and_zero_ack'],0)
+        self.assertEqual(result['windows_with_later_skips_and_nonzero_ack'],12)
+        self.assertEqual(result['runs_with_zero_later_page_returns'],0)
+        self.assertEqual(result['runs_with_later_skips_and_zero_ack_window'],0)
+
+    def test_legacy_reports_must_not_invent_zero_later_ack_windows(self):
+        self.save(self.one,self.stage151(0,0))
+        report=check.compare([self.one,self.two])
+        for field in (
+                'eligible_later_tick_release_windows',
+                'windows_with_later_ticks_and_zero_ack',
+                'windows_with_later_skips_and_zero_ack',
+                'windows_with_later_skips_and_nonzero_ack',
+                'runs_with_later_skips_and_zero_ack_window',
+                'runs_with_zero_later_page_returns'):
+            self.assertIsNone(report[field],field)
+        self.assertEqual(report['reports_with_release_tick_position_probe'],1)
+
+    def test_window_skip_data_cannot_fake_a_descriptive_pattern(self):
+        a=self.stage151(0,0)
+        b=self.stage151(1,5)
+        self.save(self.two,b)
+        for tamper in ('drop','step','ack','window'):
+            with self.subTest(tamper=tamper):
+                forged=copy.deepcopy(a)
+                if tamper=='drop':
+                    forged['checkpoint_batch_position_intervals'][0][
+                        'later_tick_skips']=0
+                elif tamper=='step':
+                    forged['checkpoint_batch_position_intervals'][0][
+                        'later_tick_steps']=0
+                elif tamper=='ack':
+                    forged['checkpoint_release_position_intervals'][0][
+                        'batched_later_released_pages']=1
+                else:
+                    forged['checkpoint_release_position_intervals'][0][
+                        'single_frame_released_pages']=150
+                self.save(self.one,forged)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_real_guest_metadata_cannot_prove_extra_poll_would_fix_skips(self):
+        self.save(self.one,self.stage151(0,0))
+        self.save(self.two,self.stage151(1,5))
+        result=check.compare([self.one,self.two])
+        self.assertFalse(result['independent_guest_execution_authenticated'])
+        self.assertFalse(result['catchup_causality_verified'])
+        self.assertFalse(result['physical_switch_audio_verified'])
+        self.assertFalse(result['original_arcade_audio_verified'])
+
     def test_refuse_duplicate_file_content_and_too_few_runs(self):
         for paths in ([self.one,self.one],[self.one],[self.one]*9):
             with self.subTest(length=len(paths)):

@@ -954,3 +954,29 @@ of actual playback, speaker audibility, device latency or causal audio
 improvement. This stage touches only the host JSON analyzer, tests and
 documentation, not the Switch sound adapter or game scheduling; no
 original MAME ROM, PCM samples or captured game content is included.
+
+## Stage 153 — distinguish zero later-tick releases from queue-full skips
+
+One verified native guest replay of Stage 151 (NeXium run #39138302293,
+commit 77792b44) reported 857 released pages during 900 simulated
+ticks. Of those, 833 releases were observed on single-frame ticks,
+24 on first ticks of batched frames, and **zero** on the 23 subsequent
+batched-frame ticks, where 13 blocks were skipped. Six independent
+150-tick windows agree with these totals.
+
+The cross-run metadata analyzer now counts the *eligible* windows with
+later batched ticks, and among them separates windows with no confirmed
+later-tick page acknowledgments from those with at least one, further
+stratified by later-tick skip presence. Counts of individual runs that
+have any no-ack-and-skip window or no later ack at all are included.
+The result is descriptive; absence of ACKs during a group of guest ticks
+cannot establish when a console would actually finish playing sound.
+Windows with zero later-batched ticks are not treated as no-ACK exposure.
+Mixed legacy/Stage 151 sets suppress every new summary as null.
+
+Six ROM-free synthetic tests cover zero ACK, nonzero ACK with skips,
+all-zero runs, mixed legacy reports, forged interval witnesses and
+noncausal proof flags. Changes are confined to the host comparator,
+negative tests and documentation. No additional libnx polls, queue
+capacity, game pacing or PCM samples were introduced, and no original
+commercial arcade resource is distributed.
