@@ -32,6 +32,21 @@ class Diagnostics(ctypes.Structure):
     ]
 
 
+def relative_sound_diagnostics(snapshot, opened):
+    """Compare per-open deltas for lifetime u32 counters, not absolute ages.
+
+    The native counters use uint32_t, so an increment across 0xFFFFFFFF
+    must wrap exactly as it does inside the audio adapter. Per-session
+    queue diagnostics remain absolute and must not be normalized.
+    """
+    lifetime_fields={'simulated_ticks','audio_errors'}
+    return tuple(
+        ((getattr(snapshot,key)-getattr(opened,key)) & 0xFFFFFFFF)
+        if key in lifetime_fields else getattr(snapshot,key)
+        for key,_ in Diagnostics._fields_)
+
+
+
 @unittest.skipUnless(shutil.which('gcc'), 'Host GCC needed for adapter mock')
 class ProductionAudioAdapterMockTests(unittest.TestCase):
     @classmethod
@@ -562,16 +577,8 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
             normal_baseline=Diagnostics()
             normal.dino_switch_sound_diagnostics(
                 ctypes.byref(normal_baseline))
-            # The audio service keeps lifetime tick/error counters across
-            # close/reopen. The test fixture's shared library has already
-            # run other cases, while this release .so starts fresh. Compare
-            # per-open increments for these two fields, not raw lifetimes.
-            lifetime_fields={'simulated_ticks','audio_errors'}
-            def relative_diagnostics(snapshot,opened):
-                return tuple(
-                    getattr(snapshot,key)-getattr(opened,key)
-                    if key in lifetime_fields else getattr(snapshot,key)
-                    for key,_ in Diagnostics._fields_)
+            # Compare lifetime u32 deltas modulo 2**32, while checking
+            # queue statistics as unchanged per-session values.
             try:
                 for tick in range(900):
                     event=1<<((tick*7)%10) if tick%3==0 else 0
@@ -585,8 +592,8 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
                         ctypes.byref(actual))
                     expected=self.state()
                     self.assertEqual(
-                        relative_diagnostics(actual,normal_baseline),
-                        relative_diagnostics(expected,self.baseline),
+                        relative_sound_diagnostics(actual,normal_baseline),
+                        relative_sound_diagnostics(expected,self.baseline),
                         'release/guest PCM admission drift at tick '+str(tick))
                     self.assertEqual(
                         normal.dino_switch_sound_pcm_ticks(),
@@ -644,6 +651,45 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
         self.step(1<<3)
         self.assertEqual(self.lib.dino_switch_sound_pcm_ticks(),1)
         self.assertEqual(self.state().simulated_ticks,lifetime+1)
+
+    def test_relative_lifetime_counters_wrap_without_false_pcm_drift(self):
+        before=Diagnostics()
+        before.simulated_ticks=0xFFFFFFFD
+        before.audio_errors=0xFFFFFFFF
+        after=Diagnostics()
+        after.simulated_ticks=7
+        after.audio_errors=1
+        after.pending=2
+        after.submitted=3
+        actual=relative_sound_diagnostics(after,before)
+        self.assertEqual(actual[0:4],(10,2,2,3))
+        # The queue was freshly opened: its fields are not differences.
+        self.assertEqual(actual[4:],tuple(
+            getattr(after,key) for key,_ in Diagnostics._fields_[4:]))
+
+    def test_relative_diagnostics_ignore_old_session_history(self):
+        older=Diagnostics()
+        older.simulated_ticks=7300
+        older.audio_errors=6
+        newer=Diagnostics()
+        newer.simulated_ticks=0
+        newer.audio_errors=0
+        older_after=Diagnostics()
+        older_after.simulated_ticks=7311
+        older_after.audio_errors=7
+        older_after.pending=1
+        older_after.submitted=2
+        newer_after=Diagnostics()
+        newer_after.simulated_ticks=11
+        newer_after.audio_errors=1
+        newer_after.pending=1
+        newer_after.submitted=2
+        self.assertEqual(
+            relative_sound_diagnostics(older_after,older),
+            relative_sound_diagnostics(newer_after,newer))
+        self.assertEqual(
+            relative_sound_diagnostics(older_after,older)[:4],
+            (11,1,1,2))
 
     def test_ordinary_release_binary_matches_guest_pcm_for_900_ticks(self):
         self.check_release_mode_matches_baseline_pcm([])
