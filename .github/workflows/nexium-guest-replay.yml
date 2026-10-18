@@ -46,6 +46,8 @@ on:
       - 'tests/test_nexium_audio_controlled_oracle.py'
       - 'tools/nexium_audio_release_corpus.py'
       - 'tests/test_nexium_audio_release_corpus.py'
+      - 'tools/verify_nexium_audio_provenance_manifest.py'
+      - 'tests/test_nexium_audio_provenance_manifest.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -80,6 +82,8 @@ on:
       - 'tests/test_nexium_audio_controlled_oracle.py'
       - 'tools/nexium_audio_release_corpus.py'
       - 'tests/test_nexium_audio_release_corpus.py'
+      - 'tools/verify_nexium_audio_provenance_manifest.py'
+      - 'tests/test_nexium_audio_provenance_manifest.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -304,6 +308,22 @@ jobs:
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-audio-comparison.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
+          python3 tools/verify_nexium_audio_provenance_manifest.py \
+            --host-plan controlled-host-audout-plan.json \
+            --host-result controlled-host-audout-result.json \
+            --host-oracle controlled-host-audout-oracle.json \
+            --corpus-plan controlled-host-release-corpus-plan.json \
+            --corpus-result controlled-host-release-corpus-result.json \
+            --corpus-attestation controlled-host-release-corpus-attestation.json \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --guest-comparison paired-audio-comparison.json \
+            --out audio-two-domain-provenance-manifest.json
       - name: Save descriptive result or inconclusive evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -317,5 +337,6 @@ jobs:
             controlled-host-release-corpus-plan.json
             controlled-host-release-corpus-result.json
             controlled-host-release-corpus-attestation.json
+            audio-two-domain-provenance-manifest.json
           if-no-files-found: warn
           retention-days: 7
