@@ -181,6 +181,12 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
+# This report has fixed, path-free fields and no raw image/input data.
+# Emit after the Xvfb subshell so CI logs can distinguish a missing
+# baseline pixel from an unavailable sampler without artifact download.
+if [ -s "$out/host-pixel-raw.json" ]; then
+    cat "$out/host-pixel-raw.json"
+fi
 if [ -n "$recorder_pid" ]; then
     kill "$recorder_pid" 2>/dev/null || true
     wait "$recorder_pid" 2>/dev/null || true
