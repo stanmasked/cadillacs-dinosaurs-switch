@@ -5,6 +5,7 @@
 #include "../source/dino_arena.h"
 #include "../source/dino_sfx.h"
 #include "../source/dino_replay.h"
+#include "../source/dino_replay_witness.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -12,6 +13,7 @@ enum { W=384,H=224,CHANNELS=3 };
 static DinoArena game;
 static DinoSfx sfx;
 static uint64_t pcm_hash;
+static uint64_t gameplay_hash;
 static const uint64_t FNV_OFFSET=UINT64_C(14695981039346656037);
 static const uint64_t FNV_PRIME=UINT64_C(1099511628211);
 
@@ -21,16 +23,19 @@ typedef struct {
     uint32_t player_pose,enemy_pose,combo;
     uint32_t player_hp,enemy_hp,sparring;
     uint64_t pcm_digest;
+    uint64_t gameplay_digest;
 } HostArenaStatus;
 
 void dino_host_reset(void) {
     dino_arena_reset(&game);
     dino_sfx_reset(&sfx);
     pcm_hash=FNV_OFFSET;
+    gameplay_hash=DINO_WITNESS_INIT;
 }
 void dino_host_step(uint32_t held,uint32_t pressed) {
     int16_t pcm[DINO_SFX_TICK_FRAMES*2];
     dino_arena_step(&game,held,pressed);
+    gameplay_hash=dino_replay_witness_tick(gameplay_hash,&game);
     dino_sfx_events(&sfx,game.events);
     dino_sfx_render_tick(&sfx,pcm,DINO_SFX_TICK_FRAMES);
     /* Hash PCM samples in explicitly defined little-endian order,
@@ -59,7 +64,8 @@ void dino_host_status(HostArenaStatus *out) {
         .enemy_pose=(uint32_t)dino_arena_dummy_pose(&game),
         .combo=game.combo_hits,.player_hp=game.player_hp,
         .enemy_hp=game.dummy_hp,.sparring=game.sparring,
-        .pcm_digest=pcm_hash
+        .pcm_digest=pcm_hash,
+        .gameplay_digest=gameplay_hash
     };
 }
 static void rect(uint8_t *buffer,int x,int y,int w,int h,
