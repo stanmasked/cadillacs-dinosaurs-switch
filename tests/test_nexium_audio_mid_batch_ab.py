@@ -104,11 +104,29 @@ class ExperimentalABTests(unittest.TestCase):
                 elif change=='start':
                     windows[0]['tick_start']=1
                 else:
-                    windows[0]['poll_released_pages']=0
-                    windows[1]['poll_released_pages']=2
+                    # Preserve the global sum of six, but assign all
+                    # six ACKs to one window that independently proves
+                    # only five later-tick page returns.
+                    for window in windows:
+                        window['poll_released_pages']=0
+                    windows[0]['poll_released_pages']=6
                 self.write(self.b,broken)
                 with self.assertRaises(ValueError):
                     ab.compare(self.a,self.b)
+
+    def test_valid_reallocation_between_intervals_is_not_a_forgery(self):
+        # No per-call timestamps are witnessed: shifting a single ACK
+        # between two windows remains consistent with five confirmed
+        # later-tick page returns in either interval. Do not reject it.
+        moved=complete(True,1)
+        windows=moved['checkpoint_guest_mid_batch_extra_poll_intervals']
+        windows[0]['poll_released_pages']=0
+        windows[1]['poll_released_pages']=2
+        self.write(self.b,moved)
+        result=ab.compare(self.a,self.b)
+        self.assertEqual(result['experimental']
+                         ['pages_released_by_additional_polls'],6)
+        self.assertFalse(result['causal_audio_improvement_verified'])
 
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
