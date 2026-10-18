@@ -54,6 +54,8 @@ on:
       - 'tests/test_nexium_audio_queue_capacity_bound.py'
       - 'tools/nexium_audio_queue_depth_tradeoff.py'
       - 'tests/test_nexium_audio_queue_depth_tradeoff.py'
+      - 'tools/nexium_audio_occupancy_service.py'
+      - 'tests/test_nexium_audio_occupancy_service.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -96,6 +98,8 @@ on:
       - 'tests/test_nexium_audio_queue_capacity_bound.py'
       - 'tools/nexium_audio_queue_depth_tradeoff.py'
       - 'tests/test_nexium_audio_queue_depth_tradeoff.py'
+      - 'tools/nexium_audio_occupancy_service.py'
+      - 'tests/test_nexium_audio_occupancy_service.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -314,6 +318,9 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_audio_queue_depth_tradeoff.py' -v
           python3 tools/nexium_audio_queue_depth_tradeoff.py \
             --out controlled-host-depth-tradeoff.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_occupancy_service.py' -v
+          python3 tools/nexium_audio_occupancy_service.py \
+            --out controlled-host-occupancy-feedback.json
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -369,5 +376,6 @@ jobs:
             controlled-host-intertick-attestation.json
             controlled-host-capacity-bound.json
             controlled-host-depth-tradeoff.json
+            controlled-host-occupancy-feedback.json
           if-no-files-found: warn
           retention-days: 7
