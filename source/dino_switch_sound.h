@@ -27,6 +27,9 @@ typedef struct {
     uint8_t queue_valid;
     /* Queue admission reasons, not measured audio output. */
     uint32_t full_queue_skips;
+    /* Full before release sweep, and full cured by that sweep. */
+    uint32_t pre_poll_full_steps;
+    uint32_t pre_poll_recovered_steps;
     uint32_t inactive_backend_skips;
     uint32_t unexpected_slot_skips;
     uint32_t max_consecutive_skips;

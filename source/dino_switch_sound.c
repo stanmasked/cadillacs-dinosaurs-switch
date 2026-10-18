@@ -23,6 +23,8 @@ static int16_t s_discard[DINO_SFX_TICK_FRAMES*2];
 static bool s_initialized, s_started;
 static uint32_t s_audio_errors, s_simulated_ticks;
 static uint32_t s_skip_full, s_skip_inactive, s_skip_unexpected;
+/* Read-only admission/release sweep counters since successful open. */
+static uint32_t s_pre_poll_full, s_pre_poll_recovered;
 static uint32_t s_current_skip_streak, s_max_skip_streak;
 static uint64_t s_pcm_witness=DINO_PCM_WITNESS_INIT;
 
@@ -61,6 +63,8 @@ bool dino_switch_sound_open(void) {
     /* The queue's own counters reset here; keep the cause counters
      * on the same lifecycle so reason sums can be checked. */
     s_skip_full=0;
+    s_pre_poll_full=0;
+    s_pre_poll_recovered=0;
     s_skip_inactive=0;
     s_skip_unexpected=0;
     s_current_skip_streak=0;
@@ -82,6 +86,9 @@ void dino_switch_sound_step(uint32_t events) {
     dino_sfx_events(&s_synth,events);
     int slot=-1;
     if (s_started) {
+        const bool full_before_poll=
+            s_queue.pending>=DINO_AUDIO_QUEUE_MAX_PENDING;
+        if (full_before_poll) ++s_pre_poll_full;
         for (unsigned n=0;n<AUDIO_SLOTS;++n) {
             AudioOutBuffer *released=NULL;
             u32 count=0;
@@ -113,7 +120,12 @@ void dino_switch_sound_step(uint32_t events) {
                 break;
             }
         }
-        if (s_started) slot=dino_audio_queue_pick(&s_queue);
+        if (s_started) {
+            if (full_before_poll &&
+                s_queue.pending<DINO_AUDIO_QUEUE_MAX_PENDING)
+                ++s_pre_poll_recovered;
+            slot=dino_audio_queue_pick(&s_queue);
+        }
     }
     if (slot<0) {
         /* Do not change page policy or reorder PCM: diagnostic only. */
@@ -153,6 +165,8 @@ void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out) {
     out->audio_errors=s_audio_errors;
     out->active=(uint8_t)s_started;
     out->full_queue_skips=s_skip_full;
+    out->pre_poll_full_steps=s_pre_poll_full;
+    out->pre_poll_recovered_steps=s_pre_poll_recovered;
     out->inactive_backend_skips=s_skip_inactive;
     out->unexpected_slot_skips=s_skip_unexpected;
     out->max_consecutive_skips=s_max_skip_streak;

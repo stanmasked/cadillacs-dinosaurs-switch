@@ -746,3 +746,9 @@ Its status is \`UNAUTHENTICATED_ROM_FREE_CROSS_RUN_COMPARISON\` and
 provenance, causality, console audio and arcade audio parity flags stay
 false. Compare only separately trusted guest-validated reports; never
 claim physical Switch performance from these descriptions.
+
+## Stage 143 — detect release-sweep recovery before audio admission
+
+The guest audio adapter now counts, without changing release polling or PCM scheduling, ticks when its two-buffer queue was full before the existing audout release sweep and ticks when that sweep freed a page. For a healthy active backend the difference equals the already recorded full-queue skip count. The seven existing 900-tick guest checkpoints append the two lifetime counters. The Python verifier checks that counters never regress, match existing drop totals and agree in each 150-tick window. Legacy v3 CSV without these columns remains accepted, explicitly returning no pre-poll probe evidence.
+
+Stage 142 NeXium run #39130313075 had 45 queue-full skips among 900 guest ticks; these new counters can distinguish released-at-poll versus still-full conditions in a subsequent run. No real game ROM, PCM waveform, source pixels or private paths are published. The queue remains capped at two buffers and neither frame scheduling nor audio admission policy is altered. These observations do not establish original-game audio parity, speaker audibility, timing or a causal remedy for dropped admissions.

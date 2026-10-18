@@ -456,7 +456,7 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
     DinoSoundDiagnostics stats;
     dino_switch_sound_diagnostics(&stats);
     fprintf(stream,
-            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
             event,(unsigned)elapsed,(unsigned)arena->ticks,
             (unsigned)stats.simulated_ticks,
             (unsigned)dino_switch_sound_pcm_ticks(),
@@ -474,7 +474,9 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
             (unsigned)batch->single_skips,
             (unsigned)batch->batched_skips,
             (unsigned)batch->batched_frames,
-            (unsigned)batch->largest_batch);
+            (unsigned)batch->largest_batch,
+            (unsigned)stats.pre_poll_full_steps,
+            (unsigned)stats.pre_poll_recovered_steps);
     fflush(stream);
 }
 
@@ -816,7 +818,9 @@ int main(int argc, char **argv) {
                                   "max_consecutive_skips,single_frame_ticks,"
                                   "batched_frame_ticks,single_frame_skips,"
                                   "batched_frame_skips,batched_render_frames,"
-                                  "max_ticks_per_render_frame\n",
+                                  "max_ticks_per_render_frame,"
+                                  "pre_poll_full_steps,"
+                                  "pre_poll_recovered_steps\n",
                                   guest_audio_stress);
                             guest_audio_stress_start=arena.ticks;
                             /* The START row follows the first sound step.

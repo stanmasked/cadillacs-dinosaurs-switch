@@ -33,6 +33,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 str(index*100),str(index*50),
                 str(index*20),str(index*30),
                 str(index*25),str(2 if index else 0),
+                str(skipped+index*25),str(index*25),
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -176,6 +177,44 @@ class LongGuestAudioStressTests(unittest.TestCase):
                          ['render_frames_with_batched_steps'],26)
         self.assertEqual(report['checkpoint_mode_intervals'][1]
                          ['render_frames_with_batched_steps'],24)
+
+    def test_full_before_release_poll_and_recovery_reconcile(self):
+        report=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(report['pre_poll_capacity_probe_present'])
+        self.assertEqual(report['full_before_release_poll_ticks'],450)
+        self.assertEqual(report['full_recovered_before_admission_ticks'],150)
+        self.assertEqual(report['full_queue_skips'],300)
+        self.assertEqual(report['checkpoint_release_poll_intervals'][0],{
+            'tick_start':0,'tick_end':150,'full_before_poll':75,
+            'recovered_before_admission':25,'still_full_after_poll':50})
+        self.assertEqual(sum(w['still_full_after_poll']
+                             for w in report['checkpoint_release_poll_intervals']),300)
+
+    def test_old_v3_csv_is_accepted_without_a_fake_poll_claim(self):
+        for row in self.rows:
+            del row[-2:]
+        self.write(fields=check.LEGACY_COLUMNS)
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertFalse(result['pre_poll_capacity_probe_present'])
+        self.assertIsNone(result['full_before_release_poll_ticks'])
+        self.assertIsNone(result['checkpoint_release_poll_intervals'])
+
+    def test_impossible_pre_poll_counts_fail_closed(self):
+        for index,column,bad in ((0,23,'61'),(0,24,'1'),
+                                 (1,23,'135'),(1,24,'20'),
+                                 (1,23,'200'),(3,24,'0'),(5,23,'0')):
+            with self.subTest(index=index,column=column):
+                self.mutate(index,column,bad)
+
+    def test_probe_counters_are_strictly_canonical(self):
+        for col,bad in ((23,'+135'),(23,'0135'),(24,'-1'),
+                        (24,'4294967296'),(24,'1000')):
+            with self.subTest(col=col,bad=bad):
+                self.mutate(1,col,bad)
+        self.rows[0].pop()
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
 
     def test_missing_duplicate_out_of_order_and_partial_checkpoints(self):
         before=self.rows

@@ -25,7 +25,9 @@ COLUMNS = [
     'single_frame_ticks','batched_frame_ticks',
     'single_frame_skips','batched_frame_skips',
     'batched_render_frames','max_ticks_per_render_frame',
+    'pre_poll_full_steps','pre_poll_recovered_steps',
 ]
+LEGACY_COLUMNS = COLUMNS[:-2]
 CHECKPOINTS = [0,150,300,450,600,750,900]
 EVENTS = ['START'] + ['CHECKPOINT']*5 + ['STRESS_DONE']
 HEX16 = re.compile(r'[0-9A-F]{16}\Z')
@@ -40,8 +42,9 @@ def verify(path, guest_timeline, guest_controller):
     try:
         with path.open('r',encoding='ascii',newline='') as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames != COLUMNS:
+            if reader.fieldnames not in (COLUMNS,LEGACY_COLUMNS):
                 raise ValueError('guest stress field schema mismatch')
+            has_pre_poll_probe=reader.fieldnames==COLUMNS
             rows=list(reader)
     except (UnicodeError,csv.Error) as exc:
         raise ValueError('bad guest stress CSV') from exc
@@ -68,14 +71,19 @@ def verify(path, guest_timeline, guest_controller):
     # elapsed, arena, audio ticks, PCM ticks, active, valid, pending,
     # submitted, released, skipped, errors, full, inactive, unexpected,
     # max_streak, single_ticks, batched_ticks, single_skips,
-    # batched_skips, batched_frames, max_scheduled_tick_batch
+    # batched_skips, batched_frames, max_scheduled_tick_batch,
+    # optional pre_poll_full_steps, pre_poll_recovered_steps
     if start[0]!=0 or start[4:6]!=[1,1] or start[6]>2 or (
             start[7]-start[8]!=start[6]) or start[10]!=0:
         raise ValueError('native audout baseline not healthy')
     if sum(start[11:14])!=start[9] or start[14]>start[9]:
         raise ValueError('starting skip classification not balanced')
-    if start[15:]!=[0]*6:
+    if start[15:21]!=[0]*6:
         raise ValueError('render batch correlation must start at zero')
+    if has_pre_poll_probe and (
+            start[22]>start[21] or
+            start[21]-start[22]!=start[11]):
+        raise ValueError('starting release-poll counters inconsistent')
     if start[1]<1 or start[2]<1 or start[3]<1:
         raise ValueError('guest never advanced before stress started')
     prev=start
@@ -96,6 +104,12 @@ def verify(path, guest_timeline, guest_controller):
                 row[14]>row[9] or
                 (row[9] and row[14]==0)):
             raise ValueError('skip reason or streak accounting mismatch')
+        if has_pre_poll_probe and (
+                row[21]<prev[21] or row[22]<prev[22] or
+                row[22]>row[21] or row[21]-row[22]!=row[11] or
+                row[21]-start[21]>elapsed or
+                row[22]-start[22]>elapsed):
+            raise ValueError('release polling / full queue count mismatch')
         if idx>0 and row[14]<prev[14]:
             raise ValueError('maximum consecutive skip streak decreased')
         # Backend remained active at all checkpoints. A transient
@@ -132,6 +146,7 @@ def verify(path, guest_timeline, guest_controller):
     # At START, a frame may already be in progress, so both edges of the
     # first interval allow one incomplete frame each.
     intervals=[]
+    poll_windows=[]
     for idx in range(1,len(measurements)):
         before=measurements[idx-1]
         after=measurements[idx]
@@ -150,6 +165,19 @@ def verify(path, guest_timeline, guest_controller):
                 batched_ticks>(batched_frames+1)*max_batch or
                 2*batched_frames>batched_ticks+(2 if idx==1 else 1)):
             raise ValueError('guest audout interval attribution inconsistent')
+        if has_pre_poll_probe:
+            polled_full=after[21]-before[21]
+            recovered=after[22]-before[22]
+            full_skips=after[11]-before[11]
+            if recovered>polled_full or polled_full-recovered!=full_skips:
+                raise ValueError('interval release poll accounting mismatch')
+            poll_windows.append({
+                'tick_start':CHECKPOINTS[idx-1],
+                'tick_end':CHECKPOINTS[idx],
+                'full_before_poll':polled_full,
+                'recovered_before_admission':recovered,
+                'still_full_after_poll':full_skips,
+            })
         intervals.append({
             'tick_start':CHECKPOINTS[idx-1],
             'tick_end':CHECKPOINTS[idx],
@@ -216,6 +244,13 @@ def verify(path, guest_timeline, guest_controller):
             for i in range(1,len(measurements))
         ],
         'checkpoint_mode_intervals':intervals,
+        'pre_poll_capacity_probe_present':has_pre_poll_probe,
+        'full_before_release_poll_ticks':(
+            measurements[-1][21]-start[21] if has_pre_poll_probe else None),
+        'full_recovered_before_admission_ticks':(
+            measurements[-1][22]-start[22] if has_pre_poll_probe else None),
+        'checkpoint_release_poll_intervals':(
+            poll_windows if has_pre_poll_probe else None),
         'windows_with_both_render_modes':sum(
             w['single_tick_render_steps']>0 and w['batched_render_steps']>0
             for w in intervals),
