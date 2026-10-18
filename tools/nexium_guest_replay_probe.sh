@@ -147,6 +147,24 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
         if [ -n "$window" ]; then
           xdotool windowfocus "$window" || true
           import -window "$window" "$4" 2>/dev/null || true
+          # Wait until the NRO's independent 180-tick replay has
+          # completed, THEN send normal host X11 keyboard events.
+          # Defaults from NeXium controller_config.rs: Z=Y reset,
+          # Right=DPad Right, C=A attack, X=B jump, V=X spar.
+          # If the emulator does not actually deliver these through
+          # HID, the guest witness will stay INCONCLUSIVE.
+          sleep 10
+          xdotool windowactivate --sync "$window" || true
+          xdotool windowfocus "$window" || true
+          xdotool keydown z; sleep 0.25; xdotool keyup z
+          sleep 1
+          xdotool keydown Right; sleep 0.75; xdotool keyup Right
+          sleep 0.3
+          xdotool keydown c; sleep 0.25; xdotool keyup c
+          sleep 0.3
+          xdotool keydown x; sleep 0.25; xdotool keyup x
+          sleep 0.3
+          xdotool keydown v; sleep 0.25; xdotool keyup v
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
@@ -175,6 +193,20 @@ python3 tools/verify_nexium_guest_replay.py \
 python3 tools/verify_nexium_host_audio.py \
     --raw "$out/host-monitor.raw" \
     --out "$out/host-audio-evidence.json"
+
+# The optional HID result is validated only from a separate file that
+# must be created by the running NRO *after* its 180-tick replay.
+# Host attempts to send keys cannot themselves establish controller success.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-controller-selftest.csv' -print \
+    > "$out/guest-controller-locations.txt"
+if [ -s "$out/guest-controller-locations.txt" ]; then
+    IFS= read -r controller_path < "$out/guest-controller-locations.txt"
+    cp "$controller_path" "$out/guest-controller.csv"
+fi
+python3 tools/verify_nexium_guest_controller.py \
+    --report "$out/guest-controller.csv" \
+    --out "$out/guest-controller-evidence.json"
 
 # A guest-written CSV alone proves native execution, but not pixels.
 # Check that the actual 1280x720 NeXium window contains expected
