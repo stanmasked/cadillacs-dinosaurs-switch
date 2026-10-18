@@ -129,6 +129,119 @@ def headless(ticks=180,out_frame=None):
         engine.close()
 
 
+class KeyboardInput:
+    """Single key-edge translator for desktop play and GUI smoke tests.
+
+    Tk itself owns key repeat and focus; actions only fire on a new
+    key-down edge, while held directions apply to every 60Hz tick.
+    """
+    DIRECTIONS={
+        'left':LEFT,'a':LEFT,'right':RIGHT,'d':RIGHT,
+        'up':UP,'w':UP,'down':DOWN,'s':DOWN,
+    }
+    ACTIONS={'j':ATTACK,'k':JUMP,'l':SPAR}
+
+    def __init__(self):
+        self.held=set()
+        self.pending=0
+        self.reset_requested=False
+        self.exit_requested=False
+
+    def key_down(self,key):
+        key=key.lower()
+        if key=='escape':
+            self.exit_requested=True
+        elif key=='r':
+            if key not in self.held:
+                self.reset_requested=True
+        elif key not in self.held and key in self.ACTIONS:
+            self.pending|=self.ACTIONS[key]
+        self.held.add(key)
+
+    def key_up(self,key):
+        self.held.discard(key.lower())
+
+    def tick_input(self):
+        directions=0
+        for key in self.held:
+            directions|=self.DIRECTIONS.get(key,0)
+        actions=self.pending
+        self.pending=0
+        return directions,actions
+
+
+def gui_smoke():
+    """Run real Tk PhotoImage/Canvas and *synthetic* keyboard events.
+
+    Linux Xvfb allows testing the desktop GUI without a physical display.
+    This is an honest desktop-frontend test, not Switch emulation or
+    evidence of a rendered frame from an NRO.
+    """
+    import tkinter as tk
+    root=tk.Tk()
+    root.title('Native ROM-free GUI smoke — not Switch emulation')
+    game=None
+    try:
+        game=HostArena()
+        inputs=KeyboardInput()
+        canvas=tk.Canvas(root,width=WIDTH*2,height=HEIGHT*2,
+                         highlightthickness=0)
+        canvas.pack()
+        root.bind('<KeyPress>',lambda e:inputs.key_down(e.keysym))
+        root.bind('<KeyRelease>',lambda e:inputs.key_up(e.keysym))
+        root.update()
+        root.focus_force()
+        root.update()
+
+        def send(kind,keysym):
+            root.event_generate(kind,keysym=keysym)
+            root.update()
+
+        for frame in range(9):
+            if frame==0: send('<KeyPress>','Right')
+            if frame==4: send('<KeyRelease>','Right')
+            if frame==5: send('<KeyPress>','j')
+            if frame==6: send('<KeyRelease>','j')
+            game.step(*inputs.tick_input())
+
+        status=game.status()
+        if (status.x,status.y,status.ticks)!=(98,151,9):
+            raise RuntimeError('Native GUI controller did not move correctly')
+        if status.successful_hits!=0 or not (status.events==0):
+            raise RuntimeError('Native GUI attack sequence mismatch')
+
+        ppm=game.ppm()
+        photo=tk.PhotoImage(data=ppm,format='PPM').zoom(2,2)
+        image=canvas.create_image(0,0,anchor='nw',image=photo)
+        root.update()
+        if (photo.width(),photo.height())!=(WIDTH*2,HEIGHT*2):
+            raise RuntimeError('Native GUI pixel dimensions mismatch')
+        if tuple(photo.get(98*2,126*2))!=(62,180,208):
+            raise RuntimeError('Native GUI player pixel mismatch')
+        if tuple(photo.get(250*2,127*2))!=(190,126,74):
+            raise RuntimeError('Native GUI dummy pixel mismatch')
+        if not canvas.find_withtag(image):
+            raise RuntimeError('Native GUI canvas image was not presented')
+
+        return {
+            'schema':'dino-native-gui-smoke-v1',
+            'runtime':'tk_desktop_not_switch_emulator',
+            'ticks':status.ticks,'player_x':status.x,
+            'held_input_verified':True,
+            'edge_input_verified':True,
+            'tk_image_rendered':True,
+            'image_dimensions':[photo.width(),photo.height()],
+            'rgb_sha256':hashlib.sha256(game.render_rgb()).hexdigest(),
+            'switch_emulator_verified':False,
+            'switch_gpu_verified':False,
+            'switch_audio_verified':False,
+        }
+    finally:
+        if game is not None:
+            game.close()
+        root.destroy()
+
+
 def interactive():
     # No GUI dependency is imported for synthetic headless CI mode.
     import tkinter as tk
@@ -141,38 +254,17 @@ def interactive():
     status_line=tk.StringVar()
     tk.Label(root,textvariable=status_line,font=('monospace',10)).pack()
     tk.Label(root,text='Arrows/WASD: move  J: attack  K: jump  L: spar  R: reset  Esc: exit').pack()
-    held_keys=set()
-    pending=0
+    inputs=KeyboardInput()
     holder={'photo':None,'image':None}
-    directions={
-        'left':LEFT,'a':LEFT,'right':RIGHT,'d':RIGHT,
-        'up':UP,'w':UP,'down':DOWN,'s':DOWN,
-    }
-    actions={'j':ATTACK,'k':JUMP,'l':SPAR}
-
-    def key_down(event):
-        nonlocal pending
-        key=event.keysym.lower()
-        if key=='escape':
-            root.destroy()
-            return
-        if key=='r':
-            game.reset()
-            return
-        if key not in held_keys and key in actions:
-            pending|=actions[key]
-        held_keys.add(key)
-
-    def key_up(event):
-        held_keys.discard(event.keysym.lower())
 
     def tick():
-        nonlocal pending
-        keys=0
-        for key in held_keys:
-            keys|=directions.get(key,0)
-        game.step(keys,pending)
-        pending=0
+        if inputs.exit_requested:
+            root.destroy()
+            return
+        if inputs.reset_requested:
+            game.reset()
+            inputs.reset_requested=False
+        game.step(*inputs.tick_input())
         p=game.ppm()
         holder['photo']=tk.PhotoImage(data=p,format='PPM').zoom(2,2)
         if holder['image'] is None:
@@ -191,8 +283,8 @@ def interactive():
         game.close()
         root.destroy()
     root.protocol('WM_DELETE_WINDOW',close)
-    root.bind('<KeyPress>',key_down)
-    root.bind('<KeyRelease>',key_up)
+    root.bind('<KeyPress>',lambda e:inputs.key_down(e.keysym))
+    root.bind('<KeyRelease>',lambda e:inputs.key_up(e.keysym))
     root.after(16,tick)
     try:
         root.mainloop()
@@ -203,10 +295,25 @@ def interactive():
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--headless',action='store_true')
+    parser.add_argument('--gui-smoke',action='store_true',
+                        help='Run actual Tk desktop pixels/keys smoke; requires Xvfb or display')
     parser.add_argument('--ticks',type=int,default=180)
     parser.add_argument('--out-frame',type=Path,
                         help='Optional PPM frame path; never overwrite')
     args=parser.parse_args(argv)
+    if args.headless and args.gui_smoke:
+        parser.error('choose either --headless or --gui-smoke')
+    if args.gui_smoke:
+        if args.out_frame:
+            parser.error('--out-frame requires --headless')
+        try:
+            report=gui_smoke()
+        except (RuntimeError,OSError):
+            print(json.dumps({'status':'HOST_GUI_SMOKE_FAILED',
+                              'switch_emulator_verified':False}))
+            return 2
+        print(json.dumps(report,sort_keys=True))
+        return 0
     if not args.headless:
         if args.out_frame:
             parser.error('--out-frame requires --headless')
