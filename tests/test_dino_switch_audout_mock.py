@@ -522,6 +522,85 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
             with self.assertRaises(AttributeError):
                 baseline.dino_switch_sound_guest_mid_batch_poll
 
+    def check_release_mode_matches_baseline_pcm(self, defines):
+        """Real adapter binaries; no guessed guest counters or fake audio."""
+        with tempfile.TemporaryDirectory(prefix='dino-release-parity-') as tmp:
+            lib=Path(tmp)/'release_audio.so'
+            sources=[
+                'source/dino_switch_sound.c','source/dino_audio_queue.c',
+                'source/dino_sfx.c','source/dino_pcm_witness.c',
+                'tests/mocks/mock_audout.c',
+            ]
+            command=['gcc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+                     *defines,'-fPIC','-shared',
+                     '-Itests/mocks','-Isource',*sources,'-o',str(lib)]
+            result=subprocess.run(command,cwd=ROOT,
+                                  capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            normal=ctypes.CDLL(str(lib))
+            # Neither ordinary release code nor an accidentally supplied
+            # experiment macro alone may link guest-only interfaces.
+            for forbidden in (
+                    'dino_switch_sound_guest_mid_batch_poll',
+                    'dino_switch_sound_guest_mid_batch_enabled',
+                    'dino_switch_sound_guest_mid_batch_calls',
+                    'dino_switch_sound_guest_mid_batch_releases'):
+                with self.assertRaises(AttributeError,msg=forbidden):
+                    getattr(normal,forbidden)
+            normal.dino_switch_sound_open.restype=ctypes.c_bool
+            normal.dino_switch_sound_step.argtypes=[ctypes.c_uint32]
+            normal.dino_switch_sound_diagnostics.argtypes=[
+                ctypes.POINTER(Diagnostics)]
+            normal.dino_switch_sound_pcm_witness.restype=ctypes.c_uint64
+            normal.dino_switch_sound_pcm_ticks.restype=ctypes.c_uint32
+            normal.mock_audout_grant_releases.argtypes=[ctypes.c_uint32]
+            normal.mock_audout_pending.restype=ctypes.c_uint32
+            normal.mock_audout_integrity_errors.restype=ctypes.c_uint32
+            normal.mock_audout_page_layout_ok.restype=ctypes.c_uint32
+            normal.mock_audout_reset()
+            self.assertTrue(normal.dino_switch_sound_open())
+            try:
+                for tick in range(900):
+                    event=1<<((tick*7)%10) if tick%3==0 else 0
+                    external_ack=(2 if tick%37==0
+                                  else (1 if tick%5==0 else 0))
+                    self.step(event,releases=external_ack)
+                    normal.mock_audout_grant_releases(external_ack)
+                    normal.dino_switch_sound_step(event)
+                    actual=Diagnostics()
+                    normal.dino_switch_sound_diagnostics(
+                        ctypes.byref(actual))
+                    expected=self.state()
+                    self.assertEqual(
+                        tuple(getattr(actual,key) for key,_ in
+                              Diagnostics._fields_),
+                        tuple(getattr(expected,key) for key,_ in
+                              Diagnostics._fields_))
+                    self.assertEqual(
+                        normal.dino_switch_sound_pcm_ticks(),
+                        self.lib.dino_switch_sound_pcm_ticks())
+                    if tick%75==0 or tick==899:
+                        self.assertEqual(
+                            normal.dino_switch_sound_pcm_witness(),
+                            self.lib.dino_switch_sound_pcm_witness())
+                    self.assertEqual(actual.pending,
+                                     normal.mock_audout_pending())
+                    self.assertLessEqual(actual.pending,2)
+                    self.assertEqual(
+                        normal.mock_audout_integrity_errors(),0)
+                self.assertEqual(normal.mock_audout_page_layout_ok(),1)
+            finally:
+                normal.dino_switch_sound_close()
+
+    def test_ordinary_release_binary_matches_guest_pcm_for_900_ticks(self):
+        self.check_release_mode_matches_baseline_pcm([])
+
+    def test_unguarded_experiment_macro_cannot_affect_release_binary(self):
+        # Both defines must be present: stray opt-in alone must not
+        # activate or even link the experimental guest-only probe.
+        self.check_release_mode_matches_baseline_pcm(
+            ['-DDINO_AUDIO_EXPERIMENT_MID_BATCH_POLL'])
+
     def test_active_sound_adapter_open_is_idempotent(self):
         self.step(1<<3)
         start=self.lib.dino_switch_sound_pcm_ticks()
