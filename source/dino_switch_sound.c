@@ -79,6 +79,47 @@ bool dino_switch_sound_open(void) {
     return true;
 }
 
+static void dino_sound_drain_acknowledged_pages(void) {
+    for (unsigned n=0;n<AUDIO_SLOTS;++n) {
+        AudioOutBuffer *released=NULL;
+        u32 count=0;
+        if (R_FAILED(audoutGetReleasedAudioOutBuffer(&released,&count))) {
+            ++s_audio_errors;
+            dino_switch_sound_close();
+            break;
+        }
+        if (!count) break;
+        /* libnx returns one pointer; a malformed multi-count response
+         * cannot safely transfer ownership of independent PCM pages. */
+        if (count!=1 || !released) {
+            ++s_audio_errors;
+            dino_switch_sound_close();
+            break;
+        }
+        bool known=false;
+        for (unsigned i=0;i<AUDIO_SLOTS;++i) {
+            if (released!=&s_buffers[i]) continue;
+            known=dino_audio_queue_release(&s_queue,i);
+            break;
+        }
+        if (!known) {
+            ++s_audio_errors;
+            dino_switch_sound_close();
+            break;
+        }
+    }
+}
+
+#if defined(DINO_EMULATOR_SELFTEST) && \
+    defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
+/* Explicit opt-in test variant. Called only before later ticks of a
+ * scheduled multi-tick guest render frame, never from the release build.
+ * No wait, no PCM synthesis, no queue admission and no change of clock. */
+void dino_switch_sound_guest_mid_batch_poll(void) {
+    if (s_started) dino_sound_drain_acknowledged_pages();
+}
+#endif
+
 void dino_switch_sound_step(uint32_t events) {
     /* Envelopes progress once per 60Hz game tick, even if a stalled
      * console is unable to accept another PCM buffer this frame. */
@@ -89,37 +130,7 @@ void dino_switch_sound_step(uint32_t events) {
         const bool full_before_poll=
             s_queue.pending>=DINO_AUDIO_QUEUE_MAX_PENDING;
         if (full_before_poll) ++s_pre_poll_full;
-        for (unsigned n=0;n<AUDIO_SLOTS;++n) {
-            AudioOutBuffer *released=NULL;
-            u32 count=0;
-            if (R_FAILED(audoutGetReleasedAudioOutBuffer(&released,&count))) {
-                ++s_audio_errors;
-                dino_switch_sound_close();
-                break;
-            }
-            if (!count) break;
-            /* The libnx API returns one buffer pointer, not an array.
-             * Multiple releases in one result cannot be accounted for
-             * safely by this adapter: fail closed to preserve ownership. */
-            if (count!=1 || !released) {
-                ++s_audio_errors;
-                dino_switch_sound_close();
-                break;
-            }
-            /* A foreign or duplicate release must never make an in-flight
-             * PCM page available for rewriting: stop the audio backend. */
-            bool known=false;
-            for (unsigned i=0;i<AUDIO_SLOTS;++i) {
-                if (released!=&s_buffers[i]) continue;
-                known=dino_audio_queue_release(&s_queue,i);
-                break;
-            }
-            if (!known) {
-                ++s_audio_errors;
-                dino_switch_sound_close();
-                break;
-            }
-        }
+        dino_sound_drain_acknowledged_pages();
         if (s_started) {
             if (full_before_poll &&
                 s_queue.pending<DINO_AUDIO_QUEUE_MAX_PENDING)

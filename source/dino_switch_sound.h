@@ -9,6 +9,11 @@
 bool dino_switch_sound_open(void);
 void dino_switch_sound_step(uint32_t events);
 void dino_switch_sound_close(void);
+#if defined(DINO_EMULATOR_SELFTEST) && \
+    defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
+/* Deliberately excluded from ordinary Switch builds. Only experiments. */
+void dino_switch_sound_guest_mid_batch_poll(void);
+#endif
 /* The checksum covers every generated 48kHz PCM tick before queueing.
  * It does NOT show that emulator/console speakers actually played it. */
 uint64_t dino_switch_sound_pcm_witness(void);

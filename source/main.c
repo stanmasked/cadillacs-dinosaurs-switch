@@ -794,6 +794,16 @@ int main(int argc, char **argv) {
 #endif
                 if (demo_active)
                     demo_witness=dino_replay_witness_tick(demo_witness,&arena);
+                /* Experimental, opt-in, guest-only extra nonblocking
+                 * release poll immediately before each later catch-up
+                 * tick. The ordinary game and default self-test keep
+                 * their historical exact poll schedule. */
+#if defined(DINO_EMULATOR_SELFTEST) && \
+    defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
+                if (guest_audio_stress && !guest_audio_stress_done &&
+                    arena_ticks>=2u && i>0u)
+                    dino_switch_sound_guest_mid_batch_poll();
+#endif
                 /* Consume precisely the event from this simulated tick. */
                 dino_switch_sound_step(arena.events);
 #ifdef DINO_EMULATOR_SELFTEST

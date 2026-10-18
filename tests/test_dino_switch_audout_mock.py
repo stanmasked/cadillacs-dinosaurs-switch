@@ -44,6 +44,8 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
             'tests/mocks/mock_audout.c',
         ]
         cmd=['gcc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+             '-DDINO_EMULATOR_SELFTEST',
+             '-DDINO_AUDIO_EXPERIMENT_MID_BATCH_POLL',
              '-fPIC','-shared','-Itests/mocks','-Isource',
              *sources,'-o',str(lib)]
         comp=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True)
@@ -57,6 +59,7 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
             ctypes.POINTER(Diagnostics)]
         cls.lib.dino_switch_sound_pcm_witness.restype=ctypes.c_uint64
         cls.lib.dino_switch_sound_pcm_ticks.restype=ctypes.c_uint32
+        cls.lib.dino_switch_sound_guest_mid_batch_poll.restype=None
         cls.lib.mock_audout_grant_releases.argtypes=[ctypes.c_uint32]
         cls.lib.mock_audout_inject_bad_release.argtypes=[ctypes.c_uint32]
         cls.lib.mock_audout_reverse_release_order.argtypes=[
@@ -385,6 +388,80 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
         self.assertEqual(self.delta('skipped'),898)
         self.assertEqual(self.lib.dino_switch_sound_pcm_witness(),
                          all_admitted_hash)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+
+    def test_guest_boundary_poll_with_no_release_cannot_create_space(self):
+        self.step()
+        self.step()
+        before=self.lib.mock_audout_poll_calls()
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        self.assertEqual(self.lib.mock_audout_poll_calls()-before,1)
+        self.assertEqual(self.lib.mock_audout_pending(),2)
+        self.assertEqual(self.delta('released'),0)
+        self.assertEqual(self.delta('simulated_ticks'),2)
+        self.step()
+        self.assertEqual((self.delta('submitted'),self.delta('skipped')),
+                         (2,1))
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_extra_guest_poll_consumes_only_real_external_ack(self):
+        self.step()
+        self.step()
+        self.lib.mock_audout_grant_releases(1)
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        self.assertEqual(self.delta('released'),1)
+        self.assertEqual(self.state().pending,1)
+        self.assertEqual(self.delta('simulated_ticks'),2)
+        self.step(releases=0)
+        self.assertEqual(self.delta('submitted'),3)
+        self.assertEqual(self.delta('skipped'),0)
+        self.assertEqual(self.lib.mock_audout_page_layout_ok(),1)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_guest_poll_preserves_pcm_clock_and_generated_hash(self):
+        events=[1<<3,1<<4,1<<2,1<<5,1<<9,1<<1]
+        for event in events:
+            self.lib.dino_switch_sound_guest_mid_batch_poll()
+            self.step(event)
+        with_extra=self.lib.dino_switch_sound_pcm_witness()
+        self.assertEqual(self.lib.dino_switch_sound_pcm_ticks()-
+                         self.pcm_baseline,len(events))
+        self.lib.dino_switch_sound_close()
+        self.lib.mock_audout_reset()
+        self.assertTrue(self.lib.dino_switch_sound_open())
+        for event in events:
+            self.step(event)
+        self.assertEqual(self.lib.dino_switch_sound_pcm_witness(),with_extra)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_invalid_mid_batch_release_refuses_reuse_fail_closed(self):
+        self.step()
+        self.step()
+        self.lib.mock_audout_inject_bad_release(1)
+        before=self.state().audio_errors
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        q=self.state()
+        self.assertFalse(q.active)
+        self.assertEqual(q.audio_errors,before+1)
+        self.assertEqual(q.pending,0)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+        self.lib.dino_switch_sound_step(1<<3)
+        self.assertEqual(self.delta('simulated_ticks'),3)
+
+    def test_guest_poll_drains_two_pages_without_pcm_admission(self):
+        self.step()
+        self.step()
+        before=self.lib.mock_audout_poll_calls()
+        self.lib.mock_audout_grant_releases(2)
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        self.assertEqual(self.lib.mock_audout_poll_calls()-before,3)
+        self.assertEqual(self.state().pending,0)
+        self.assertEqual(self.delta('released'),2)
+        self.assertEqual(self.delta('submitted'),2)
+        self.assertEqual(self.delta('simulated_ticks'),2)
+        self.step(releases=0)
+        self.assertEqual(self.state().pending,1)
         self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
 
     def test_active_sound_adapter_open_is_idempotent(self):

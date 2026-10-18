@@ -1038,3 +1038,39 @@ These are simple occupancy identities and conditional mathematical
 bounds, **not evidence of measured speaker sound, safe audio delay,
 or a working fix**. All existing ROM-free privacy and NRO controls are
 preserved; no user-owned original game data is published.
+
+## Stage 156 — opt-in guest-only mid-batch nonblocking audout poll
+
+Two verified Stage 155 NeXium guest runs measured 121 and 109 skipped
+audio blocks in 900 simulated ticks. At their respective *fixed*
+number of confirmed audout page returns, the mathematical upper bound
+on recoverable missed blocks was 0 and 1. Therefore simply reshuffling
+which PCM tick gets the existing slot cannot be claimed as a fix.
+The next controlled experiment tests the necessary condition for a
+meaningful reduction: obtaining **more real release acknowledgements**.
+
+The production C audio driver now factors its original bounded,
+fail-closed `audoutGetReleasedAudioOutBuffer` sweep into one internal
+function with exactly the same normal call frequency. An additional
+function exists **only** when both
+`DINO_EMULATOR_SELFTEST` and
+`DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL` are defined. It performs
+one extra immediate nonblocking release sweep before *later* ticks of
+a multi-step render iteration **during the guest's 900-tick stress
+witness only**, with no sleep, no submission, no PCM synthesis, and
+no game-tick advancement. Default selftest and all ordinary Switch
+NRO builds omit the extra call entirely.
+
+Five new host integration tests compile the *actual C audio driver*
+with these opt-in defines. They demonstrate that an extra poll without
+a new acknowledgment cannot create space; with an externally
+acknowledged release it merely consumes an existing real ACK; PCM
+clock/hash remain invariant; page ownership survives a double return;
+and malformed release pointers fail closed. A guest AB comparison still
+must establish whether extra calls change NeXium release timing or
+audout slot admissions; host mocks **cannot** prove this and are not
+hardware audio output or latency measurements.
+
+No original ROM, licensed PCM, private filenames or captured gameplay
+resources are added to GitHub. The two-pending-page limit and
+60 Hz game simulation remain unchanged.
