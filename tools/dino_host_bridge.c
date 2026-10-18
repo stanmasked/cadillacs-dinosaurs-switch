@@ -6,6 +6,7 @@
 #include "../source/dino_sfx.h"
 #include "../source/dino_replay.h"
 #include "../source/dino_replay_witness.h"
+#include "../source/dino_pcm_witness.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -14,8 +15,6 @@ static DinoArena game;
 static DinoSfx sfx;
 static uint64_t pcm_hash;
 static uint64_t gameplay_hash;
-static const uint64_t FNV_OFFSET=UINT64_C(14695981039346656037);
-static const uint64_t FNV_PRIME=UINT64_C(1099511628211);
 
 typedef struct {
     int32_t x,y,z,dummy_x,dummy_y;
@@ -29,7 +28,7 @@ typedef struct {
 void dino_host_reset(void) {
     dino_arena_reset(&game);
     dino_sfx_reset(&sfx);
-    pcm_hash=FNV_OFFSET;
+    pcm_hash=DINO_PCM_WITNESS_INIT;
     gameplay_hash=DINO_WITNESS_INIT;
 }
 void dino_host_step(uint32_t held,uint32_t pressed) {
@@ -38,15 +37,7 @@ void dino_host_step(uint32_t held,uint32_t pressed) {
     gameplay_hash=dino_replay_witness_tick(gameplay_hash,&game);
     dino_sfx_events(&sfx,game.events);
     dino_sfx_render_tick(&sfx,pcm,DINO_SFX_TICK_FRAMES);
-    /* Hash PCM samples in explicitly defined little-endian order,
-     * including silence. No original sound files are accessed. */
-    for (unsigned i=0;i<DINO_SFX_TICK_FRAMES*2u;++i) {
-        uint16_t v=(uint16_t)pcm[i];
-        pcm_hash^=(uint8_t)v;
-        pcm_hash*=FNV_PRIME;
-        pcm_hash^=(uint8_t)(v>>8);
-        pcm_hash*=FNV_PRIME;
-    }
+    pcm_hash=dino_pcm_witness_feed(pcm_hash,pcm,DINO_SFX_TICK_FRAMES);
 }
 void dino_host_demo_step(uint32_t tick) {
     uint32_t held=0,pressed=0;
