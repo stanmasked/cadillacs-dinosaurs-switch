@@ -192,3 +192,39 @@ Switch emulator frame would confirm only parity of these selected
 simulation values and event sequence. It would not independently
 verify actual GPU pixel output, audible PCM or original MAME
 Cadillacs and Dinosaurs gameplay.
+
+## Stage 128 — independently check generated PCM in an emulator
+
+Alongside the stage-127 gameplay-state fingerprint, the NRO's
+**Minus** replay now shows an additional line after 180 ticks:
+
+```text
+STATE FNV64 5BCA2FF01FB244F6
+PCM FNV64 D82C3B7960857B22  BLOCKS 180
+```
+
+The PCM fingerprint is the FNV-1a digest of **every synthesized
+48 kHz, 16-bit, stereo sample for 180 game ticks**. Samples are
+hashed before they are submitted to libnx `audout`, or written
+into a scratch buffer when audio is unavailable. The same portable
+C helper `source/dino_pcm_witness.c` is linked into the NRO and
+the Linux native gameplay preview. The reference value was
+independently recorded in a previous passing native-host
+GitHub Actions artifact, before the common witness code was added.
+
+For future emulator QA, compare **both** values in the frozen NRO
+HUD with the host witness file. A matching PCM digest means
+the original self-authored procedural synthesizer generated an
+identical sample stream. It **does not** demonstrate that libnx
+accepted, queued, emitted or audibly played these samples, and
+does not establish emulator latency, console speaker output or
+parity with any commercial game audio. Check the separate
+`AUDIO ON/OFF`, queued, skipped and errors HUD indicators;
+audibility must be confirmed independently by actual emulator
+playback or listening tests.
+
+Five ROM-free tests independently implement PCM FNV using Python,
+exercise signed-sample endianness, chunk boundaries and error
+inputs, detect single-sample changes and pin the original
+180-tick native-C golden value. The visual smoke workflow
+requires both the state and synthesized-PCM digests to match.
