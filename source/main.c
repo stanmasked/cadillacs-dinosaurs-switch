@@ -15,6 +15,7 @@
 #include "cps1_sequence.h"
 #include "dino_arena.h"
 #include "dino_replay.h"
+#include "dino_replay_witness.h"
 #include "dino_switch_sound.h"
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
@@ -265,7 +266,7 @@ static const char *arena_pose_name(DinoArenaPose pose) {
 static void arena_frame(uint32_t *frame, unsigned pitch,
                         const DinoArena *arena, bool have_gfx,
                         uint32_t demo_ticks, bool demo_active,
-                        bool demo_complete) {
+                        bool demo_complete, uint64_t demo_witness) {
     const DinoArenaPose player=dino_arena_player_pose(arena);
     const DinoArenaPose enemy=dino_arena_dummy_pose(arena);
     const unsigned phase=dino_arena_pose_phase(arena);
@@ -384,6 +385,11 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
                  (unsigned)arena->player_hp,
                  (unsigned)arena->successful_hits);
         label(frame,pitch,52,110,demo_line,1,rgb(248,215,119));
+        char witness_line[55];
+        snprintf(witness_line,sizeof(witness_line),
+                 "STATE FNV64 %016llX",
+                 (unsigned long long)demo_witness);
+        label(frame,pitch,52,128,witness_line,1,rgb(249,220,148));
     }
     char status[140];
     snprintf(status,sizeof(status),
@@ -476,6 +482,7 @@ int main(int argc, char **argv) {
     if (arena_active) (void)dino_switch_sound_open();
     uint32_t pending_actions=0;
     uint32_t demo_ticks=0;
+    uint64_t demo_witness=DINO_WITNESS_INIT;
     bool demo_active=false, demo_complete=false;
     u64 arena_clock_carry=0;
     if (gfx) cache_page(gfx,page);
@@ -496,6 +503,7 @@ int main(int argc, char **argv) {
             demo_active=false;
             demo_complete=false;
             demo_ticks=0;
+            demo_witness=DINO_WITNESS_INIT;
             /* Leaving the arena discards any unfinished cue envelopes
              * and releases audout. Re-entry starts a fresh PCM timeline. */
             if (arena_active) (void)dino_switch_sound_open();
@@ -507,6 +515,7 @@ int main(int argc, char **argv) {
                  * no emulator-specific scripts or private input captures. */
                 dino_arena_reset(&arena);
                 demo_ticks=0;
+                demo_witness=DINO_WITNESS_INIT;
                 demo_active=true;
                 demo_complete=false;
                 pending_actions=0;
@@ -520,6 +529,7 @@ int main(int argc, char **argv) {
             } else if (down & HidNpadButton_Y) {
                 dino_arena_reset(&arena);
                 demo_ticks=0;
+                demo_witness=DINO_WITNESS_INIT;
                 demo_active=false;
                 demo_complete=false;
                 arena_clock_carry=0;
@@ -546,6 +556,8 @@ int main(int argc, char **argv) {
                         break; /* invalid trace never runs unknown input */
                 }
                 dino_arena_step(&arena,step_held,step_pressed);
+                if (demo_active)
+                    demo_witness=dino_replay_witness_tick(demo_witness,&arena);
                 /* Consume precisely the event from this simulated tick. */
                 dino_switch_sound_step(arena.events);
                 if (demo_active && ++demo_ticks==DINO_REPLAY_TICKS) {
@@ -618,7 +630,7 @@ int main(int argc, char **argv) {
         if (!frame) break;
         if (arena_active)
             arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL,
-                        demo_ticks,demo_active,demo_complete);
+                        demo_ticks,demo_active,demo_complete,demo_witness);
         else if (show_scene && scene_rgba)
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
