@@ -79,3 +79,40 @@ For an actual emulator, use the separate
 [Switch emulator launch and visual QA guide](switch-emulator-smoke.md)
 with user-installed, authorized software. Never publish private keys,
 commercial firmware or original game image data.
+
+## Stage 125 — real desktop window and keyboard smoke with Xvfb
+
+The native-host visual workflow additionally boots an actual **Tk**
+window in a virtual X11 display, sends genuine Tk key-press/release
+events (arrow movement and a punch), advances the **same portable C
+game and sound engines**, presents a 2× `PhotoImage` in a live Canvas,
+and reads back known player/opponent RGB pixels from that Tk image.
+It reports a separate `tk-gui-witness.json` containing
+`tk_image_rendered`, `held_input_verified`,
+`edge_input_verified`, a 768×448 preview size, nine ticks and
+a final player X position of 98. The report has an explicit
+`runtime: tk_desktop_not_switch_emulator` marker and leaves all
+Switch emulator, Switch GPU and Switch audio proof flags **false**.
+
+The desktop interactive mode also now uses a fixed **60Hz simulation
+clock**, independent of the Tk frame rendering schedule; it is no
+longer tied to a naive 16 ms repaint interval (62.5 Hz).
+A desktop stall limits catch-up to eight simulation ticks per
+render to avoid an unbounded backlog; unusually late ticks
+are counted as dropped by the local scheduler. Input presses
+persist through redraws until consumed by an actual game tick.
+Separately authored tests verify held-direction input,
+attack edge suppression of auto-repeat, 60Hz fractional-tick
+accuracy and the bounded catch-up policy.
+
+To perform a GUI-only smoke on Linux with the necessary X11/Tk
+packages installed:
+
+```sh
+xvfb-run -a python3 tools/dino_host_preview.py --gui-smoke
+```
+
+No Nintendo Switch emulator, keys, firmware, game ROMs or protected
+assets are used by this Linux desktop verification. Testing the
+**actual NRO in an actual Switch emulator** remains a distinct
+uncompleted task, not a claim implied by a successful Tk window.
