@@ -170,9 +170,12 @@ class MatchedProductionAudoutTests(unittest.TestCase):
         self.assertEqual(later,540)
         self.assertEqual(extra.dino_switch_sound_guest_mid_batch_calls(),later)
         self.assertEqual(baseline.dino_switch_sound_guest_mid_batch_calls(),0)
-        # Credits are injected at exactly the same point in each tick,
-        # so optional polling cannot manufacture an extra released page.
-        self.assertEqual(extra.dino_switch_sound_guest_mid_batch_releases(),
+        # Credits are injected before the same simulated tick in both
+        # modes; extra polls only change *which poll* observes a real ACK.
+        self.assertLessEqual(
+            extra.dino_switch_sound_guest_mid_batch_releases(),
+            self.state(extra).released)
+        self.assertEqual(self.state(baseline).released,
                          self.state(extra).released)
         self.assertEqual(self.state(baseline).submitted+
                          self.state(baseline).skipped,902)
