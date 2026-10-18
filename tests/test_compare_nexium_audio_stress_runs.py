@@ -55,6 +55,30 @@ def fixture(variation=0):
     }
 
 
+def with_release_probe(report, recovery=25):
+    """Add consistent, per-window, synthetic guest release observations."""
+    report=copy.deepcopy(report)
+    windows=[]
+    for i,w in enumerate(report['checkpoint_mode_intervals']):
+        drops=w['full_queue_skips']
+        windows.append({
+            'tick_start':i*150,
+            'tick_end':(i+1)*150,
+            'full_before_poll':drops+recovery,
+            'recovered_before_admission':recovery,
+            'still_full_after_poll':drops,
+        })
+    report.update({
+        'pre_poll_capacity_probe_present':True,
+        'full_before_release_poll_ticks':sum(
+            w['full_before_poll'] for w in windows),
+        'full_recovered_before_admission_ticks':6*recovery,
+        'checkpoint_release_poll_intervals':windows,
+    })
+    return report
+
+
+
 class MultiRunAudioTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='synthetic-cross-run-')
@@ -99,6 +123,140 @@ class MultiRunAudioTests(unittest.TestCase):
         self.assertEqual(result['windows_with_higher_batched_skip_fraction'],12)
         self.assertEqual(result['runs_with_batched_higher_in_all_six_windows'],2)
         self.assertFalse(result['independent_guest_execution_authenticated'])
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_all_extended_reports_produce_only_complete_pool(self):
+        self.save(self.one,with_release_probe(fixture(),25))
+        self.save(self.two,with_release_probe(fixture(1),30))
+        result=check.compare([self.one,self.two])
+        self.assertTrue(result['all_reports_have_release_poll_probe'])
+        self.assertEqual(result['reports_with_release_poll_probe'],2)
+        self.assertEqual(result['pooled_full_before_release_poll_ticks'],930)
+        self.assertEqual(result['pooled_recovered_before_admission_ticks'],330)
+        self.assertEqual(result['pooled_still_full_after_poll_ticks'],600)
+        self.assertEqual(result['release_poll_recovery_percent_rounded'],35)
+        self.assertFalse(result['catchup_causality_verified'])
+        self.assertFalse(result['independent_guest_execution_authenticated'])
+
+    def test_mixed_legacy_extended_does_not_publish_partial_recovery(self):
+        self.save(self.one,with_release_probe(fixture(),25))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_release_poll_probe'],1)
+        self.assertFalse(result['all_reports_have_release_poll_probe'])
+        self.assertIsNone(result['pooled_full_before_release_poll_ticks'])
+        self.assertIsNone(result['pooled_recovered_before_admission_ticks'])
+        self.assertIsNone(result['pooled_still_full_after_poll_ticks'])
+        self.assertIsNone(result['release_poll_recovery_percent_rounded'])
+        self.assertEqual(result['combined_full_queue_skips'],600)
+
+    def test_missing_probe_is_not_falsely_reported_as_zero_recovery(self):
+        report=check.compare([self.one,self.two])
+        self.assertEqual(report['reports_with_release_poll_probe'],0)
+        self.assertIsNone(report['release_poll_recovery_percent_rounded'])
+        self.save(self.one,dict(fixture(),
+            pre_poll_capacity_probe_present=False,
+            full_before_release_poll_ticks=None,
+            full_recovered_before_admission_ticks=None,
+            checkpoint_release_poll_intervals=None))
+        report=check.compare([self.one,self.two])
+        self.assertEqual(report['reports_with_release_poll_probe'],0)
+        self.assertIsNone(report['pooled_full_before_release_poll_ticks'])
+
+    def test_reject_partial_false_or_nonboolean_probe_claims(self):
+        sample=with_release_probe(fixture())
+        for key in check.POLL_PROBE_KEYS:
+            with self.subTest(key=key):
+                r=copy.deepcopy(sample)
+                del r[key]
+                self.save(self.one,r)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+        for flag in (1,0,None,'true'):
+            with self.subTest(flag=flag):
+                r=copy.deepcopy(sample)
+                r['pre_poll_capacity_probe_present']=flag
+                self.save(self.one,r)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+        r=copy.deepcopy(sample)
+        r.update(pre_poll_capacity_probe_present=False)
+        self.save(self.one,r)
+        with self.assertRaises(ValueError):
+            check.compare([self.one,self.two])
+
+    def test_reject_corrupted_global_release_poll_counts(self):
+        sample=with_release_probe(fixture())
+        for name,bad in (
+                ('full_before_release_poll_ticks',449),
+                ('full_before_release_poll_ticks',True),
+                ('full_before_release_poll_ticks',901),
+                ('full_recovered_before_admission_ticks',151),
+                ('full_recovered_before_admission_ticks',False),
+                ('full_recovered_before_admission_ticks',500)):
+            with self.subTest(name=name,bad=bad):
+                r=copy.deepcopy(sample)
+                r[name]=bad
+                self.save(self.one,r)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_release_windows_cannot_hide_a_forged_distribution(self):
+        sample=with_release_probe(fixture())
+        for i,key,bad in (
+                (0,'tick_start',1),
+                (1,'tick_end',301),
+                (2,'full_before_poll',74),
+                (3,'recovered_before_admission',24),
+                (4,'still_full_after_poll',49),
+                (5,'full_before_poll',151),
+                (0,'recovered_before_admission',False)):
+            with self.subTest(i=i,key=key,bad=bad):
+                r=copy.deepcopy(sample)
+                r['checkpoint_release_poll_intervals'][i][key]=bad
+                self.save(self.one,r)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+        for mutator in ('missing','extra','short'):
+            with self.subTest(mutator=mutator):
+                r=copy.deepcopy(sample)
+                ws=r['checkpoint_release_poll_intervals']
+                if mutator=='missing':
+                    del ws[0]['full_before_poll']
+                elif mutator=='extra':
+                    ws[0]['invented_probe']=1
+                else:
+                    ws.pop()
+                self.save(self.one,r)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_zero_occupancy_probe_has_null_recovery_not_zero_percent(self):
+        sample=fixture()
+        for window in sample['checkpoint_mode_intervals']:
+            window.update({
+                'skips_in_single_tick_render_frames':0,
+                'skips_in_batched_render_frames':0,
+                'full_queue_skips':0,
+                'single_skip_percent_rounded':0,
+                'batched_skip_percent_rounded':0,
+            })
+        sample.update({
+            'audout_blocks_submitted':900,
+            'audout_blocks_released':900,
+            'audout_blocks_skipped':0,
+            'full_queue_skips':0,
+            'skips_in_single_tick_render_frames':0,
+            'skips_in_batched_render_frames':0,
+            'single_skip_percent_rounded':0,
+            'batched_skip_percent_rounded':0,
+            'checkpoint_skipped_deltas':[0]*6,
+        })
+        self.save(self.one,with_release_probe(sample,0))
+        self.save(self.two,with_release_probe(sample,1))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['pooled_full_before_release_poll_ticks'],6)
+        self.assertEqual(result['release_poll_recovery_percent_rounded'],100)
+        self.assertEqual(result['combined_full_queue_skips'],0)
         self.assertFalse(result['catchup_causality_verified'])
 
     def test_refuse_duplicate_file_content_and_too_few_runs(self):

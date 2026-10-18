@@ -39,6 +39,16 @@ GLOBAL_COUNTS = (
 WINDOW_COUNTS = tuple(sorted(WINDOW_KEYS - {
     'single_skip_percent_rounded', 'batched_skip_percent_rounded',
 }))
+POLL_PROBE_KEYS = (
+    'pre_poll_capacity_probe_present',
+    'full_before_release_poll_ticks',
+    'full_recovered_before_admission_ticks',
+    'checkpoint_release_poll_intervals',
+)
+POLL_WINDOW_KEYS = {
+    'tick_start', 'tick_end', 'full_before_poll',
+    'recovered_before_admission', 'still_full_after_poll',
+}
 
 
 def nonnegative(value):
@@ -73,6 +83,50 @@ def read_report(path):
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError('invalid report JSON') from exc
     return raw, report
+
+
+
+def validate_release_poll_probe(report, totals, mode_windows):
+    """Read Stage 143 provenance-free release-poll counters fail closed."""
+    supplied=set(POLL_PROBE_KEYS).intersection(report)
+    if not supplied:
+        return None  # A real legacy Stage 141/142 report, not zero recovery.
+    if supplied!=set(POLL_PROBE_KEYS):
+        raise ValueError('partial release-poll evidence')
+    declared=report['pre_poll_capacity_probe_present']
+    if declared is False:
+        if any(report[key] is not None for key in POLL_PROBE_KEYS[1:]):
+            raise ValueError('absent release-poll probe claimed counts')
+        return None
+    if declared is not True:
+        raise ValueError('invalid release-poll presence flag')
+    before=nonnegative(report['full_before_release_poll_ticks'])
+    recovered=nonnegative(report['full_recovered_before_admission_ticks'])
+    still=totals['full_queue_skips']
+    if before>900 or recovered>before or before-recovered!=still:
+        raise ValueError('release-poll totals contradict skipped admissions')
+    windows=report['checkpoint_release_poll_intervals']
+    if not isinstance(windows,list) or len(windows)!=6:
+        raise ValueError('missing release-poll interval sequence')
+    sums_before=sums_recovered=sums_still=0
+    for i,w in enumerate(windows):
+        if not isinstance(w,dict) or set(w)!=POLL_WINDOW_KEYS:
+            raise ValueError('invalid release-poll window fields')
+        sample={k:nonnegative(v) for k,v in w.items()}
+        a=sample['full_before_poll']
+        b=sample['recovered_before_admission']
+        c=sample['still_full_after_poll']
+        if (sample['tick_start']!=i*150 or
+                sample['tick_end']!=(i+1)*150 or
+                a>150 or b>a or a-b!=c or
+                c!=mode_windows[i]['full_queue_skips']):
+            raise ValueError('release-poll window disagrees with guest skips')
+        sums_before+=a
+        sums_recovered+=b
+        sums_still+=c
+    if sums_before!=before or sums_recovered!=recovered or sums_still!=still:
+        raise ValueError('release-poll window totals do not reconcile')
+    return (before,recovered)
 
 
 def validate(report):
@@ -154,7 +208,8 @@ def validate(report):
     if (both != totals['windows_with_both_render_modes'] or
             higher != totals['windows_with_higher_batched_skip_rate']):
         raise ValueError('window rate comparison contradicted')
-    return totals, windows
+    probe=validate_release_poll_probe(report,totals,windows)
+    return totals, windows, probe
 
 
 def compare(paths):
@@ -168,13 +223,19 @@ def compare(paths):
     }
     higher = lower = tied = eligible = 0
     per_run_higher = []
+    probed_runs=0
+    probed_full=probed_recovered=0
     for path in paths:
         raw, report = read_report(path)
         digest = hashlib.sha256(raw).digest()
         if digest in seen:
             raise ValueError('reused identical guest report')
         seen.add(digest)
-        totals, windows = validate(report)
+        totals, windows, probe = validate(report)
+        if probe is not None:
+            probed_runs+=1
+            probed_full+=probe[0]
+            probed_recovered+=probe[1]
         pool['single_steps'] += totals['single_tick_render_steps']
         pool['batched_steps'] += totals['batched_render_steps']
         pool['single_skips'] += totals['skips_in_single_tick_render_frames']
@@ -202,6 +263,19 @@ def compare(paths):
         'reports_compared': len(paths),
         'total_guest_simulation_ticks': 900 * len(paths),
         'combined_full_queue_skips': pool['full_queue_skips'],
+        'reports_with_release_poll_probe':probed_runs,
+        'all_reports_have_release_poll_probe':probed_runs==len(paths),
+        # Mixed or legacy inputs get NULL rather than misleading partial
+        # recovery rates; their per-run reports remain valid as legacy.
+        'pooled_full_before_release_poll_ticks':(
+            probed_full if probed_runs==len(paths) else None),
+        'pooled_recovered_before_admission_ticks':(
+            probed_recovered if probed_runs==len(paths) else None),
+        'pooled_still_full_after_poll_ticks':(
+            pool['full_queue_skips'] if probed_runs==len(paths) else None),
+        'release_poll_recovery_percent_rounded':(
+            rounded(probed_recovered,probed_full)
+            if probed_runs==len(paths) else None),
         'single_tick_render_steps': pool['single_steps'],
         'batched_render_steps': pool['batched_steps'],
         'single_tick_render_skips': pool['single_skips'],

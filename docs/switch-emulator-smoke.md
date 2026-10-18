@@ -752,3 +752,33 @@ claim physical Switch performance from these descriptions.
 The guest audio adapter now counts, without changing release polling or PCM scheduling, ticks when its two-buffer queue was full before the existing audout release sweep and ticks when that sweep freed a page. For a healthy active backend the difference equals the already recorded full-queue skip count. The seven existing 900-tick guest checkpoints append the two lifetime counters. The Python verifier checks that counters never regress, match existing drop totals and agree in each 150-tick window. Legacy v3 CSV without these columns remains accepted, explicitly returning no pre-poll probe evidence.
 
 Stage 142 NeXium run #39130313075 had 45 queue-full skips among 900 guest ticks; these new counters can distinguish released-at-poll versus still-full conditions in a subsequent run. No real game ROM, PCM waveform, source pixels or private paths are published. The queue remains capped at two buffers and neither frame scheduling nor audio admission policy is altered. These observations do not establish original-game audio parity, speaker audibility, timing or a causal remedy for dropped admissions.
+
+## Stage 144 — reconcile release-poll diagnostics across NeXium runs
+
+The Stage 143 NeXium guest NRO reports were confirmed on two distinct CI
+executions: run #39131529498 had 685 full-before-poll steps, 623 recovery
+steps and 62 post-poll full-queue omissions. Run #39131525321 had
+582 / 466 / 116 respectively. Each report's six 150-tick windows and
+its 900-tick totals agree. These are observations of the emulator's
+existing nonblocking audout release polling, not measured wall-clock
+release timing and not evidence that another poll would fix audio.
+
+The standalone ROM-free cross-run comparator now verifies every optional
+Stage 143 release-poll field when supplied, including exact field sets,
+strict Boolean presence, integer-only bounded counters, per-window
+monotone identities, and equality of post-poll full skips to the
+already independently checked per-window skipped admissions. Legacy
+reports without these fields, or explicitly marked as no-probe with
+nulls, remain compatible. Mixing old and new reports suppresses all
+pooled release-poll statistics (null), instead of accidentally treating
+missing observations as zero. An all-probed collection reports the
+number of saturated-before-poll ticks, releases that restored room,
+and true post-poll full skips, plus a rounded recovery fraction.
+
+Synthetic negative tests deliberately forge one interval while retaining
+plausible overall totals, change numeric values to JSON booleans, spoof
+probe presence, and supply incomplete windows. Neither the Nintendo
+Switch native sound policy nor original game resources are changed.
+Report files remain untrusted JSON: successful comparison cannot
+independently authenticate emulator execution, prove hardware audio
+quality, confirm original CPS-1 timing or establish causation.
