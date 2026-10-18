@@ -390,6 +390,14 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
                  "STATE FNV64 %016llX",
                  (unsigned long long)demo_witness);
         label(frame,pitch,52,128,witness_line,1,rgb(249,220,148));
+        /* Independent witness for C-generated audio samples; this does
+         * NOT prove actual audout delivery, speakers or emulator sound. */
+        char pcm_line[75];
+        snprintf(pcm_line,sizeof(pcm_line),
+                 "PCM FNV64 %016llX  BLOCKS %03u",
+                 (unsigned long long)dino_switch_sound_pcm_witness(),
+                 (unsigned)dino_switch_sound_pcm_ticks());
+        label(frame,pitch,52,146,pcm_line,1,rgb(162,222,231));
     }
     char status[140];
     snprintf(status,sizeof(status),
