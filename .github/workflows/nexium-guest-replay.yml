@@ -36,6 +36,8 @@ on:
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
       - 'tests/test_nexium_audio_mode_binding.py'
+      - 'tools/verify_nexium_audio_paired_artifacts.py'
+      - 'tests/test_nexium_audio_paired_artifacts.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -60,6 +62,8 @@ on:
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
       - 'tests/test_nexium_audio_mode_binding.py'
+      - 'tools/verify_nexium_audio_paired_artifacts.py'
+      - 'tests/test_nexium_audio_paired_artifacts.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -210,5 +214,40 @@ jobs:
             emulator-evidence/guest-audio-mode-binding.json
             emulator-evidence/guest-audio-stress.csv
             emulator-evidence/xdg-config/NeXium/logs/*.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  compare-pr-guest-audio:
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: run-real-guest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual baseline guest evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-ne-xium-actual-nro-guest-evidence-baseline
+          path: paired/baseline
+      - name: Download actual experimental guest evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-ne-xium-actual-nro-guest-evidence-extra-poll
+          path: paired/extra-poll
+      - name: Verify bound guest evidence and compare two modes
+        run: |
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_paired_artifacts.py' -v
+          python3 tools/verify_nexium_audio_paired_artifacts.py \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --out paired-audio-comparison.json
+      - name: Save descriptive result or inconclusive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-ne-xium-bound-audio-ab-comparison
+          path: paired-audio-comparison.json
           if-no-files-found: warn
           retention-days: 7
