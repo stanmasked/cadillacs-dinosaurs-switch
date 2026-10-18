@@ -432,3 +432,41 @@ milliseconds. They establish action ordering and internal progression
 only. Neither host-to-guest keyboard delay, screen/display latency,
 physical Joy-Con behavior nor audio output latency has been measured.
 Never convert a guest tick count into an external latency claim.
+
+
+## Stage 134 — sampled host keyboard-to-emulator-window response bound
+
+This optional **software-only** measurement starts after NeXium has finished
+the independently validated 180-tick NRO replay. The host first sends the
+default Y-reset keyboard event to the actual emulator window and verifies
+two pixel baselines in the ROM-free training room: player body at
+(334,425) is cyan, prospective movement position (361,425) is green.
+
+Using a single host monotonic clock, the new tool records an instant just
+BEFORE sending D-pad-right key-down and completion of the first host X11
+1x1 screenshot that contains cyan player-body color at (361,425).
+Elapsed time is rounded UP to milliseconds. It includes keyboard
+injection, emulator scheduling, rendering, X11 capture and sample
+processing. This is a conservative sampled **host software-window
+response upper bound**, not a precise intrinsic input latency; actual
+transition could happen earlier between samples. The tool then delivers
+the existing A attack, B jump and X spar-mode keys.
+
+The host JSON intentionally records HOST_PIXEL_CHANGE_OBSERVED_UNBOUND
+and does not claim guest binding. The independent
+verify_nexium_host_input_bound.py accepts it only with an independently
+verified native guest RESET→MOVE→ATTACK→JUMP→SPAR→DONE timeline and
+matching 31/31 guest effect summary. A missing sample, unexpected
+pixel color, forged measurements or an inconsistent guest trace
+leave the result INCONCLUSIVE. Failure of the optional sampler falls
+back to the established host keyboard sequence, preserving the original
+guest-HID validation.
+
+No screenshots, raw keys, original game data or absolute timestamps are
+uploaded. The sanitized JSON contains only measurement type, bounded
+interval and sampling count.
+
+This is NOT a hardware Switch/Joy-Con/Pro Controller latency,
+physical display first-light measurement, direct emulator HID delay,
+audible output timing, original Capcom arcade parity or sound latency.
+Host load and capture frequency influence the observed bound.
