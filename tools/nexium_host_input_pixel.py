@@ -81,7 +81,7 @@ def result(status, **extra):
     }
 
 
-def probe(window):
+def probe(window, audio_out=None):
     if not window.isdecimal() or not 0 < int(window) < 2**32:
         raise ValueError('bad X11 window id')
     # A minimal CI Xvfb display often has no window manager.
@@ -145,7 +145,21 @@ def probe(window):
     time.sleep(0.3)
     press('x')
     time.sleep(0.3)
-    press('v')
+    if audio_out is not None:
+        # The independent optional Pulse sampler sends the LAST key V.
+        # If it cannot even start, dispatch V directly so the existing
+        # native guest HID test remains independently meaningful.
+        try:
+            cmd = subprocess.run(
+                ['python3', 'tools/nexium_host_spar_audio.py',
+                 '--out', str(audio_out)],
+                check=False, capture_output=True, timeout=12)
+            if cmd.returncode != 0 or not audio_out.is_file():
+                press('v')
+        except (OSError, subprocess.SubprocessError):
+            press('v')
+    else:
+        press('v')
     if bound is None:
         return result('INCONCLUSIVE_PIXEL_NOT_OBSERVED',
                       capture_probes=count)
@@ -160,9 +174,10 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--window', required=True)
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--audio-out', type=Path)
     args = p.parse_args(argv)
     try:
-        record = probe(args.window)
+        record = probe(args.window, args.audio_out)
     except (ValueError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
         # Emit only fixed, public diagnostic codes; never expose host
         # window titles, paths, subprocess stderr or user identifiers.
