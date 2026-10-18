@@ -441,9 +441,9 @@ int main(int argc, char **argv) {
     bool arena_active=(gfx==NULL);
     DinoArena arena;
     dino_arena_reset(&arena);
-    /* Optional platform audio. A service failure leaves the arena fully
-     * playable with silence; never tie simulation to audio scheduling. */
-    (void)dino_switch_sound_open();
+    /* Keep audout completely shut down in the tile/scene viewer.
+     * Only the ROM-free arena requires synthesized training audio. */
+    if (arena_active) (void)dino_switch_sound_open();
     uint32_t pending_actions=0;
     u64 arena_clock_carry=0;
     if (gfx) cache_page(gfx,page);
@@ -461,6 +461,10 @@ int main(int argc, char **argv) {
             arena_active=!arena_active;
             arena_clock_carry=0;
             pending_actions=0;
+            /* Leaving the arena discards any unfinished cue envelopes
+             * and releases audout. Re-entry starts a fresh PCM timeline. */
+            if (arena_active) (void)dino_switch_sound_open();
+            else dino_switch_sound_close();
         }
         if (arena_active) {
             if (down & HidNpadButton_Y) {
