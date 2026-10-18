@@ -143,7 +143,8 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[22]=str(1 if idx else 0)
             row[25]=row[26]=row[27]=row[28]='0'
             row[29]=row[30]=row[31]=row[32]='0'
-            row[33]=row[34]=row[35]='0'
+            row[33]=str(idx*100)
+            row[34]=row[35]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_render_steps'],0)
@@ -270,7 +271,8 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[22]=str(1 if index else 0)
             row[25]=row[26]=row[27]=row[28]='0'
             row[29]=row[30]=row[31]=row[32]='0'
-            row[33]=row[34]=row[35]='0'
+            row[33]=str(index*100) if 'index' in locals() else str(idx*100)
+            row[34]=row[35]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_first_tick_steps'],0)
