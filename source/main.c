@@ -492,6 +492,27 @@ int main(int argc, char **argv) {
     uint32_t demo_ticks=0;
     uint64_t demo_witness=DINO_WITNESS_INIT;
     bool demo_active=false, demo_complete=false;
+#ifdef DINO_EMULATOR_SELFTEST
+    /* CI-only Switch guest execution witness, never enabled by default.
+     * Reports invented training-room state only: no ROMs, keys, graphics,
+     * commercial audio, emulator configuration or private file paths. */
+    FILE *guest_witness=NULL;
+    bool guest_first_frame=false, guest_done=false;
+    if (arena_active) {
+        (void)fsdevMountSdmc();
+        guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
+        if (guest_witness) {
+            fputs("event,ticks,player_x,player_hp,hits,state_fnv64,"
+                  "pcm_fnv64,pcm_blocks\n",guest_witness);
+            fprintf(guest_witness,"START,0,%d,%u,0,%016llX,%016llX,0\n",
+                    arena.x,(unsigned)arena.player_hp,
+                    (unsigned long long)demo_witness,
+                    (unsigned long long)dino_switch_sound_pcm_witness());
+            fflush(guest_witness);
+        }
+        demo_active=true;
+    }
+#endif
     u64 arena_clock_carry=0;
     if (gfx) cache_page(gfx,page);
     u64 last_tick=armGetSystemTick(), clock_carry=0;
@@ -646,7 +667,40 @@ int main(int argc, char **argv) {
         else if (gfx)
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
+#ifdef DINO_EMULATOR_SELFTEST
+        if (guest_witness && arena_active) {
+            if (!guest_first_frame && arena.ticks>0) {
+                /* This proves guest code reached framebufferEnd, not
+                 * that a host screenshot or visible GPU image exists. */
+                fprintf(guest_witness,
+                        "FRAME_SUBMITTED,%u,%d,%u,%u,%016llX,%016llX,%u\n",
+                        (unsigned)arena.ticks,arena.x,
+                        (unsigned)arena.player_hp,
+                        (unsigned)arena.successful_hits,
+                        (unsigned long long)demo_witness,
+                        (unsigned long long)dino_switch_sound_pcm_witness(),
+                        (unsigned)dino_switch_sound_pcm_ticks());
+                fflush(guest_witness);
+                guest_first_frame=true;
+            }
+            if (!guest_done && demo_complete) {
+                fprintf(guest_witness,
+                        "REPLAY_DONE,%u,%d,%u,%u,%016llX,%016llX,%u\n",
+                        (unsigned)demo_ticks,arena.x,
+                        (unsigned)arena.player_hp,
+                        (unsigned)arena.successful_hits,
+                        (unsigned long long)demo_witness,
+                        (unsigned long long)dino_switch_sound_pcm_witness(),
+                        (unsigned)dino_switch_sound_pcm_ticks());
+                fflush(guest_witness);
+                guest_done=true;
+            }
+        }
+#endif
     }
+#ifdef DINO_EMULATOR_SELFTEST
+    if (guest_witness) fclose(guest_witness);
+#endif
     dino_switch_sound_close();
     framebufferClose(&fb);
     free(scene_rgba);
