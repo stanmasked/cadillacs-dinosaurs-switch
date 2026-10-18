@@ -341,3 +341,33 @@ commercial artwork/audio, user firmware, private keys or private
 controller recordings are collected. The validator schema is v2.
 The new ROM-free regression suite checks counter corruption, silent
 fallback, invalid flags, missing fields and tick mismatches.
+
+
+## Stage 131 — isolated host virtual-sink PCM observation
+
+The real NeXium ARM64 guest replay workflow now **optionally** sets up a
+private PulseAudio null sink, routes its default ALSA output through the
+same server, and records the null sink's **host monitor** as raw stereo
+48 kHz signed-16 PCM. This uses only the ROM-free prototype and does not
+require Nintendo firmware, original game audio, commercial ROM content,
+a sound card or personally owned keys.
+
+The new tools/verify_nexium_host_audio.py checks the stream in bounded
+chunks (at most 32 MiB) and looks for multiple 100 ms windows with
+meaningful samples rather than accepting a single accidental nonzero
+sample. Only sanitized summary numbers are uploaded; **the raw audio is
+not a CI artifact**. Synthetic unit tests cover signal, silence,
+insufficient activity, malformed data, large files and symlinks.
+
+- VIRTUAL_SINK_PCM_DETECTED: the isolated host virtual sink's monitor
+  actually contained non-silent samples. This is a stricter signal
+  observation than guest-side generated PCM FNV and audout queue counts.
+- INCONCLUSIVE_NO_HOST_SIGNAL or INCONCLUSIVE_CAPTURE_UNAVAILABLE: host
+  playback could not be observed; the guest gameplay evidence remains
+  independently valid and is not falsely described as audio success.
+- Neither condition proves audible loudspeaker/headphone playback,
+  perceptual audio quality, latency or original Capcom QSound parity.
+  Physical/audio listening remains a separate uncompleted requirement.
+
+This check is diagnostic-only; it does not modify the regular NRO,
+the arcade reference path, approved artwork or the main branch.
