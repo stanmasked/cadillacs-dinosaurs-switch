@@ -106,9 +106,25 @@ def exposure_profile(report):
         raise ValueError('missing exposure or page-return windows')
     result=[]
     for i,(w,m,r) in enumerate(zip(windows,mode,releases)):
+        # Do not trust side-by-side indices as proof that their time
+        # windows align. The production pair is checked more deeply,
+        # but this arithmetic helper must also fail closed in isolation.
+        for label,window in (
+                ('batch position',w),('render mode',m),('page returns',r)):
+            if not isinstance(window,dict):
+                raise ValueError('malformed '+label+' window')
+            start=integer(window['tick_start'],label+' start')
+            end=integer(window['tick_end'],label+' end')
+            if start!=150*i or end!=150*(i+1):
+                raise ValueError('misaligned '+label+' interval')
         first=integer(w['first_tick_steps'],'first tick exposure')
         later=integer(w['later_tick_steps'],'later tick exposure')
         single=integer(m['single_tick_render_steps'],'single tick exposure')
+        batch_total=integer(m['batched_render_steps'],'render mode batch steps')
+        batch_skips=integer(m['skips_in_batched_render_frames'],
+                            'render mode batch skips')
+        single_skips=integer(m['skips_in_single_tick_render_frames'],
+                             'render mode single skips')
         first_skips=integer(w['first_tick_skips'],'first tick skips')
         later_skips=integer(w['later_tick_skips'],'later tick skips')
         later_returns=integer(r['batched_later_released_pages'],
@@ -118,9 +134,10 @@ def exposure_profile(report):
         single_returns=integer(r['single_frame_released_pages'],
                                'single frame page returns')
         if (first+later+single!=150 or
+                first+later!=batch_total or
+                first_skips+later_skips!=batch_skips or
                 first_skips>first or later_skips>later or
-                w['tick_start']!=150*i or w['tick_end']!=150*(i+1) or
-                r['tick_start']!=150*i or r['tick_end']!=150*(i+1)):
+                single_skips>single):
             raise ValueError('inconsistent 150-tick exposure partition')
         result.append({
             'tick_start':150*i,
