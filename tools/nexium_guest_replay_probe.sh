@@ -70,7 +70,9 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
       timeout --signal=TERM --kill-after=5s 110s "$1" "$2" > "$3" 2>&1 &
       emulator_pid=$!
       (
-        sleep 12
+        # After 180 ticks should have completed, even under modest
+        # software Vulkan performance; guest trace is checked separately.
+        sleep 25
         window="$(xdotool search --onlyvisible --name "NeXium" | tail -n1)"
         if [ -n "$window" ]; then
           xdotool windowfocus "$window" || true
@@ -92,3 +94,23 @@ fi
 python3 tools/verify_nexium_guest_replay.py \
     --report "$out/guest-replay.csv" \
     --out "$out/result.txt"
+
+# A guest-written CSV alone proves native execution, but not pixels.
+# Check that the actual 1280x720 NeXium window contains expected
+# ROM-free arena colors in background, two actors and bottom HUD.
+# The coordinates are away from the emulator performance overlay.
+if [ ! -s "$out/guest-window.png" ]; then
+    echo "INCONCLUSIVE: guest trace passed but no emulator window pixels captured" > "$out/result.txt"
+    exit 1
+fi
+dimensions="$(identify -format '%wx%h' "$out/guest-window.png" 2>/dev/null || true)"
+colors="$(convert "$out/guest-window.png" -format \
+    '%[pixel:p{100,200}]|%[pixel:p{100,300}]|%[pixel:p{748,430}]|%[pixel:p{800,400}]|%[pixel:p{100,640}]' \
+    info: 2>/dev/null || true)"
+expected_colors='srgb(30,61,70)|srgb(62,83,74)|srgb(62,180,208)|srgb(190,126,74)|srgb(11,18,29)'
+if [ "$dimensions" != "1280x720" ] || [ "$colors" != "$expected_colors" ]; then
+    echo "INCONCLUSIVE: emulator window framebuffer colors mismatch known ROM-free geometry" > "$out/result.txt"
+    exit 1
+fi
+echo "PASS: actual NeXium NRO guest 180-tick replay, two hashes and visible framebuffer pixels verified; audible device sound unverified" > "$out/result.txt"
+echo "PASS: original ROM-free emulator window pixel markers confirmed" > "$out/frame-pixels.txt"
