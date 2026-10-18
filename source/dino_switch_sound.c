@@ -22,6 +22,8 @@ static uint8_t s_pcm[AUDIO_SLOTS][AUDIO_CAPACITY]
 static int16_t s_discard[DINO_SFX_TICK_FRAMES*2];
 static bool s_initialized, s_started;
 static uint32_t s_audio_errors, s_simulated_ticks;
+static uint32_t s_skip_full, s_skip_inactive, s_skip_unexpected;
+static uint32_t s_current_skip_streak, s_max_skip_streak;
 static uint64_t s_pcm_witness=DINO_PCM_WITNESS_INIT;
 
 void dino_switch_sound_close(void) {
@@ -56,6 +58,13 @@ bool dino_switch_sound_open(void) {
     }
     s_started=true;
     dino_audio_queue_reset(&s_queue);
+    /* The queue's own counters reset here; keep the cause counters
+     * on the same lifecycle so reason sums can be checked. */
+    s_skip_full=0;
+    s_skip_inactive=0;
+    s_skip_unexpected=0;
+    s_current_skip_streak=0;
+    s_max_skip_streak=0;
     for (unsigned i=0;i<AUDIO_SLOTS;++i) {
         s_buffers[i]=(AudioOutBuffer){
             .buffer=s_pcm[i],
@@ -106,7 +115,19 @@ void dino_switch_sound_step(uint32_t events) {
         }
         if (s_started) slot=dino_audio_queue_pick(&s_queue);
     }
-    if (slot<0) dino_audio_queue_skip(&s_queue);
+    if (slot<0) {
+        /* Do not change page policy or reorder PCM: diagnostic only. */
+        dino_audio_queue_skip(&s_queue);
+        if (!s_started) ++s_skip_inactive;
+        else if (s_queue.pending>=DINO_AUDIO_QUEUE_MAX_PENDING)
+            ++s_skip_full;
+        else ++s_skip_unexpected;
+        ++s_current_skip_streak;
+        if (s_current_skip_streak>s_max_skip_streak)
+            s_max_skip_streak=s_current_skip_streak;
+    } else {
+        s_current_skip_streak=0;
+    }
     int16_t *output=slot>=0 ? (int16_t*)s_pcm[slot] : s_discard;
     dino_sfx_render_tick(&s_synth,output,DINO_SFX_TICK_FRAMES);
     /* Measure generated samples even if audout is stopped, full or slow.
@@ -131,6 +152,10 @@ void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out) {
     out->simulated_ticks=s_simulated_ticks;
     out->audio_errors=s_audio_errors;
     out->active=(uint8_t)s_started;
+    out->full_queue_skips=s_skip_full;
+    out->inactive_backend_skips=s_skip_inactive;
+    out->unexpected_slot_skips=s_skip_unexpected;
+    out->max_consecutive_skips=s_max_skip_streak;
     DinoAudioQueueStats snapshot;
     if (dino_audio_queue_snapshot(&s_queue,&snapshot)) {
         out->queue_valid=1;
