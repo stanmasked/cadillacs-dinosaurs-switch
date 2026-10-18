@@ -62,13 +62,15 @@ def verify_mode(report, expect_enabled):
                 set(poll)!={'tick_start','tick_end',
                            'poll_calls','poll_released_pages'}):
             raise ValueError('guest poll window malformed')
+        start=integer(poll['tick_start'],'poll interval start')
+        end=integer(poll['tick_end'],'poll interval end')
         calls=integer(poll['poll_calls'],'interval calls')
         ack=integer(poll['poll_released_pages'],'interval ack')
         later_steps=integer(position['later_tick_steps'],'interval steps')
         later_ack=integer(release['batched_later_released_pages'],
                           'interval later released')
-        if (poll['tick_start']!=idx*150 or
-                poll['tick_end']!=(idx+1)*150 or
+        if (start!=idx*150 or
+                end!=(idx+1)*150 or
                 calls!=(later_steps if expect_enabled else 0) or
                 ack>later_ack or ack>2*calls):
             raise ValueError('guest experimental interval contradiction')
