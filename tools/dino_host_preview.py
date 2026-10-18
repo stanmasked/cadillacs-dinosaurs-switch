@@ -129,6 +129,33 @@ def headless(ticks=180,out_frame=None):
         engine.close()
 
 
+class FixedTickScheduler:
+    """Deterministic 60 Hz host UI timing, independent of Tk repaint rate.
+
+    Two protections matter: stalled desktops do not explode into unlimited
+    catch-up work, and a key edge remains pending until a simulation tick.
+    Every game step still executes the unchanged C engine.
+    """
+    NS_PER_SECOND=1_000_000_000
+    MAX_CATCHUP_STEPS=8
+    MAX_ELAPSED_NS=250_000_000
+
+    def __init__(self):
+        self.carry=0
+        self.dropped_ticks=0
+
+    def advance(self,elapsed_ns):
+        elapsed=max(0,min(int(elapsed_ns),self.MAX_ELAPSED_NS))
+        total=self.carry+elapsed*60
+        due,remainder=divmod(total,self.NS_PER_SECOND)
+        if due>self.MAX_CATCHUP_STEPS:
+            self.dropped_ticks+=due-self.MAX_CATCHUP_STEPS
+            self.carry=0
+            return self.MAX_CATCHUP_STEPS
+        self.carry=remainder
+        return due
+
+
 class KeyboardInput:
     """Single key-edge translator for desktop play and GUI smoke tests.
 
@@ -255,16 +282,24 @@ def interactive():
     tk.Label(root,textvariable=status_line,font=('monospace',10)).pack()
     tk.Label(root,text='Arrows/WASD: move  J: attack  K: jump  L: spar  R: reset  Esc: exit').pack()
     inputs=KeyboardInput()
+    scheduler=FixedTickScheduler()
+    last_ns=time.monotonic_ns()
     holder={'photo':None,'image':None}
 
     def tick():
+        nonlocal last_ns
         if inputs.exit_requested:
             root.destroy()
             return
+        now=time.monotonic_ns()
+        due=scheduler.advance(now-last_ns)
+        last_ns=now
         if inputs.reset_requested:
             game.reset()
             inputs.reset_requested=False
-        game.step(*inputs.tick_input())
+            scheduler.carry=0
+        for _ in range(due):
+            game.step(*inputs.tick_input())
         p=game.ppm()
         holder['photo']=tk.PhotoImage(data=p,format='PPM').zoom(2,2)
         if holder['image'] is None:
@@ -285,7 +320,9 @@ def interactive():
     root.protocol('WM_DELETE_WINDOW',close)
     root.bind('<KeyPress>',lambda e:inputs.key_down(e.keysym))
     root.bind('<KeyRelease>',lambda e:inputs.key_up(e.keysym))
-    root.after(16,tick)
+    root.update_idletasks()
+    root.focus_force()
+    root.after(8,tick)
     try:
         root.mainloop()
     finally:
