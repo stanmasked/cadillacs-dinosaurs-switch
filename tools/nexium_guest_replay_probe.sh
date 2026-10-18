@@ -21,7 +21,17 @@ cleanup() {
     if [ "$pulse_started" -eq 1 ]; then
         pulseaudio --kill >/dev/null 2>&1 || true
     fi
-    rm -rf "$scratch"
+    # PulseAudio may still be tearing down its private runtime files.
+    # Concurrent socket cleanup must not override the verified guest
+    # replay and host-monitor results with a spurious CI failure.
+    for attempt in 1 2 3; do
+        if rm -rf "$scratch" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "WARNING: private emulator scratch cleanup incomplete" >&2
+    return 0
 }
 trap cleanup EXIT
 release="https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz"
