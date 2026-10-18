@@ -50,6 +50,8 @@ on:
       - 'tests/test_nexium_audio_provenance_manifest.py'
       - 'tools/nexium_audio_intertick_phase.py'
       - 'tests/test_nexium_audio_intertick_phase.py'
+      - 'tools/nexium_audio_queue_capacity_bound.py'
+      - 'tests/test_nexium_audio_queue_capacity_bound.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -88,6 +90,8 @@ on:
       - 'tests/test_nexium_audio_provenance_manifest.py'
       - 'tools/nexium_audio_intertick_phase.py'
       - 'tests/test_nexium_audio_intertick_phase.py'
+      - 'tools/nexium_audio_queue_capacity_bound.py'
+      - 'tests/test_nexium_audio_queue_capacity_bound.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -300,6 +304,9 @@ jobs:
             --plan controlled-host-intertick-plan.json \
             --result controlled-host-intertick-result.json \
             --out controlled-host-intertick-attestation.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_queue_capacity_bound.py' -v
+          python3 tools/nexium_audio_queue_capacity_bound.py \
+            --out controlled-host-capacity-bound.json
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -353,5 +360,6 @@ jobs:
             controlled-host-intertick-plan.json
             controlled-host-intertick-result.json
             controlled-host-intertick-attestation.json
+            controlled-host-capacity-bound.json
           if-no-files-found: warn
           retention-days: 7
