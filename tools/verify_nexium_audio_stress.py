@@ -327,6 +327,19 @@ def verify(path, guest_timeline, guest_controller):
     batched_skips=measurements[-1][18]
     if single_ticks+batched_ticks!=900 or single_skips+batched_skips!=skipped:
         raise ValueError('unattributed guest audio ticks or skips')
+    # At a fixed externally observed release count, a two-page queue
+    # can only admit pages up to ACKs plus previously vacant slots.
+    # The scheduling policy can affect ACKs, so this is an upper bound
+    # for the *same count*, not a claim about any changed policy.
+    pending_start=start[6]
+    pending_end=measurements[-1][6]
+    capacity_ceiling=min(900,released+2-pending_start)
+    if (submitted-released!=pending_end-pending_start or
+            capacity_ceiling<submitted or
+            pending_start>2 or pending_end>2):
+        raise ValueError('fixed-ACK capacity accounting contradiction')
+    lower_skips=900-capacity_ceiling
+    possible_gain=capacity_ceiling-submitted
     return {
         'schema':'dino-nexium-audout-900tick-v3',
         'status':'GUEST_900TICK_AUDOUT_FRAME_BATCH_CORRELATION_WITNESSED',
@@ -337,6 +350,13 @@ def verify(path, guest_timeline, guest_controller):
         'audout_blocks_submitted':submitted,
         'audout_blocks_released':released,
         'audout_blocks_skipped':skipped,
+        'fixed_ack_headroom_probe_present':True,
+        'queue_pending_at_stress_start':pending_start,
+        'queue_pending_at_stress_end':pending_end,
+        'fixed_ack_capacity_limited_max_admissions':capacity_ceiling,
+        'fixed_ack_unavoidable_skips_lower_bound':lower_skips,
+        'fixed_ack_max_recoverable_skips_upper_bound':possible_gain,
+        'fixed_ack_same_release_count_only':True,
         'full_queue_skips':full,
         'inactive_backend_skips':inactive,
         'unexpected_slot_skips':unexpected,

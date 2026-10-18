@@ -173,6 +173,27 @@ def with_released_page_positions(report):
 
 
 
+def with_fixed_ack_headroom(report, start=1):
+    """Synthetic queue endpoints derived from validated delta counters."""
+    copy=__import__('copy').deepcopy(report)
+    delta=(copy['audout_blocks_submitted']-
+           copy['audout_blocks_released'])
+    end=start+delta
+    ceiling=min(900,copy['audout_blocks_released']+2-start)
+    copy.update({
+        'fixed_ack_headroom_probe_present':True,
+        'queue_pending_at_stress_start':start,
+        'queue_pending_at_stress_end':end,
+        'fixed_ack_capacity_limited_max_admissions':ceiling,
+        'fixed_ack_unavoidable_skips_lower_bound':900-ceiling,
+        'fixed_ack_max_recoverable_skips_upper_bound':
+            ceiling-copy['audout_blocks_submitted'],
+        'fixed_ack_same_release_count_only':True,
+    })
+    return copy
+
+
+
 class MultiRunAudioTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='synthetic-cross-run-')
@@ -714,6 +735,77 @@ class MultiRunAudioTests(unittest.TestCase):
         self.assertFalse(result['catchup_causality_verified'])
         self.assertFalse(result['physical_switch_audio_verified'])
         self.assertFalse(result['original_arcade_audio_verified'])
+
+
+    def test_fixed_ack_headroom_uses_actual_pending_at_start(self):
+        self.save(self.one,with_fixed_ack_headroom(fixture(),1))
+        self.save(self.two,with_fixed_ack_headroom(fixture(1),2))
+        r=check.compare([self.one,self.two])
+        self.assertEqual(r['reports_with_fixed_ack_headroom_probe'],2)
+        self.assertTrue(r['all_reports_have_fixed_ack_headroom_probe'])
+        self.assertEqual(
+            r['pooled_unavoidable_skips_at_fixed_ack_count_lower_bound'],599)
+        self.assertEqual(
+            r['pooled_possible_additional_admissions_at_fixed_ack_count_upper_bound'],1)
+        self.assertTrue(r['fixed_ack_same_release_count_only'])
+        self.assertFalse(r['catchup_causality_verified'])
+
+    def test_fixed_ack_legacy_mix_has_no_optimistic_capacity_claim(self):
+        self.save(self.one,with_fixed_ack_headroom(fixture()))
+        r=check.compare([self.one,self.two])
+        self.assertEqual(r['reports_with_fixed_ack_headroom_probe'],1)
+        self.assertIsNone(
+            r['pooled_possible_additional_admissions_at_fixed_ack_count_upper_bound'])
+        self.assertIsNone(
+            r['pooled_unavoidable_skips_at_fixed_ack_count_lower_bound'])
+        self.assertIsNone(r['fixed_ack_same_release_count_only'])
+
+    def test_fixed_ack_endpoint_or_claim_forgery_rejected(self):
+        sample=with_fixed_ack_headroom(fixture(),1)
+        for key,bad in (
+                ('queue_pending_at_stress_start',0),
+                ('queue_pending_at_stress_end',0),
+                ('queue_pending_at_stress_end',3),
+                ('queue_pending_at_stress_end',False),
+                ('fixed_ack_capacity_limited_max_admissions',602),
+                ('fixed_ack_unavoidable_skips_lower_bound',298),
+                ('fixed_ack_max_recoverable_skips_upper_bound',2),
+                ('fixed_ack_same_release_count_only',False),
+                ('fixed_ack_same_release_count_only',1),
+                ('fixed_ack_headroom_probe_present',0),
+                ('fixed_ack_headroom_probe_present',None)):
+            with self.subTest(field=key,bad=bad):
+                broken=__import__('copy').deepcopy(sample)
+                broken[key]=bad
+                self.save(self.one,broken)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_fixed_ack_partial_fields_and_fake_nulls_rejected(self):
+        sample=with_fixed_ack_headroom(fixture())
+        for field in check.FIXED_ACK_FIELDS:
+            with self.subTest(missing=field):
+                broken=__import__('copy').deepcopy(sample)
+                del broken[field]
+                self.save(self.one,broken)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+        sample['fixed_ack_headroom_probe_present']=False
+        self.save(self.one,sample)
+        with self.assertRaises(ValueError):
+            check.compare([self.one,self.two])
+
+    def test_fixed_ack_explicit_missing_evidence_remains_null(self):
+        sample=fixture()
+        sample.update({
+            'fixed_ack_headroom_probe_present':False,
+            **{key:None for key in check.FIXED_ACK_FIELDS[1:]},
+        })
+        self.save(self.one,sample)
+        r=check.compare([self.one,self.two])
+        self.assertEqual(r['reports_with_fixed_ack_headroom_probe'],0)
+        self.assertIsNone(
+            r['pooled_unavoidable_skips_at_fixed_ack_count_lower_bound'])
 
     def test_refuse_duplicate_file_content_and_too_few_runs(self):
         for paths in ([self.one,self.one],[self.one],[self.one]*9):

@@ -1006,3 +1006,35 @@ blocks. A successful result does not establish a real device's
 release timing, sound output, hardware latency, or causal effects
 of a proposed scheduling change. No NRO adapter or commercial
 game asset is changed.
+
+## Stage 155 — strict two-page capacity bound at fixed observed ACK count
+
+Recent real NeXium runs of the unchanged audio backend show a queue
+with an enforced two-outstanding-page cap, rare device buffer ACKs on
+second render-batch ticks and continued 60 Hz synthesis. To avoid
+introducing an ineffective scheduling policy, this stage independently
+computes a **conditional fixed-ACK capacity bound** from existing
+seven-row guest telemetry. Let `A` be the number of pages returned
+by audout, `P_start` the number already pending at the start of the
+900 ticks and `C=2` the maximum pending pages. If `A` remains fixed,
+no queue-only admission policy can enqueue more than
+`min(900, A+C-P_start)` game-tick blocks in that interval. This gives
+a lower bound on skipped blocks and an upper bound on how many missing
+blocks any changed admission order *could* recover without additional
+device acknowledgements. It does not prove these bounds are achievable
+or that ACK counts stay fixed when game scheduling changes.
+
+The Stage 155 verified metadata now includes actual start/end pending
+counters, validates `submitted - released == end - start`, and exposes
+the conditional ceiling and possible recovery upper bound, always
+labeled `fixed_ack_same_release_count_only=true`. The independent
+multi-run metadata comparator checks the bounded arithmetic again,
+rejects swapped/forged queue endpoints, non-Boolean flags and partial
+metadata, and pools only complete stage-155 records; legacy inputs
+have null pooled bounds. No new Switch audout calls or binary ABI are
+introduced.
+
+These are simple occupancy identities and conditional mathematical
+bounds, **not evidence of measured speaker sound, safe audio delay,
+or a working fix**. All existing ROM-free privacy and NRO controls are
+preserved; no user-owned original game data is published.

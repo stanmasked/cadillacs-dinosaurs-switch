@@ -81,6 +81,13 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertEqual(result['audout_blocks_submitted'],600)
         self.assertEqual(result['audout_blocks_released'],600)
         self.assertEqual(result['audout_blocks_skipped'],300)
+        self.assertTrue(result['fixed_ack_headroom_probe_present'])
+        self.assertEqual(result['queue_pending_at_stress_start'],1)
+        self.assertEqual(result['queue_pending_at_stress_end'],1)
+        self.assertEqual(result['fixed_ack_capacity_limited_max_admissions'],601)
+        self.assertEqual(result['fixed_ack_unavoidable_skips_lower_bound'],299)
+        self.assertEqual(result['fixed_ack_max_recoverable_skips_upper_bound'],1)
+        self.assertTrue(result['fixed_ack_same_release_count_only'])
         self.assertEqual(result['peak_observed_pending'],1)
         self.assertEqual(result['full_queue_skips'],300)
         self.assertEqual(result['inactive_backend_skips'],0)
@@ -104,6 +111,28 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertFalse(result['host_wall_clock_real_time_verified'])
         self.assertFalse(result['sound_device_audible_verified'])
         self.assertFalse(result['audio_latency_verified'])
+
+
+    def test_fixed_ack_capacity_tracks_endpoint_change_without_playback_claim(self):
+        # Synthetic START one pending, END one pending; changing
+        # both by +1 must preserve submitted-minus-released.
+        self.rows[0][7]='2'
+        self.rows[-1][7]='2'
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
+        # Instead use the original valid report to check that the
+        # bound refers strictly to fixed recorded ACKs.
+        self.rows[0][7]='1'
+        self.rows[-1][7]='1'
+        self.write()
+        verified=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(verified['fixed_ack_same_release_count_only'])
+        self.assertEqual(
+            verified['fixed_ack_unavoidable_skips_lower_bound']+
+            verified['fixed_ack_max_recoverable_skips_upper_bound'],
+            verified['audout_blocks_skipped'])
+        self.assertFalse(verified['audio_latency_verified'])
 
     def test_checkpoint_mode_intervals_reconcile_without_rounding_bias(self):
         result=check.verify(self.path,self.timeline,self.controller)

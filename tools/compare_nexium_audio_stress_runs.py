@@ -86,6 +86,15 @@ RELEASE_POSITION_WINDOW_KEYS = {
     'batched_first_released_pages', 'batched_later_released_pages',
 }
 RELEASE_POSITION_COUNTS = RELEASE_POSITION_FIELDS[1:4]
+FIXED_ACK_FIELDS = (
+    'fixed_ack_headroom_probe_present',
+    'queue_pending_at_stress_start',
+    'queue_pending_at_stress_end',
+    'fixed_ack_capacity_limited_max_admissions',
+    'fixed_ack_unavoidable_skips_lower_bound',
+    'fixed_ack_max_recoverable_skips_upper_bound',
+    'fixed_ack_same_release_count_only',
+)
 
 
 def nonnegative(value):
@@ -361,6 +370,36 @@ def validate_released_page_positions(report, totals, modes,
     return result
 
 
+
+def validate_fixed_ack_headroom(report, totals):
+    """A fixed-ACK capacity bound, NOT a forecast of a scheduling fix."""
+    enabled=optional_probe_state(report,FIXED_ACK_FIELDS,'fixed-ACK capacity')
+    if not enabled:
+        return None
+    if report['fixed_ack_same_release_count_only'] is not True:
+        raise ValueError('capacity bound cannot claim variable ACKs')
+    start=nonnegative(report['queue_pending_at_stress_start'])
+    end=nonnegative(report['queue_pending_at_stress_end'])
+    submitted=totals['audout_blocks_submitted']
+    released=totals['audout_blocks_released']
+    if (start>2 or end>2 or
+            submitted-released!=end-start):
+        raise ValueError('fixed-ACK queue endpoints inconsistent')
+    ceiling=min(900,released+2-start)
+    minimum=900-ceiling
+    possible=ceiling-submitted
+    if (possible<0 or
+            nonnegative(report['fixed_ack_capacity_limited_max_admissions'])
+                !=ceiling or
+            nonnegative(report['fixed_ack_unavoidable_skips_lower_bound'])
+                !=minimum or
+            nonnegative(report['fixed_ack_max_recoverable_skips_upper_bound'])
+                !=possible or
+            minimum+possible!=totals['audout_blocks_skipped']):
+        raise ValueError('fixed-ACK headroom bound invalid')
+    return minimum,possible
+
+
 def validate(report):
     if not isinstance(report, dict) or report.get('schema') != SCHEMA or \
             report.get('status') != STATUS:
@@ -445,7 +484,9 @@ def validate(report):
         report,totals,windows,probe)
     released_by_tick=validate_released_page_positions(
         report,totals,windows,probe,positions,position_poll)
-    return totals,windows,probe,positions,position_poll,released_by_tick
+    fixed_ack=validate_fixed_ack_headroom(report,totals)
+    return (totals,windows,probe,positions,position_poll,
+            released_by_tick,fixed_ack)
 
 
 def compare(paths):
@@ -467,6 +508,9 @@ def compare(paths):
     pp_later_full=pp_later_recovered=0
     release_positioned=0
     released_sums=dict.fromkeys(RELEASE_POSITION_COUNTS,0)
+    fixed_ack_runs=0
+    fixed_ack_skips_floor=0
+    fixed_ack_possible_gain=0
     # Diagnostic coincidence counts, NOT inferred hardware completion time.
     eligible_later_windows=0
     later_zero_ack_windows=0
@@ -480,8 +524,12 @@ def compare(paths):
         if digest in seen:
             raise ValueError('reused identical guest report')
         seen.add(digest)
-        totals, windows, probe, positions, position_poll, released_by_tick = (
-            validate(report))
+        (totals,windows,probe,positions,position_poll,released_by_tick,
+         fixed_ack) = validate(report)
+        if fixed_ack is not None:
+            fixed_ack_runs+=1
+            fixed_ack_skips_floor+=fixed_ack[0]
+            fixed_ack_possible_gain+=fixed_ack[1]
         if released_by_tick is not None:
             release_positioned+=1
             for key in released_sums:
@@ -552,6 +600,17 @@ def compare(paths):
         'reports_compared': len(paths),
         'total_guest_simulation_ticks': 900 * len(paths),
         'combined_full_queue_skips': pool['full_queue_skips'],
+        'reports_with_fixed_ack_headroom_probe':fixed_ack_runs,
+        'all_reports_have_fixed_ack_headroom_probe':
+            fixed_ack_runs==len(paths),
+        'pooled_unavoidable_skips_at_fixed_ack_count_lower_bound':(
+            fixed_ack_skips_floor if fixed_ack_runs==len(paths)
+            else None),
+        'pooled_possible_additional_admissions_at_fixed_ack_count_upper_bound':(
+            fixed_ack_possible_gain if fixed_ack_runs==len(paths)
+            else None),
+        'fixed_ack_same_release_count_only':(
+            True if fixed_ack_runs==len(paths) else None),
         'reports_with_release_tick_position_probe':release_positioned,
         # Only complete Stage 151 collections can describe all windows.
         'eligible_later_tick_release_windows':(
