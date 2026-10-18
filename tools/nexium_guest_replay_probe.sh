@@ -155,6 +155,9 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
           sleep 10
           python3 tools/nexium_host_input_pixel.py \
               --window "$window" --out "$5" || true
+          # The JSON is deliberately sanitized: summary/status only,
+          # no captured image, window title or host-clock timestamp.
+          if [ -f "$5" ]; then cat "$5" >&2; fi
           # A missing pixel sampler must never prevent the existing
           # guest-HID test from receiving all five original actions.
           # Only the guest-written timeline can prove HID delivery.
