@@ -26,8 +26,11 @@ COLUMNS = [
     'single_frame_skips','batched_frame_skips',
     'batched_render_frames','max_ticks_per_render_frame',
     'pre_poll_full_steps','pre_poll_recovered_steps',
+    'batched_first_tick_steps','batched_later_tick_steps',
+    'batched_first_tick_skips','batched_later_tick_skips',
 ]
-LEGACY_COLUMNS = COLUMNS[:-2]
+STAGE143_COLUMNS=COLUMNS[:-4]
+LEGACY_COLUMNS=STAGE143_COLUMNS[:-2]
 CHECKPOINTS = [0,150,300,450,600,750,900]
 EVENTS = ['START'] + ['CHECKPOINT']*5 + ['STRESS_DONE']
 HEX16 = re.compile(r'[0-9A-F]{16}\Z')
@@ -42,9 +45,12 @@ def verify(path, guest_timeline, guest_controller):
     try:
         with path.open('r',encoding='ascii',newline='') as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames not in (COLUMNS,LEGACY_COLUMNS):
+            if reader.fieldnames not in (COLUMNS,STAGE143_COLUMNS,
+                                            LEGACY_COLUMNS):
                 raise ValueError('guest stress field schema mismatch')
-            has_pre_poll_probe=reader.fieldnames==COLUMNS
+            has_pre_poll_probe=reader.fieldnames!=LEGACY_COLUMNS
+            has_batch_position_probe=reader.fieldnames==COLUMNS
+            active_columns=reader.fieldnames
             rows=list(reader)
     except (UnicodeError,csv.Error) as exc:
         raise ValueError('bad guest stress CSV') from exc
@@ -59,7 +65,6 @@ def verify(path, guest_timeline, guest_controller):
             raise ValueError('guest stress PCM witness malformed')
         # The PCM hex digest separates standard counters from classified
         # skip reasons. Keep both sets strictly decimal/canonical.
-        active_columns=COLUMNS if has_pre_poll_probe else LEGACY_COLUMNS
         values=[row[key] for key in active_columns[1:12]+active_columns[13:]]
         if any(not v.isascii() or not v.isdecimal() or
                (len(v)>1 and v.startswith('0')) for v in values):
@@ -85,6 +90,8 @@ def verify(path, guest_timeline, guest_controller):
             start[22]>start[21] or
             start[21]-start[22]!=start[11]):
         raise ValueError('starting release-poll counters inconsistent')
+    if has_batch_position_probe and start[23:]!=[0]*4:
+        raise ValueError('batch position witness starts nonzero')
     if start[1]<1 or start[2]<1 or start[3]<1:
         raise ValueError('guest never advanced before stress started')
     prev=start
@@ -111,6 +118,13 @@ def verify(path, guest_timeline, guest_controller):
                 row[21]-start[21]>elapsed or
                 row[22]-start[22]>elapsed):
             raise ValueError('release polling / full queue count mismatch')
+        if has_batch_position_probe and (
+                any(row[k]<prev[k] for k in range(23,27)) or
+                row[23]+row[24]!=row[16] or
+                row[25]+row[26]!=row[18] or
+                row[25]>row[23] or row[26]>row[24] or
+                row[23]>row[19] or row[19]-row[23]>1):
+            raise ValueError('batched tick position attribution mismatch')
         if idx>0 and row[14]<prev[14]:
             raise ValueError('maximum consecutive skip streak decreased')
         # Backend remained active at all checkpoints. A transient
@@ -148,6 +162,7 @@ def verify(path, guest_timeline, guest_controller):
     # first interval allow one incomplete frame each.
     intervals=[]
     poll_windows=[]
+    position_windows=[]
     for idx in range(1,len(measurements)):
         before=measurements[idx-1]
         after=measurements[idx]
@@ -178,6 +193,26 @@ def verify(path, guest_timeline, guest_controller):
                 'full_before_poll':polled_full,
                 'recovered_before_admission':recovered,
                 'still_full_after_poll':full_skips,
+            })
+        if has_batch_position_probe:
+            first=after[23]-before[23]
+            later=after[24]-before[24]
+            first_skips=after[25]-before[25]
+            later_skips=after[26]-before[26]
+            if (first+later!=batched_ticks or
+                    first_skips+later_skips!=batched_skips or
+                    first_skips>first or later_skips>later or
+                    abs(first-batched_frames)>1):
+                raise ValueError('batched position interval mismatch')
+            position_windows.append({
+                'tick_start':CHECKPOINTS[idx-1],
+                'tick_end':CHECKPOINTS[idx],
+                'first_tick_steps':first,'later_tick_steps':later,
+                'first_tick_skips':first_skips,'later_tick_skips':later_skips,
+                'first_skip_percent_rounded':(
+                    (100*first_skips+first//2)//first if first else None),
+                'later_skip_percent_rounded':(
+                    (100*later_skips+later//2)//later if later else None),
             })
         intervals.append({
             'tick_start':CHECKPOINTS[idx-1],
@@ -252,6 +287,17 @@ def verify(path, guest_timeline, guest_controller):
             measurements[-1][22]-start[22] if has_pre_poll_probe else None),
         'checkpoint_release_poll_intervals':(
             poll_windows if has_pre_poll_probe else None),
+        'batch_tick_position_probe_present':has_batch_position_probe,
+        'batched_first_tick_steps':(
+            measurements[-1][23] if has_batch_position_probe else None),
+        'batched_later_tick_steps':(
+            measurements[-1][24] if has_batch_position_probe else None),
+        'batched_first_tick_skips':(
+            measurements[-1][25] if has_batch_position_probe else None),
+        'batched_later_tick_skips':(
+            measurements[-1][26] if has_batch_position_probe else None),
+        'checkpoint_batch_position_intervals':(
+            position_windows if has_batch_position_probe else None),
         'windows_with_both_render_modes':sum(
             w['single_tick_render_steps']>0 and w['batched_render_steps']>0
             for w in intervals),

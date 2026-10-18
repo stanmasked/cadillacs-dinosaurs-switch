@@ -448,6 +448,7 @@ typedef struct {
     uint32_t single_ticks, batched_ticks;
     uint32_t single_skips, batched_skips;
     uint32_t batched_frames, largest_batch;
+    uint32_t first_ticks, later_ticks, first_skips, later_skips;
     uint32_t previous_skips, previous_frame_id;
 } DinoGuestBatchStats;
 static void guest_audio_stress_row(FILE *stream, const char *event,
@@ -456,7 +457,7 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
     DinoSoundDiagnostics stats;
     dino_switch_sound_diagnostics(&stats);
     fprintf(stream,
-            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
             event,(unsigned)elapsed,(unsigned)arena->ticks,
             (unsigned)stats.simulated_ticks,
             (unsigned)dino_switch_sound_pcm_ticks(),
@@ -476,7 +477,11 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
             (unsigned)batch->batched_frames,
             (unsigned)batch->largest_batch,
             (unsigned)stats.pre_poll_full_steps,
-            (unsigned)stats.pre_poll_recovered_steps);
+            (unsigned)stats.pre_poll_recovered_steps,
+            (unsigned)batch->first_ticks,
+            (unsigned)batch->later_ticks,
+            (unsigned)batch->first_skips,
+            (unsigned)batch->later_skips);
     fflush(stream);
 }
 
@@ -792,6 +797,14 @@ int main(int argc, char **argv) {
                     if (arena_ticks>=2u) {
                         ++guest_batch.batched_ticks;
                         guest_batch.batched_skips+=skipped_now;
+                        /* i is the position within the scheduled frame. */
+                        if (i==0u) {
+                            ++guest_batch.first_ticks;
+                            guest_batch.first_skips+=skipped_now;
+                        } else {
+                            ++guest_batch.later_ticks;
+                            guest_batch.later_skips+=skipped_now;
+                        }
                         if (guest_batch.previous_frame_id!=guest_frame_id) {
                             ++guest_batch.batched_frames;
                             guest_batch.previous_frame_id=guest_frame_id;
@@ -820,7 +833,11 @@ int main(int argc, char **argv) {
                                   "batched_frame_skips,batched_render_frames,"
                                   "max_ticks_per_render_frame,"
                                   "pre_poll_full_steps,"
-                                  "pre_poll_recovered_steps\n",
+                                  "pre_poll_recovered_steps,"
+                                  "batched_first_tick_steps,"
+                                  "batched_later_tick_steps,"
+                                  "batched_first_tick_skips,"
+                                  "batched_later_tick_skips\n",
                                   guest_audio_stress);
                             guest_audio_stress_start=arena.ticks;
                             /* The START row follows the first sound step.

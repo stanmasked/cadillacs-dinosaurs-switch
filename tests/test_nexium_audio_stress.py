@@ -34,6 +34,8 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 str(index*20),str(index*30),
                 str(index*25),str(2 if index else 0),
                 str(skipped+index*25),str(index*25),
+                str(index*25),str(index*25),
+                str(index*10),str(index*20),
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -90,6 +92,11 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertEqual(result['largest_scheduled_tick_batch'],2)
         self.assertEqual(result['single_skip_percent_rounded'],20)
         self.assertEqual(result['batched_skip_percent_rounded'],60)
+        self.assertTrue(result['batch_tick_position_probe_present'])
+        self.assertEqual(result['batched_first_tick_steps'],150)
+        self.assertEqual(result['batched_later_tick_steps'],150)
+        self.assertEqual(result['batched_first_tick_skips'],60)
+        self.assertEqual(result['batched_later_tick_skips'],120)
         self.assertFalse(result['catchup_causality_verified'])
         self.assertFalse(result['host_wall_clock_real_time_verified'])
         self.assertFalse(result['sound_device_audible_verified'])
@@ -131,6 +138,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[20]='0'
             row[21]='0'
             row[22]=str(1 if idx else 0)
+            row[25]=row[26]=row[27]=row[28]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_render_steps'],0)
@@ -192,7 +200,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_old_v3_csv_is_accepted_without_a_fake_poll_claim(self):
         for row in self.rows:
-            del row[-2:]
+            del row[-6:]
         self.write(fields=check.LEGACY_COLUMNS)
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertFalse(result['pre_poll_capacity_probe_present'])
@@ -215,6 +223,52 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.write()
         with self.assertRaises(ValueError):
             check.verify(self.path,self.timeline,self.controller)
+
+
+    def test_stage143_legacy_csv_has_no_batch_position_claim(self):
+        for row in self.rows:
+            del row[-4:]
+        self.write(fields=check.STAGE143_COLUMNS)
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(result['pre_poll_capacity_probe_present'])
+        self.assertFalse(result['batch_tick_position_probe_present'])
+        self.assertIsNone(result['batched_first_tick_steps'])
+        self.assertIsNone(result['checkpoint_batch_position_intervals'])
+
+    def test_position_witness_reconciles_every_interval(self):
+        result=check.verify(self.path,self.timeline,self.controller)
+        windows=result['checkpoint_batch_position_intervals']
+        self.assertEqual(len(windows),6)
+        self.assertEqual(windows[0],{
+            'tick_start':0,'tick_end':150,
+            'first_tick_steps':25,'later_tick_steps':25,
+            'first_tick_skips':10,'later_tick_skips':20,
+            'first_skip_percent_rounded':40,'later_skip_percent_rounded':80})
+        self.assertEqual(sum(w['first_tick_skips'] for w in windows),60)
+        self.assertEqual(sum(w['later_tick_skips'] for w in windows),120)
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_forged_batch_position_deltas_refused(self):
+        for index,column,value in (
+                (0,25,'1'),(0,28,'1'),(1,25,'24'),(1,26,'26'),
+                (1,27,'30'),(1,28,'26'),(2,25,'10'),
+                (2,28,'1'),(1,25,'4294967296'),(2,27,'01')):
+            with self.subTest(index=index,column=column):
+                self.mutate(index,column,value)
+
+    def test_zero_batch_mode_has_no_invented_later_steps(self):
+        for index,row in enumerate(self.rows):
+            row[17]=str(index*150)
+            row[18]='0'
+            row[19]=str(index*50)
+            row[20]=row[21]='0'
+            row[22]=str(1 if index else 0)
+            row[25]=row[26]=row[27]=row[28]='0'
+        self.write()
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertEqual(result['batched_first_tick_steps'],0)
+        self.assertTrue(all(w['later_skip_percent_rounded'] is None
+                            for w in result['checkpoint_batch_position_intervals']))
 
     def test_missing_duplicate_out_of_order_and_partial_checkpoints(self):
         before=self.rows

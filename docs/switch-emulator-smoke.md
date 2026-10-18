@@ -782,3 +782,11 @@ Switch native sound policy nor original game resources are changed.
 Report files remain untrusted JSON: successful comparison cannot
 independently authenticate emulator execution, prove hardware audio
 quality, confirm original CPS-1 timing or establish causation.
+
+## Stage 145 — first versus subsequent PCM admissions in batched render frames
+
+Guest-only telemetry now counts first (i==0) and later (i>0) audio ticks within render iterations that scheduled two or more simulation steps, plus existing skipped admissions for each position. Four additional counters extend the seven-row self-test CSV. No gameplay clock, audout release frequency, PCM generation, two-page queue cap, or normal NRO behavior changes.
+
+The verifier still accepts both Stage 139 and Stage 143 CSV schemas without inventing first/later evidence. New full reports verify first + later == existing batched ticks, their skipped admissions sum to existing batched skips, and each of six 150-tick windows independently reconciles. Since START/checkpoints can intersect a scheduled render iteration, a one-frame boundary difference is permitted. Empty subsets produce null rates, not a claim of 0% skips.
+
+This may help locate missing audout admissions within catch-up batches, but cannot demonstrate scheduling causality, physical audio latency or source arcade parity. Commercial ROM bytes, PCM samples, raw HID and local paths are never published.
