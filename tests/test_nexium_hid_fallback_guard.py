@@ -65,7 +65,7 @@ class FallbackHidGuardTests(unittest.TestCase):
 
     def test_cli_without_safe_root_fails_closed(self):
         self.assertEqual(guard.main([]),1)
-        self.assertEqual(guard.main([str(self.root/'not-present')]),0)
+        self.assertEqual(guard.main([str(self.root/'not-present')]),1)
 
     def test_probe_script_checks_guard_before_backup_reset(self):
         script=(Path(__file__).resolve().parents[1]/
