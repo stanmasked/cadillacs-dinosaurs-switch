@@ -33,6 +33,30 @@ def complete(enabled,variation=0):
     return r
 
 
+def repartition_one_batch_frame_as_two_singles(report,window=0):
+    """Make a coherent coarse exposure mismatch for helper-only tests.
+
+    One two-tick batched frame becomes two single-tick frames. Keep all
+    independent per-window and 900-tick step/frame-count ledgers aligned.
+    The result is not an authenticated NeXium guest execution.
+    """
+    position=report['checkpoint_batch_position_intervals'][window]
+    mode=report['checkpoint_mode_intervals'][window]
+    assert position['first_tick_steps']>1
+    assert position['later_tick_steps']>1
+    position['first_tick_steps']-=1
+    position['later_tick_steps']-=1
+    mode['single_tick_render_steps']+=2
+    mode['batched_render_steps']-=2
+    mode['render_frames_with_batched_steps']-=1
+    report['single_tick_render_steps']+=2
+    report['batched_render_steps']-=2
+    report['batched_first_tick_steps']-=1
+    report['batched_later_tick_steps']-=1
+    report['render_frames_with_batched_steps']-=1
+    return report
+
+
 class ExperimentalABTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='dino-mid-ab-test-')
@@ -141,11 +165,7 @@ class ExperimentalABTests(unittest.TestCase):
         valid=complete(True,1)
         # A pure exposure diagnostic accepts a different legal render
         # partition; deep report verification happens before it is used.
-        windows=valid['checkpoint_batch_position_intervals']
-        modes=valid['checkpoint_mode_intervals']
-        windows[0]['later_tick_steps']=24
-        windows[0]['first_tick_steps']=24
-        modes[0]['single_tick_render_steps']=102
+        repartition_one_batch_frame_as_two_singles(valid)
         profile=ab.compare_batch_exposure(complete(False),valid)
         self.assertFalse(profile['per_150tick_batch_exposure_matched'])
         self.assertIsNone(
@@ -204,7 +224,10 @@ class ExperimentalABTests(unittest.TestCase):
         experimental=complete(True)
         windows=experimental['checkpoint_batch_position_intervals']
         windows[0]['later_tick_skips']+=2
+        windows[0]['first_tick_skips']-=2
         windows[1]['later_tick_skips']-=2
+        windows[1]['first_tick_skips']+=2
+        # Keep per-window batch skips and global position totals aligned.
         # This helper exercises descriptive arithmetic only; a forged
         # standalone guest report must still fail the full ledger verifier.
         result=ab.compare_batch_exposure(baseline,experimental)
@@ -229,11 +252,7 @@ class ExperimentalABTests(unittest.TestCase):
     def test_exposure_drift_nulls_all_window_direction_claims(self):
         baseline=complete(False)
         experimental=complete(True)
-        windows=experimental['checkpoint_batch_position_intervals']
-        modes=experimental['checkpoint_mode_intervals']
-        windows[2]['later_tick_steps']=24
-        windows[2]['first_tick_steps']=24
-        modes[2]['single_tick_render_steps']=102
+        repartition_one_batch_frame_as_two_singles(experimental,window=2)
         result=ab.compare_batch_exposure(baseline,experimental)
         self.assertFalse(result['per_150tick_batch_exposure_matched'])
         self.assertIsNone(result['matched_exposure_later_skip_window_deltas'])
@@ -278,12 +297,7 @@ class ExperimentalABTests(unittest.TestCase):
     def test_mismatched_exposure_nulls_all_ack_direction_claims(self):
         baseline=complete(False)
         experimental=complete(True)
-        experimental['checkpoint_batch_position_intervals'][0][
-            'later_tick_steps']=24
-        experimental['checkpoint_batch_position_intervals'][0][
-            'first_tick_steps']=24
-        experimental['checkpoint_mode_intervals'][0][
-            'single_tick_render_steps']=102
+        repartition_one_batch_frame_as_two_singles(experimental)
         result=ab.compare_batch_exposure(baseline,experimental)
         self.assertFalse(result['per_150tick_batch_exposure_matched'])
         self.assertIsNone(result['matched_exposure_later_ack_count_delta'])
@@ -344,12 +358,7 @@ class ExperimentalABTests(unittest.TestCase):
     def test_exposure_drift_cannot_validate_page_return_schedule(self):
         baseline=complete(False)
         experimental=complete(True)
-        experimental['checkpoint_batch_position_intervals'][0][
-            'later_tick_steps']=24
-        experimental['checkpoint_batch_position_intervals'][0][
-            'first_tick_steps']=24
-        experimental['checkpoint_mode_intervals'][0][
-            'single_tick_render_steps']=102
+        repartition_one_batch_frame_as_two_singles(experimental)
         profile=ab.compare_batch_exposure(baseline,experimental)
         self.assertFalse(profile['per_150tick_batch_exposure_matched'])
         self.assertIsNone(profile['matched_exposure_later_return_counts_matched'])
@@ -452,12 +461,7 @@ class ExperimentalABTests(unittest.TestCase):
     def test_exposure_drift_nulls_return_position_matching(self):
         baseline=complete(False)
         experimental=complete(True)
-        experimental['checkpoint_batch_position_intervals'][0][
-            'later_tick_steps']=24
-        experimental['checkpoint_batch_position_intervals'][0][
-            'first_tick_steps']=24
-        experimental['checkpoint_mode_intervals'][0][
-            'single_tick_render_steps']=102
+        repartition_one_batch_frame_as_two_singles(experimental)
         report=ab.compare_batch_exposure(baseline,experimental)
         self.assertFalse(report['per_150tick_batch_exposure_matched'])
         self.assertIsNone(report['matched_exposure_return_position_window_deltas'])
