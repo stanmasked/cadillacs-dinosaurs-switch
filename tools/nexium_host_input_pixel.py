@@ -158,8 +158,20 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         record = probe(args.window)
-    except (ValueError, RuntimeError, subprocess.SubprocessError, OSError):
-        record = result('INCONCLUSIVE_HOST_PIXEL_CAPTURE_UNAVAILABLE')
+    except (ValueError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
+        # Emit only fixed, public diagnostic codes; never expose host
+        # window titles, paths, subprocess stderr or user identifiers.
+        safe_codes = {
+            'bad X11 window id': 'INVALID_WINDOW',
+            'reset actor pixel not visible': 'RESET_PIXEL_MISSING',
+            'pre-input target is not background': 'BASELINE_MISMATCH',
+            'target pixel changed to unexpected color': 'UNEXPECTED_PIXEL',
+            'capture had no unique 1x1 pixel': 'INVALID_SAMPLE_SHAPE',
+            'unrecognized X11 pixel notation': 'INVALID_SAMPLE_COLOR',
+            'cannot sample X11 window': 'SCREEN_CAPTURE_UNAVAILABLE',
+        }
+        record = result('INCONCLUSIVE_HOST_PIXEL_CAPTURE_UNAVAILABLE',
+                        diagnostic_code=safe_codes.get(str(exc), 'CAPTURE_OR_INPUT_FAILED'))
     args.out.write_text(json.dumps(record, sort_keys=True) + '\n',
                         encoding='ascii')
     print(json.dumps(record, sort_keys=True))
