@@ -103,6 +103,13 @@ def main(argv=None):
     opts=parser.parse_args(argv)
     try:
         report=compare(opts.first,opts.second)
+        line=json.dumps(report,sort_keys=True)+'\n'
+        if opts.out is not None:
+            # Exclusive creation: never overwrite a private guest input
+            # report, previous analysis or symlink pointing at either.
+            # This also prevents a concurrent CLI from clobbering its peer.
+            with opts.out.open('x',encoding='ascii') as destination:
+                destination.write(line)
     except (OSError,ValueError,TypeError,KeyError,UnicodeError,
             OverflowError) as exc:
         report={
@@ -114,12 +121,10 @@ def main(argv=None):
             'audio_latency_verified':False,
         }
         rc=1
+        line=json.dumps(report,sort_keys=True)+'\n'
     else:
         rc=0
-    line=json.dumps(report,sort_keys=True)+'\n'
     print(line,end='')
-    if opts.out is not None:
-        opts.out.write_text(line,encoding='ascii')
     return rc
 
 
