@@ -2,9 +2,14 @@
 #include "dino_sfx.h"
 #include "dino_audio_queue.h"
 #include <switch.h>
-#include <string.h>
 
 enum { AUDIO_SLOTS=4, AUDIO_CAPACITY=4096 };
+_Static_assert(AUDIO_SLOTS==DINO_AUDIO_QUEUE_SLOTS,
+               "Sound backend slot count must match admission policy");
+_Static_assert(DINO_SFX_TICK_FRAMES*2u*sizeof(int16_t)<=AUDIO_CAPACITY,
+               "A stereo tick must fit in one aligned audio page");
+_Static_assert(AUDIO_CAPACITY==0x1000,
+               "libnx audout pages must retain 4096-byte alignment");
 static DinoSfx s_synth;
 static AudioOutBuffer s_buffers[AUDIO_SLOTS];
 static DinoAudioQueue s_queue;
