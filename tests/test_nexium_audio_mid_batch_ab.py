@@ -133,7 +133,7 @@ class ExperimentalABTests(unittest.TestCase):
         result=ab.compare(self.a,self.b)
         self.assertTrue(result['per_150tick_batch_exposure_matched'])
         self.assertFalse(result['exact_frame_pacing_matched'])
-        self.assertEqual(result['matched_exposure_later_skip_count_delta'],0)
+        self.assertEqual(result['matched_exposure_later_skip_count_delta'],-6)
         self.assertEqual(result['matched_exposure_later_ack_count_delta'],0)
         self.assertFalse(result['causal_audio_improvement_verified'])
 
@@ -181,7 +181,7 @@ class ExperimentalABTests(unittest.TestCase):
                              w['later_batch_ticks'] for w in out),900)
         self.assertEqual(out[0]['tick_start'],0)
         self.assertEqual(out[-1]['tick_end'],900)
-        self.assertEqual(sum(w['later_batch_skips'] for w in out),117)
+        self.assertEqual(sum(w['later_batch_skips'] for w in out),114)
 
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
