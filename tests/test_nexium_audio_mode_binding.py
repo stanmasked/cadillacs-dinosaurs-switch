@@ -4,12 +4,23 @@ from io import StringIO
 import hashlib
 import hashlib
 import json
+import struct
 from pathlib import Path
 import tempfile
 import unittest
 
 from tools import verify_nexium_audio_mode_binding as binding
 from test_nexium_audio_mid_batch_ab import complete
+
+
+def synthetic_nro(label):
+    """Synthetic file with bounded NRO header; never original game bytes."""
+    data=bytearray(256)
+    data[0x10:0x14]=b'NRO0'
+    struct.pack_into('<I',data,0x18,len(data))
+    payload=label.encode('ascii')
+    data[0x80:0x80+len(payload)]=payload
+    return bytes(data)
 
 
 class GuestAudioModeBindingTests(unittest.TestCase):
@@ -185,7 +196,7 @@ class GuestAudioModeBindingTests(unittest.TestCase):
     def test_real_nro_digest_is_bound_to_selected_guest_report(self):
         self.write(False)
         nro=Path(self.temp.name)/'switch-baseline.nro'
-        nro.write_bytes(b'\x00'*16+b'NRO0'+b'ROM_FREE_GUEST'*16)
+        nro.write_bytes(synthetic_nro('ROM_FREE_GUEST'))
         result=binding.attest('baseline',self.report,nro)
         self.assertEqual(result['guest_nro_sha256'],
                          hashlib.sha256(nro.read_bytes()).hexdigest())
@@ -198,10 +209,30 @@ class GuestAudioModeBindingTests(unittest.TestCase):
             binding.attest('baseline',self.report,nro)
         nro.unlink()
         target=Path(self.temp.name)/'real.nro'
-        target.write_bytes(b'\x00'*16+b'NRO0'+b'ROM_FREE'*16)
+        target.write_bytes(synthetic_nro('ROM_FREE'))
         nro.symlink_to(target)
         with self.assertRaises(ValueError):
             binding.attest('baseline',self.report,nro)
+
+    def test_nro_declared_size_must_fit_bounded_executable(self):
+        self.write(False)
+        nro=Path(self.temp.name)/'bad-declared-size.nro'
+        for declared in (0,0x7f,257,0xffffffff):
+            with self.subTest(declared=declared):
+                data=bytearray(synthetic_nro('SIZE_CHECK'))
+                struct.pack_into('<I',data,0x18,declared)
+                nro.write_bytes(data)
+                with self.assertRaisesRegex(ValueError,'declared program size'):
+                    binding.attest('baseline',self.report,nro)
+
+    def test_nro_program_size_may_exclude_extra_assets(self):
+        self.write(False)
+        nro=Path(self.temp.name)/'assets.nro'
+        payload=synthetic_nro('ROM_FREE')+b'ROM_FREE_TEST_ASSET_BYTES'
+        nro.write_bytes(payload)
+        result=binding.attest('baseline',self.report,nro)
+        self.assertEqual(result['guest_nro_sha256'],
+                         hashlib.sha256(payload).hexdigest())
 
     def test_cli_guest_mode_mismatch_fails_closed(self):
         self.write(False)

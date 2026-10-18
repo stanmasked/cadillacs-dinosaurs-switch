@@ -8,6 +8,7 @@ optional-poll flag/call counters. No original arcade assets are needed.
 import argparse
 import hashlib
 import json
+import struct
 from pathlib import Path
 
 if __package__:
@@ -30,9 +31,14 @@ def hash_switch_nro(nro_path):
     digest=hashlib.sha256()
     total=0
     with path.open('rb') as source:
-        header=source.read(0x14)
-        if len(header)!=0x14 or header[0x10:0x14]!=b'NRO0':
+        header=source.read(0x1c)
+        if len(header)!=0x1c or header[0x10:0x14]!=b'NRO0':
             raise ValueError('invalid guest NRO header')
+        declared=struct.unpack_from('<I',header,0x18)[0]
+        # Require the NRO header's own program-size field to fit the
+        # observed file. libnx may append an asset section beyond it.
+        if not 0x80<=declared<=path.stat().st_size:
+            raise ValueError('invalid NRO declared program size')
         digest.update(header)
         total+=len(header)
         while chunk:=source.read(1024*1024):

@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 import hashlib
 import json
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,6 +11,16 @@ import unittest
 from tools import verify_nexium_audio_mode_binding as binding
 from tools import verify_nexium_audio_paired_artifacts as paired
 from test_nexium_audio_mid_batch_ab import complete
+
+
+def synthetic_nro(label):
+    """Synthetic ROM-free NRO header plus mode-distinguishing test text."""
+    data=bytearray(256)
+    data[0x10:0x14]=b'NRO0'
+    struct.pack_into('<I',data,0x18,len(data))
+    payload=label.encode('ascii')
+    data[0x80:0x80+len(payload)]=payload
+    return bytes(data)
 
 
 class PairedGuestAudioTests(unittest.TestCase):
@@ -22,8 +33,8 @@ class PairedGuestAudioTests(unittest.TestCase):
         self.bb=root/'experimental-mode.json'
         self.base_nro=root/'baseline.nro'
         self.extra_nro=root/'extra-poll.nro'
-        self.base_nro.write_bytes(b'\x00'*16+b'NRO0'+b'BASELINE'*32)
-        self.extra_nro.write_bytes(b'\x00'*16+b'NRO0'+b'EXTRA_POLL'*32)
+        self.base_nro.write_bytes(synthetic_nro('BASELINE'))
+        self.extra_nro.write_bytes(synthetic_nro('EXTRA_POLL'))
         self.write()
 
     def tearDown(self):
@@ -98,6 +109,14 @@ class PairedGuestAudioTests(unittest.TestCase):
         self.extra_nro.write_bytes(self.base_nro.read_bytes())
         self.write()
         with self.assertRaisesRegex(ValueError,'binaries are identical'):
+            self.analyze()
+
+    def test_paired_binary_declared_size_forgery_is_rejected(self):
+        data=bytearray(self.extra_nro.read_bytes())
+        struct.pack_into('<I',data,0x18,0xffffffff)
+        self.extra_nro.write_bytes(data)
+        self.write()
+        with self.assertRaisesRegex(ValueError,'declared program size'):
             self.analyze()
 
     def test_guest_nro_symlink_refused(self):
