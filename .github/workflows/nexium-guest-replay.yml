@@ -10,7 +10,9 @@ on:
       - 'Makefile'
       - 'tools/nexium_guest_replay_probe.sh'
       - 'tools/verify_nexium_guest_replay.py'
+      - 'tools/verify_nexium_host_audio.py'
       - 'tests/test_nexium_guest_replay.py'
+      - 'tests/test_nexium_host_audio.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -18,7 +20,9 @@ on:
       - 'Makefile'
       - 'tools/nexium_guest_replay_probe.sh'
       - 'tools/verify_nexium_guest_replay.py'
+      - 'tools/verify_nexium_host_audio.py'
       - 'tests/test_nexium_guest_replay.py'
+      - 'tests/test_nexium_host_audio.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 permissions:
@@ -72,6 +76,7 @@ jobs:
         run: |
           bash -n tools/nexium_guest_replay_probe.sh
           python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
       - name: Install Xvfb and software Vulkan dependencies for NeXium
         run: |
           sudo apt-get update -qq
@@ -79,7 +84,8 @@ jobs:
             xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
             vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
             libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
-            libegl1 libgles2 libgl1 libpulse0
+            libegl1 libgles2 libgl1 libpulse0 \
+            pulseaudio pulseaudio-utils libasound2-plugins
       - name: Attempt actual ARM64 homebrew guest execution
         run: |
           bash tools/nexium_guest_replay_probe.sh \
@@ -99,6 +105,7 @@ jobs:
             emulator-evidence/guest-replay.csv
             emulator-evidence/guest-window.png
             emulator-evidence/frame-pixels.txt
+            emulator-evidence/host-audio-evidence.json
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn
           retention-days: 7
