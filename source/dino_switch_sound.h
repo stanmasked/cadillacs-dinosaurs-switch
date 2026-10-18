@@ -9,4 +9,18 @@
 bool dino_switch_sound_open(void);
 void dino_switch_sound_step(uint32_t events);
 void dino_switch_sound_close(void);
+
+/* Read-only on-device diagnostics, not a measurement of actual latency.
+ * They intentionally contain no audio PCM, private file paths or ROM data. */
+typedef struct {
+    uint32_t simulated_ticks;
+    uint32_t audio_errors;
+    uint32_t pending;
+    uint32_t submitted;
+    uint32_t released;
+    uint32_t skipped;
+    uint8_t active;
+    uint8_t queue_valid;
+} DinoSoundDiagnostics;
+void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out);
 #endif
