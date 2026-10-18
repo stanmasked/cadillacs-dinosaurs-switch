@@ -46,9 +46,8 @@ class BaselineRepeatabilityTests(unittest.TestCase):
         self.assertFalse(result['audio_latency_verified'])
 
     def test_baselines_can_have_different_initial_queue_occupancy(self):
-        report=complete(False,1)
-        report['queue_pending_at_stress_start']=2
-        report['queue_pending_at_stress_end']=2
+        from test_compare_nexium_audio_stress_runs import with_fixed_ack_headroom
+        report=with_fixed_ack_headroom(complete(False,1),start=2)
         self.save(self.second,report)
         result=repeats.compare(self.first,self.second)
         diag=result['exposure_and_queue_diagnostics']
