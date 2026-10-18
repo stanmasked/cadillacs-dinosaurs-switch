@@ -1,0 +1,66 @@
+name: Native ROM-free gameplay visual smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/mame-capture-crossprobe-session-id
+    paths:
+      - 'source/dino_arena.*'
+      - 'source/dino_sfx.*'
+      - 'tools/dino_host_bridge.c'
+      - 'tools/dino_host_preview.py'
+      - 'tests/test_dino_host_preview.py'
+      - '.github/workflows/native-rom-free-preview.yml'
+  pull_request:
+    paths:
+      - 'source/dino_arena.*'
+      - 'source/dino_sfx.*'
+      - 'tools/dino_host_bridge.c'
+      - 'tools/dino_host_preview.py'
+      - 'tests/test_dino_host_preview.py'
+      - '.github/workflows/native-rom-free-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-native-gameplay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify host C gameplay integration
+        run: python3 -m unittest discover -s tests -p 'test_dino_host_preview.py' -v
+      - name: Render independently authored practice-room witness
+        run: |
+          mkdir -p rom-free-preview
+          python3 tools/dino_host_preview.py --headless --ticks 180 \
+            --out-frame rom-free-preview/training-room.ppm \
+            > rom-free-preview/host-witness.json
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          report=json.loads(Path('rom-free-preview/host-witness.json').read_text())
+          frame=Path('rom-free-preview/training-room.ppm').read_bytes()
+          header=b'P6\n384 224\n255\n'
+          assert frame.startswith(header)
+          assert len(frame)==len(header)+384*224*3
+          assert hashlib.sha256(frame[len(header):]).hexdigest()==report['frame_rgb_sha256']
+          assert report['ticks']==180
+          assert report['runtime']=='native_host_not_switch_emulator'
+          assert not report['switch_emulator_verified']
+          assert not report['switch_gpu_verified']
+          assert not report['switch_audio_verified']
+          print('Native C gameplay/frame/audio evidence PASS; Switch emulation NOT attempted')
+          PY
+      - name: Publish ROM-free synthetic frame + metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-native-host-gameplay-preview
+          path: |
+            rom-free-preview/training-room.ppm
+            rom-free-preview/host-witness.json
+          if-no-files-found: error
+          retention-days: 7
