@@ -36,6 +36,8 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 str(skipped+index*25),str(index*25),
                 str(index*25),str(index*25),
                 str(index*10),str(index*20),
+                str(index*13),str(index*3),
+                str(index*30),str(index*10),
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -139,6 +141,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[21]='0'
             row[22]=str(1 if idx else 0)
             row[25]=row[26]=row[27]=row[28]='0'
+            row[29]=row[30]=row[31]=row[32]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_render_steps'],0)
@@ -200,7 +203,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_old_v3_csv_is_accepted_without_a_fake_poll_claim(self):
         for row in self.rows:
-            del row[-6:]
+            del row[-10:]
         self.write(fields=check.LEGACY_COLUMNS)
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertFalse(result['pre_poll_capacity_probe_present'])
@@ -227,7 +230,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_stage143_legacy_csv_has_no_batch_position_claim(self):
         for row in self.rows:
-            del row[-4:]
+            del row[-8:]
         self.write(fields=check.STAGE143_COLUMNS)
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertTrue(result['pre_poll_capacity_probe_present'])
@@ -264,11 +267,50 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[20]=row[21]='0'
             row[22]=str(1 if index else 0)
             row[25]=row[26]=row[27]=row[28]='0'
+            row[29]=row[30]=row[31]=row[32]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_first_tick_steps'],0)
         self.assertTrue(all(w['later_skip_percent_rounded'] is None
                             for w in result['checkpoint_batch_position_intervals']))
+
+
+    def test_stage145_csv_does_not_invent_position_poll_counts(self):
+        for row in self.rows:
+            del row[-4:]
+        self.write(fields=check.STAGE145_COLUMNS)
+        report=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(report['batch_tick_position_probe_present'])
+        self.assertFalse(report['batch_position_poll_probe_present'])
+        self.assertIsNone(report['checkpoint_batch_position_poll_intervals'])
+
+    def test_position_poll_probe_reconciles_each_window(self):
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(result['batch_position_poll_probe_present'])
+        self.assertEqual(result['batched_first_full_before_poll'],78)
+        self.assertEqual(result['batched_first_recovered_after_poll'],18)
+        self.assertEqual(result['batched_later_full_before_poll'],180)
+        self.assertEqual(result['batched_later_recovered_after_poll'],60)
+        self.assertEqual(result['checkpoint_batch_position_poll_intervals'][0],{
+            'tick_start':0,'tick_end':150,
+            'first_full_before_poll':13,'first_recovered_after_poll':3,
+            'later_full_before_poll':30,'later_recovered_after_poll':10,
+            'single_full_before_poll':32,'single_recovered_after_poll':12})
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_forged_position_poll_counters_fail_closed(self):
+        for index,col,bad in (
+                (0,29,'1'),(1,29,'12'),(1,30,'2'),(1,31,'29'),
+                (1,32,'9'),(2,29,'0'),(2,32,'0'),
+                (1,29,'4294967296'),(1,32,'01')):
+            with self.subTest(index=index,column=col,bad=bad):
+                self.mutate(index,col,bad)
+
+    def test_position_poll_schema_rejects_short_rows(self):
+        self.rows[0].pop()
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
 
     def test_missing_duplicate_out_of_order_and_partial_checkpoints(self):
         before=self.rows
