@@ -26,6 +26,11 @@ def compare(first, second):
     cross.compare([first,second])
     _,left=cross.read_report(first)
     _,right=cross.read_report(second)
+    # verify_mode requires the fixed-ACK headroom witness. Do not silently
+    # reinterpret an older, unpositioned report as a zero-pending queue.
+    if (left.get('fixed_ack_headroom_probe_present') is not True or
+            right.get('fixed_ack_headroom_probe_present') is not True):
+        raise ValueError('complete fixed-ACK queue witness required')
     first_baseline=ab.verify_mode(left,False)
     second_baseline=ab.verify_mode(right,False)
     if (left['guest_mid_batch_extra_poll_released_pages']!=0 or
