@@ -88,7 +88,7 @@ class OrderedHidTimelineTests(unittest.TestCase):
                 self.rows[idx][1]=old
 
     def test_rightward_position_and_spar_state_invariants(self):
-        for idx, col, value in ((1,2,'90'),(2,2,'50'),(3,2,'185'),
+        for idx, col, value in ((1,2,'90'),(2,2,'50'),(3,2,'183'),
                                 (4,2,'500'),(1,3,'1'),(3,3,'1'),
                                 (4,3,'0'),(5,3,'0')):
             with self.subTest(idx=idx,col=col,value=value):
@@ -145,9 +145,6 @@ class OrderedHidTimelineTests(unittest.TestCase):
                 old=self.rows[idx][col]
                 self.rows[idx][col]=val
                 self.write()
-                if idx==2 and val=='03':
-                    # 03 is intentionally rejected by the canonical check.
-                    pass
                 with self.assertRaises(ValueError):
                     checker.verify(self.path)
                 self.rows[idx][col]=old
