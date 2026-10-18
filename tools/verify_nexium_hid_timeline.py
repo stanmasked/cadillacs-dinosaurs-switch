@@ -10,7 +10,12 @@ import csv
 import json
 from pathlib import Path
 
-from tools import verify_nexium_guest_controller as controller
+if __package__:
+    from tools import verify_nexium_guest_controller as controller
+else:
+    # The NeXium shell runs this script by its path; in that case
+    # Python puts tools/ (not its parent) on sys.path.
+    import verify_nexium_guest_controller as controller
 
 COLUMNS = ['event', 'tick', 'player_x', 'sparring', 'event_mask']
 EVENTS = ['RESET', 'MOVE', 'ATTACK', 'JUMP', 'SPAR', 'DONE']
