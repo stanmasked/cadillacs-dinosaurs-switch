@@ -84,10 +84,15 @@ def result(status, **extra):
 def probe(window):
     if not window.isdecimal() or not 0 < int(window) < 2**32:
         raise ValueError('bad X11 window id')
+    # A minimal CI Xvfb display often has no window manager.
+    # Activation/focus are best-effort here, exactly as in the previously
+    # proven guest HID scenario. Real success still requires the guest
+    # action trace and the changed X11 pixel; never treat focus alone
+    # or successful XTest key injection as proof.
     subprocess.run(['xdotool', 'windowactivate', '--sync', window],
-                   check=True, timeout=5, capture_output=True)
+                   check=False, timeout=5, capture_output=True)
     subprocess.run(['xdotool', 'windowfocus', window],
-                   check=True, timeout=5, capture_output=True)
+                   check=False, timeout=5, capture_output=True)
     # Guest Y reset is required independently for the guest HID witness.
     press('z')
     reset_ok = False
