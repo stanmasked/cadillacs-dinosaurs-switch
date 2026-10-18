@@ -706,3 +706,43 @@ statistics within one emulated run, not device latency or speaker sound.
 
 The NRO, libnx queue cap of two pages, synthesizer, per-tick scheduler,
 real guest CSV and original-game privacy rules remain unchanged.
+
+
+## Stage 142 — compare privacy-safe guest audio metadata across runs
+
+Two successful NeXium ARM64 guest trials of stage 141 independently
+produced 900-tick JSON evidence: run #39129661309 observed 111 skipped
+admissions (62 in 359 batched steps, 49 in 541 single steps); run
+#39129657903 observed 43 skipped admissions (16 in 62 batched steps,
+27 in 838 single steps). All twelve individual 150-tick windows showed
+a higher *observed fraction* of missing admissions among batched steps.
+The maximum guest-planned batch was two ticks in both trials.
+
+New opt-in, standalone, **ROM-free** tool
+\`tools/compare_nexium_audio_stress_runs.py\` accepts 2–8 separate
+already-produced safe audio JSON reports via repeated \`--report PATH\`
+arguments. For example, use:
+
+\`\`\`bash
+python tools/compare_nexium_audio_stress_runs.py \
+  --report local-first-guest-audio-evidence.json \
+  --report local-second-guest-audio-evidence.json \
+  --out local-cross-run-summary.json
+\`\`\`
+
+The tool bounds and strictly parses input, rejects identical report
+bytes, validates all guest counter and 150-tick window partitions,
+recomputes each percentage and integer cross-multiplied within-window
+fraction comparison, and emits path-free pooled counts with separate
+higher/lower/tied interval totals. It does not upload or publish input
+data. No guest code, PCM queue, tick scheduler or commercial ROM asset
+changes are made.
+
+**Evidence limit:** the tool does **not authenticate run provenance**.
+A valid JSON shape does not prove that an actual emulator ran, that two
+files came from independent executions, that skipped PCM caused audible
+glitches or that catch-up frames caused a queue-full decision.
+Its status is \`UNAUTHENTICATED_ROM_FREE_CROSS_RUN_COMPARISON\` and
+provenance, causality, console audio and arcade audio parity flags stay
+false. Compare only separately trusted guest-validated reports; never
+claim physical Switch performance from these descriptions.
