@@ -2,6 +2,15 @@ name: NeXium real Switch NRO guest replay
 
 on:
   workflow_dispatch:
+    inputs:
+      audio_mode:
+        description: "ROM-free guest audio mode (manual runs only)"
+        type: choice
+        required: true
+        default: baseline
+        options:
+          - baseline
+          - extra-poll
   push:
     branches:
       - feature/mame-capture-crossprobe-session-id
@@ -17,6 +26,7 @@ on:
       - 'tools/nexium_host_spar_audio.py'
       - 'tools/verify_nexium_spar_audio_bound.py'
       - 'tools/verify_nexium_audio_stress.py'
+      - 'tools/verify_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
       - 'tests/test_nexium_host_audio.py'
@@ -25,6 +35,7 @@ on:
       - 'tests/test_nexium_host_input_pixel.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
+      - 'tests/test_nexium_audio_mode_binding.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -39,6 +50,7 @@ on:
       - 'tools/nexium_host_spar_audio.py'
       - 'tools/verify_nexium_spar_audio_bound.py'
       - 'tools/verify_nexium_audio_stress.py'
+      - 'tools/verify_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
       - 'tests/test_nexium_host_audio.py'
@@ -47,6 +59,7 @@ on:
       - 'tests/test_nexium_host_input_pixel.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
+      - 'tests/test_nexium_audio_mode_binding.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -66,11 +79,27 @@ jobs:
       image: devkitpro/devkita64:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure devkitPro and compile ROM-free Switch guest probe
+      - name: Configure devkitPro and compile selected ROM-free Switch guest mode
+        env:
+          DINO_AUDIO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.audio_mode || 'baseline' }}
         run: |
+          set -euo pipefail
           echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
           echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
-          make -j2 DEFINES=-DDINO_EMULATOR_SELFTEST
+          case "$DINO_AUDIO_MODE" in
+            baseline)
+              defines="-DDINO_EMULATOR_SELFTEST"
+              ;;
+            extra-poll)
+              defines="-DDINO_EMULATOR_SELFTEST -DDINO_AUDIO_EXPERIMENT_MID_BATCH_POLL"
+              ;;
+            *)
+              echo "Unsupported audio mode" >&2
+              exit 1
+              ;;
+          esac
+          make -j2 DEFINES="$defines"
+          printf '%s\n' "$DINO_AUDIO_MODE" > dino-guest-audio-mode.txt
           python3 - <<'PY'
           from pathlib import Path
           import struct
@@ -85,10 +114,14 @@ jobs:
           print("ROM-free NRO with guest-origin evidence compiled")
           PY
           sha256sum cadillacs-dinosaurs-switch.nro
+          sha256sum cadillacs-dinosaurs-switch.nro > dino-guest-nro.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: dino-nexium-selftest-nro
-          path: cadillacs-dinosaurs-switch.nro
+          path: |
+            cadillacs-dinosaurs-switch.nro
+            dino-guest-audio-mode.txt
+            dino-guest-nro.sha256
           retention-days: 7
           if-no-files-found: error
 
@@ -102,6 +135,13 @@ jobs:
         with:
           name: dino-nexium-selftest-nro
           path: emulator-input
+      - name: Verify mode manifest and NRO integrity before execution
+        env:
+          DINO_AUDIO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.audio_mode || 'baseline' }}
+        run: |
+          set -euo pipefail
+          test "$(cat emulator-input/dino-guest-audio-mode.txt)" = "$DINO_AUDIO_MODE"
+          (cd emulator-input && sha256sum -c dino-guest-nro.sha256)
       - name: Test script syntax and refuse synthetic malformed guest reports
         run: |
           bash -n tools/nexium_guest_replay_probe.sh
@@ -126,6 +166,13 @@ jobs:
           bash tools/nexium_guest_replay_probe.sh \
             emulator-input/cadillacs-dinosaurs-switch.nro \
             emulator-evidence
+      - name: Attest selected mode from actual guest audio stress counters
+        env:
+          DINO_AUDIO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.audio_mode || 'baseline' }}
+        run: |
+          python3 tools/verify_nexium_audio_mode_binding.py \
+            --selected-mode "$DINO_AUDIO_MODE" \
+            --report emulator-evidence/guest-audio-stress-evidence.json
       - name: Preserve verified result or honest inconclusive evidence
         if: always()
         uses: actions/upload-artifact@v4
