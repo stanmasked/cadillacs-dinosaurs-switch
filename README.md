@@ -12,7 +12,17 @@ game-faithful remake.** There is no original character/level gameplay,
 emulated original AI, original audio or real Switch hardware runtime proof.
 No commercial assets are stored in the public repository.
 
-See [stage 114 training-room controls and limitations](docs/switch-rom-free-training-room.md).
+See [training-room controls, invented effects and limitations](docs/switch-rom-free-training-room.md).
+The technical build now includes entirely original, synthesised PCM cues (no
+sample archives or licensed soundtrack), a bounded libnx audio output backend,
+and a **host-only WAV preview**:
+
+```sh
+python3 tools/dino_sfx_preview.py --out /your/private/folder/dino-training-effects.wav
+```
+
+Actual speaker/headphone output on a physical Switch remains unverified;
+audio hardware failures leave the technical prototype playable without sound.
 
 ## Build
 Install [devkitPro switch-dev](https://www.switchbrew.org/wiki/Setting_up_Development_Environment),
