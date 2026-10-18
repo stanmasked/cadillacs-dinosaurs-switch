@@ -279,3 +279,7 @@ python3 tools/mame_capture_import.py cps1-captures frame-00000900 \
 repository or test environment. The Lua capture cannot access the
 driver's VBlank-latched sprite buffer; incomplete replays are not
 pixel-parity eligible. Original data and derived frames stay local.
+
+## Stage 162 — preserve per-window A/B skip direction, not just aggregate totals
+
+The experimental NeXium audout A/B report now exposes six separately labelled 150-tick differences in later-batch audio skips **only** when both independent guests have matching coarse single/first/later exposure in every window. It also counts windows with fewer vs. more skips and explicitly flags opposing directions. A net-zero aggregate is not presented as absence of local regressions. Any coarse exposure mismatch nulls all these new difference and direction fields. Even matched windows cannot authenticate exact frame pacing, host timing, causal benefit, or physical Switch sound; those verification fields stay false. Four ROM-free regressions cover uniformly fewer skips, mixed directions hidden by a zero aggregate, unchanged windows and invalid cross-run matching. The normal audio synthesizer, audout queue and guest NRO runtime are unchanged.
