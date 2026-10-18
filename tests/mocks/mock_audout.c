@@ -14,7 +14,8 @@ typedef struct {
 } Flight;
 static Flight flights[MAX_FLIGHTS];
 static u32 pending_count, appended_count, released_count;
-static u32 release_credits, fault_mode, integrity_errors;
+static u32 release_credits, pending_deferred_credit;
+static u32 fault_mode, integrity_errors;
 static u32 flushes, stops, layout_ok;
 static u32 poll_calls, empty_polls;
 static bool started, reverse_release, credit_after_empty;
@@ -39,12 +40,18 @@ static void check_inflight(void) {
 void mock_audout_reset(void) {
     memset(flights,0,sizeof(flights));
     pending_count=appended_count=released_count=0;
-    release_credits=fault_mode=integrity_errors=0;
+    release_credits=pending_deferred_credit=0;
+    fault_mode=integrity_errors=0;
     flushes=stops=poll_calls=empty_polls=0;
     layout_ok=1;
     started=reverse_release=credit_after_empty=false;
 }
-void mock_audout_grant_releases(u32 count) { release_credits=count; }
+void mock_audout_grant_releases(u32 count) {
+    /* Test driver advances a tick; the release credited after a
+     * previous empty response only becomes visible on this new tick. */
+    release_credits=count+pending_deferred_credit;
+    pending_deferred_credit=0;
+}
 void mock_audout_inject_bad_release(u32 mode) { fault_mode=mode; }
 void mock_audout_reverse_release_order(u32 enabled) {
     reverse_release=(enabled!=0);
@@ -74,7 +81,7 @@ Result audoutStopAudioOut(void) { ++stops;started=false;return 0; }
 void audoutExit(void) {
     started=false;
     pending_count=0;
-    release_credits=0;
+    release_credits=pending_deferred_credit=0;
     credit_after_empty=false;
 }
 Result audoutGetReleasedAudioOutBuffer(AudioOutBuffer **released,u32 *count) {
@@ -100,7 +107,7 @@ Result audoutGetReleasedAudioOutBuffer(AudioOutBuffer **released,u32 *count) {
         /* This fake release becomes available AFTER replying no-count.
          * The unchanged adapter correctly stops polling for this tick. */
         if (credit_after_empty && started && pending_count) {
-            release_credits=1;
+            pending_deferred_credit=1;
             credit_after_empty=false;
         }
         return 0;
