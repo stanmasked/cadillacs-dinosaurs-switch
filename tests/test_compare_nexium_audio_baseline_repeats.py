@@ -88,6 +88,75 @@ class BaselineRepeatabilityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             repeats.compare(self.first,self.second)
 
+    def test_cli_creates_new_output_preserving_guest_inputs(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        out=Path(self.tmp.name)/'result.json'
+        inputs=(self.first.read_bytes(),self.second.read_bytes())
+        stream=StringIO()
+        with redirect_stdout(stream):
+            rc=repeats.main([
+                '--first',str(self.first),'--second',str(self.second),
+                '--out',str(out)])
+        self.assertEqual(rc,0)
+        self.assertEqual(self.first.read_bytes(),inputs[0])
+        self.assertEqual(self.second.read_bytes(),inputs[1])
+        self.assertEqual(out.read_text(encoding='ascii'),stream.getvalue())
+        self.assertEqual(json.loads(stream.getvalue())['status'],
+                         'UNCONTROLLED_GUEST_BASELINE_REPEATS_DESCRIPTIVE_ONLY')
+
+    def test_cli_refuses_to_overwrite_source_guest_report(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        for target in (self.first,self.second):
+            with self.subTest(target=target.name):
+                before=target.read_bytes()
+                stream=StringIO()
+                with redirect_stdout(stream):
+                    rc=repeats.main([
+                        '--first',str(self.first),'--second',str(self.second),
+                        '--out',str(target)])
+                self.assertEqual(rc,1)
+                self.assertEqual(target.read_bytes(),before)
+                self.assertEqual(json.loads(stream.getvalue())['status'],
+                                 'INCONCLUSIVE_UNVERIFIED_BASELINE_REPEATABILITY')
+
+    def test_cli_refuses_to_replace_previous_analysis(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        out=Path(self.tmp.name)/'earlier-report.json'
+        out.write_text('PREVIOUS_RESULT_MUST_SURVIVE\n',encoding='ascii')
+        stream=StringIO()
+        with redirect_stdout(stream):
+            rc=repeats.main([
+                '--first',str(self.first),'--second',str(self.second),
+                '--out',str(out)])
+        self.assertEqual(rc,1)
+        self.assertEqual(out.read_text(encoding='ascii'),
+                         'PREVIOUS_RESULT_MUST_SURVIVE\n')
+        self.assertEqual(json.loads(stream.getvalue())['reason'],
+                         'FileExistsError')
+
+    def test_cli_refuses_symlink_output_to_guest_source(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import os
+        if not hasattr(os,'symlink'):
+            self.skipTest('symlink unavailable')
+        out=Path(self.tmp.name)/'linked-input.json'
+        before=self.first.read_bytes()
+        out.symlink_to(self.first)
+        stream=StringIO()
+        with redirect_stdout(stream):
+            rc=repeats.main([
+                '--first',str(self.first),'--second',str(self.second),
+                '--out',str(out)])
+        self.assertEqual(rc,1)
+        self.assertTrue(out.is_symlink())
+        self.assertEqual(self.first.read_bytes(),before)
+        self.assertEqual(json.loads(stream.getvalue())['reason'],
+                         'FileExistsError')
+
     def test_cli_missing_report_fails_closed_without_false_claims(self):
         from contextlib import redirect_stdout
         from io import StringIO
