@@ -347,3 +347,12 @@ buffer pointer per call, a reported count other than exactly one
 for a nonempty release is now treated as ambiguous and fails
 closed to silent operation. This is an added conservative adapter
 guard; it does not claim real device behavior has been observed.
+
+The console audio service is now opened **only while the ROM-free
+training arena is active**, not during the CPS-1 tile/scene viewer.
+Leaving the arena via ZL stops audout and discards pending cue
+state; re-entering starts a fresh synth timeline. Three compile-time
+assertions ensure that the number of backend slots matches the
+portable policy and that one 800-frame stereo block fits in the
+aligned audio page. No claims are made about physical Switch
+switching latency or actual audible playback.
