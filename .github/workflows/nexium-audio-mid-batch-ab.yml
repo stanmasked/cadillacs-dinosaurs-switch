@@ -7,6 +7,11 @@ on:
       - feature/mame-capture-crossprobe-session-id
     paths:
       - '.github/workflows/nexium-audio-mid-batch-ab.yml'
+      - 'source/**'
+      - 'tools/verify_nexium_audio_stress.py'
+      - 'tools/verify_nexium_audio_mid_batch_ab.py'
+      - 'tests/test_nexium_audio_stress.py'
+      - 'tests/test_nexium_audio_mid_batch_ab.py'
 
 permissions:
   contents: read
@@ -121,35 +126,10 @@ jobs:
             --report experiment/dino-mid-batch-baseline-witness/guest-audio-stress-evidence.json \
             --report experiment/dino-mid-batch-extra-witness/guest-audio-stress-evidence.json \
             --out experiment/comparison.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          root=Path('experiment')
-          reports=[]
-          for variant in ('baseline','extra'):
-              path=root/('dino-mid-batch-'+variant+'-witness')/'guest-audio-stress-evidence.json'
-              r=json.loads(path.read_text('ascii'))
-              assert r['status']=='GUEST_900TICK_AUDOUT_FRAME_BATCH_CORRELATION_WITNESSED'
-              reports.append({key:r[key] for key in (
-                  'audout_blocks_skipped','audout_blocks_released',
-                  'batched_later_released_pages','batched_later_tick_skips',
-                  'simulation_ticks','fixed_ack_max_recoverable_skips_upper_bound')})
-          output={
-              'schema':'dino-audout-opt-in-mid-batch-ab-descriptive-v1',
-              'status':'UNCONTROLLED_GUEST_RUN_DESCRIPTIVE_ONLY',
-              'baseline':reports[0],'extra':reports[1],
-              'extra_minus_baseline_skips':(
-                  reports[1]['audout_blocks_skipped']-
-                  reports[0]['audout_blocks_skipped']),
-              'runtime_and_host_conditions_held_constant':False,
-              'causal_audio_improvement_verified':False,
-              'physical_switch_audio_verified':False,
-              'audio_latency_verified':False,
-          }
-          (root/'ab-descriptive.json').write_text(
-              json.dumps(output,sort_keys=True)+'\n',encoding='ascii')
-          print(json.dumps(output,sort_keys=True))
-          PY
+          python3 tools/verify_nexium_audio_mid_batch_ab.py \
+            --baseline experiment/dino-mid-batch-baseline-witness/guest-audio-stress-evidence.json \
+            --experimental experiment/dino-mid-batch-extra-witness/guest-audio-stress-evidence.json \
+            --out experiment/ab-descriptive.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

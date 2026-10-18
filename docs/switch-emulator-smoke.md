@@ -1078,3 +1078,9 @@ resources are added to GitHub. The two-pending-page limit and
 ## Stage 157 — attest actual extra audout polling in guest stress
 
 Every new self-test CSV includes a compile-time opt-in marker, a count of extra bounded nonblocking mid-batch release polls actually executed and a count of pages genuinely acknowledged by those calls. Baseline builds must record zero extra calls/releases; explicitly opted-in builds must record one extra call per later scheduled guest simulation tick. The verifier checks all three values and reconciles actual releases by six disjoint 150-tick intervals. Earlier CSV versions remain accepted with *null* extra-poll evidence, never invented values. The normal retail-style ROM-free NRO excludes the functions and incurs no additional audout calls. No hardware audio latency, speaker playback or causal improvement is claimed.
+
+## Stage 158 — fail-closed verified experimental guest A/B pairing
+
+The experimental NeXium A/B workflow is now retriggered by changes to its C implementation, CSV verifier, and A/B test tool, rather than only by modifications to the workflow itself. A standalone ROM-free comparator checks each guest's full independently validated Stage 151/155 metrics and Stage 157 guest-compiled experiment marker. It requires no additional audout polls in baseline and *exactly one extra sweep per later batched tick* in the experimental NRO, with reported extra-call releases bounded by the independently recorded later-tick buffer returns, for each of six windows. Swapped artifacts, missing witnesses, fabricated calls, partial JSON and mismatched intervals fail the job rather than printing a plausible but unsupported A/B result.
+
+A successful pair only describes two separately run virtual guests and explicitly keeps causal improvement, speaker output, and latency unverified. No new PCM generation policy, queue depth, game timing, commercial ROM or player-recorded asset is introduced.
