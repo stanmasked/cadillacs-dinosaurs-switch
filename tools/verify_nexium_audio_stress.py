@@ -32,8 +32,12 @@ COLUMNS = [
     'batched_first_recovered_after_poll',
     'batched_later_full_before_poll',
     'batched_later_recovered_after_poll',
+    'single_frame_released_pages',
+    'batched_first_released_pages',
+    'batched_later_released_pages',
 ]
-STAGE145_COLUMNS=COLUMNS[:-4]
+STAGE146_COLUMNS=COLUMNS[:-3]
+STAGE145_COLUMNS=STAGE146_COLUMNS[:-4]
 STAGE143_COLUMNS=STAGE145_COLUMNS[:-4]
 LEGACY_COLUMNS=STAGE143_COLUMNS[:-2]
 CHECKPOINTS = [0,150,300,450,600,750,900]
@@ -50,13 +54,16 @@ def verify(path, guest_timeline, guest_controller):
     try:
         with path.open('r',encoding='ascii',newline='') as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames not in (COLUMNS,STAGE145_COLUMNS,
-                                            STAGE143_COLUMNS,LEGACY_COLUMNS):
+            if reader.fieldnames not in (COLUMNS,STAGE146_COLUMNS,
+                                            STAGE145_COLUMNS,STAGE143_COLUMNS,
+                                            LEGACY_COLUMNS):
                 raise ValueError('guest stress field schema mismatch')
             has_pre_poll_probe=reader.fieldnames!=LEGACY_COLUMNS
             has_batch_position_probe=reader.fieldnames in (
-                COLUMNS,STAGE145_COLUMNS)
-            has_position_poll_probe=reader.fieldnames==COLUMNS
+                COLUMNS,STAGE146_COLUMNS,STAGE145_COLUMNS)
+            has_position_poll_probe=reader.fieldnames in (
+                COLUMNS,STAGE146_COLUMNS)
+            has_release_position_probe=reader.fieldnames==COLUMNS
             active_columns=reader.fieldnames
             rows=list(reader)
     except (UnicodeError,csv.Error) as exc:
@@ -99,8 +106,10 @@ def verify(path, guest_timeline, guest_controller):
         raise ValueError('starting release-poll counters inconsistent')
     if has_batch_position_probe and start[23:27]!=[0]*4:
         raise ValueError('batch position witness starts nonzero')
-    if has_position_poll_probe and start[27:]!=[0]*4:
+    if has_position_poll_probe and start[27:31]!=[0]*4:
         raise ValueError('batch position poll baseline must start at zero')
+    if has_release_position_probe and start[31:]!=[0]*3:
+        raise ValueError('release position accounting must start at zero')
     if start[1]<1 or start[2]<1 or start[3]<1:
         raise ValueError('guest never advanced before stress started')
     prev=start
@@ -143,6 +152,13 @@ def verify(path, guest_timeline, guest_controller):
                 row[27]+row[29]>row[21]-start[21] or
                 row[28]+row[30]>row[22]-start[22]):
             raise ValueError('batch position poll interval attribution mismatch')
+        if has_release_position_probe and (
+                any(row[k]<prev[k] for k in range(31,34)) or
+                row[31]+row[32]+row[33]!=row[8]-start[8] or
+                row[31]>2*row[15] or
+                row[32]>2*row[23] or row[33]>2*row[24] or
+                row[32]<row[28] or row[33]<row[30]):
+            raise ValueError('guest released page position mismatch')
         if idx>0 and row[14]<prev[14]:
             raise ValueError('maximum consecutive skip streak decreased')
         # Backend remained active at all checkpoints. A transient
@@ -182,6 +198,7 @@ def verify(path, guest_timeline, guest_controller):
     poll_windows=[]
     position_windows=[]
     position_poll_windows=[]
+    release_position_windows=[]
     for idx in range(1,len(measurements)):
         before=measurements[idx-1]
         after=measurements[idx]
@@ -258,6 +275,24 @@ def verify(path, guest_timeline, guest_controller):
                 'later_recovered_after_poll':later_recovered,
                 'single_full_before_poll':single_full,
                 'single_recovered_after_poll':single_recovered,
+            })
+        if has_release_position_probe:
+            single_release=after[31]-before[31]
+            first_release=after[32]-before[32]
+            later_release=after[33]-before[33]
+            if (single_release+first_release+later_release!=
+                    after[8]-before[8] or
+                    single_release>2*single_ticks or
+                    first_release>2*first or later_release>2*later or
+                    first_release<first_recovered or
+                    later_release<later_recovered):
+                raise ValueError('release position window attribution mismatch')
+            release_position_windows.append({
+                'tick_start':CHECKPOINTS[idx-1],
+                'tick_end':CHECKPOINTS[idx],
+                'single_frame_released_pages':single_release,
+                'batched_first_released_pages':first_release,
+                'batched_later_released_pages':later_release,
             })
         intervals.append({
             'tick_start':CHECKPOINTS[idx-1],
@@ -354,6 +389,15 @@ def verify(path, guest_timeline, guest_controller):
             measurements[-1][30] if has_position_poll_probe else None),
         'checkpoint_batch_position_poll_intervals':(
             position_poll_windows if has_position_poll_probe else None),
+        'release_tick_position_probe_present':has_release_position_probe,
+        'single_frame_released_pages':(
+            measurements[-1][31] if has_release_position_probe else None),
+        'batched_first_released_pages':(
+            measurements[-1][32] if has_release_position_probe else None),
+        'batched_later_released_pages':(
+            measurements[-1][33] if has_release_position_probe else None),
+        'checkpoint_release_position_intervals':(
+            release_position_windows if has_release_position_probe else None),
         'windows_with_both_render_modes':sum(
             w['single_tick_render_steps']>0 and w['batched_render_steps']>0
             for w in intervals),

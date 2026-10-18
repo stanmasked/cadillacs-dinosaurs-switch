@@ -38,6 +38,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 str(index*10),str(index*20),
                 str(index*13),str(index*3),
                 str(index*24),str(index*4),
+                str(index*85),str(index*10),str(index*5),
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -142,6 +143,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[22]=str(1 if idx else 0)
             row[25]=row[26]=row[27]=row[28]='0'
             row[29]=row[30]=row[31]=row[32]='0'
+            row[33]=row[34]=row[35]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_render_steps'],0)
@@ -203,7 +205,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_old_v3_csv_is_accepted_without_a_fake_poll_claim(self):
         for row in self.rows:
-            del row[-10:]
+            del row[-13:]
         self.write(fields=check.LEGACY_COLUMNS)
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertFalse(result['pre_poll_capacity_probe_present'])
@@ -230,7 +232,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_stage143_legacy_csv_has_no_batch_position_claim(self):
         for row in self.rows:
-            del row[-8:]
+            del row[-11:]
         self.write(fields=check.STAGE143_COLUMNS)
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertTrue(result['pre_poll_capacity_probe_present'])
@@ -268,6 +270,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
             row[22]=str(1 if index else 0)
             row[25]=row[26]=row[27]=row[28]='0'
             row[29]=row[30]=row[31]=row[32]='0'
+            row[33]=row[34]=row[35]='0'
         self.write()
         result=check.verify(self.path,self.timeline,self.controller)
         self.assertEqual(result['batched_first_tick_steps'],0)
@@ -277,7 +280,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_stage145_csv_does_not_invent_position_poll_counts(self):
         for row in self.rows:
-            del row[-4:]
+            del row[-7:]
         self.write(fields=check.STAGE145_COLUMNS)
         report=check.verify(self.path,self.timeline,self.controller)
         self.assertTrue(report['batch_tick_position_probe_present'])
@@ -307,6 +310,50 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 self.mutate(index,col,bad)
 
     def test_position_poll_schema_rejects_short_rows(self):
+        self.rows[0].pop()
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
+
+
+    def test_stage146_report_does_not_invent_release_position_values(self):
+        for row in self.rows:
+            del row[-3:]
+        self.write(fields=check.STAGE146_COLUMNS)
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(result['batch_position_poll_probe_present'])
+        self.assertFalse(result['release_tick_position_probe_present'])
+        self.assertIsNone(result['single_frame_released_pages'])
+        self.assertIsNone(result['checkpoint_release_position_intervals'])
+
+    def test_guest_release_acks_reconcile_all_six_windows(self):
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(result['release_tick_position_probe_present'])
+        self.assertEqual(result['single_frame_released_pages'],510)
+        self.assertEqual(result['batched_first_released_pages'],60)
+        self.assertEqual(result['batched_later_released_pages'],30)
+        self.assertEqual(sum(result[k] for k in (
+            'single_frame_released_pages',
+            'batched_first_released_pages',
+            'batched_later_released_pages')),600)
+        rows=result['checkpoint_release_position_intervals']
+        self.assertEqual(len(rows),6)
+        self.assertEqual(rows[0],{
+            'tick_start':0,'tick_end':150,
+            'single_frame_released_pages':85,
+            'batched_first_released_pages':10,
+            'batched_later_released_pages':5})
+        self.assertFalse(result['audio_latency_verified'])
+
+    def test_forged_release_position_counts_fail_closed(self):
+        for index,column,bad in (
+                (0,34,'1'),(1,34,'84'),(1,35,'11'),(1,36,'6'),
+                (2,35,'0'),(3,36,'0'),(1,34,'4294967296'),
+                (1,35,'01'),(1,36,'true')):
+            with self.subTest(row=index,column=column):
+                self.mutate(index,column,bad)
+
+    def test_missing_release_position_csv_field_fails_closed(self):
         self.rows[0].pop()
         self.write()
         with self.assertRaises(ValueError):

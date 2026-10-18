@@ -897,3 +897,33 @@ cannot manufacture credits without an external event. Nothing in this
 stage proves a real-world latency improvement, audible console sound,
 or CPS-1 game parity. There are no changes to gameplay timing, normal
 NRO binaries, or licensed ROM/assets.
+
+## Stage 151 — count actual guest audout releases by tick position
+
+Stage 150 completed all GitHub Actions including real ARM64 NRO NeXium
+guest execution. Previous Stage 146 evidence showed no **capacity
+recoveries** on later ticks of batched render frames, but those counters
+observe only release polls that **began with a full queue**. That is not
+the same as zero released PCM pages. To distinguish them without
+changing sound timing, the guest self-test now logs the actual
+`DinoSoundDiagnostics.released` counter delta on each of the 900
+individual simulation ticks. This is partitioned into single-frame,
+first-batch and later-batch ticks.
+
+The three additional counters extend the original 7-row CSV.
+The Python verifier enforces zero baseline, lifetime monotonicity,
+their exact sum against the independently checked audout release
+counter, a bound of two released pages per guest tick and complete
+six-window reconciliation. First/later confirmed page returns must be
+at least the previously counted poll recoveries for those categories.
+Stage 139/143/145/146 CSVs remain accepted without inventing any
+new timing evidence; absent release-by-position observations remain
+explicitly null.
+
+These are nonblocking poll **observation positions**, not hardware
+callback timestamps. Even a confirmed page release on a second tick
+does not establish when the device completed playing that PCM page,
+speaker audibility, latency or causal audio fixes. This code changes
+only guest-only diagnostics, ROM-free tests and documentation; it does
+not add an audout call, change music or game time, modify queue policy
+or publish original ROM resources.
