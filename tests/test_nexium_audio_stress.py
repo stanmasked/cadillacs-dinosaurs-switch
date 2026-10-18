@@ -30,6 +30,9 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 str(240+ticks),str(240+ticks),'1','1','1',
                 str(submitted),str(released),str(skipped),'0',
                 f'{index+1:016X}',str(skipped),'0','0','2',
+                str(index*100),str(index*50),
+                str(index*20),str(index*30),
+                str(index*25),str(2 if index else 0),
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -66,7 +69,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_valid_900_ticks_with_bounded_queue_and_native_HID_binding(self):
         result=check.verify(self.path,self.timeline,self.controller)
-        self.assertEqual(result['status'],'GUEST_900TICK_AUDOUT_SKIP_REASONS_WITNESSED')
+        self.assertEqual(result['status'],'GUEST_900TICK_AUDOUT_FRAME_BATCH_CORRELATION_WITNESSED')
         self.assertEqual(result['simulation_ticks'],900)
         self.assertEqual(result['checkpoints'],7)
         self.assertEqual(result['audout_blocks_submitted'],600)
@@ -78,6 +81,16 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertEqual(result['unexpected_slot_skips'],0)
         self.assertEqual(result['max_skip_streak_since_audio_open'],2)
         self.assertEqual(result['checkpoint_skipped_deltas'],[50]*6)
+        self.assertEqual(result['single_tick_render_steps'],600)
+        self.assertEqual(result['batched_render_steps'],300)
+        self.assertEqual(result['skips_in_single_tick_render_frames'],120)
+        self.assertEqual(result['skips_in_batched_render_frames'],180)
+        self.assertEqual(result['render_frames_with_batched_steps'],150)
+        self.assertEqual(result['largest_scheduled_tick_batch'],2)
+        self.assertEqual(result['single_skip_percent_rounded'],20)
+        self.assertEqual(result['batched_skip_percent_rounded'],60)
+        self.assertFalse(result['catchup_causality_verified'])
+        self.assertFalse(result['host_wall_clock_real_time_verified'])
         self.assertFalse(result['sound_device_audible_verified'])
         self.assertFalse(result['audio_latency_verified'])
 
@@ -193,6 +206,40 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.rows[3][14]='0'
         self.write()
 
+    def test_render_batch_ticks_must_partition_all_900_guest_ticks(self):
+        for col,bad in ((17,'99'),(18,'49'),(17,'101'),(18,'0')):
+            with self.subTest(column=col,value=bad):
+                self.mutate(1,col,bad)
+
+    def test_render_batch_skips_must_match_actual_queue_drop_counts(self):
+        for col,bad in ((19,'19'),(20,'29'),(19,'101'),(20,'51')):
+            with self.subTest(column=col,value=bad):
+                self.mutate(1,col,bad)
+
+    def test_render_batch_frames_and_largest_batch_must_be_bounded(self):
+        for col,bad in ((21,'51'),(21,'0'),(22,'16'),(22,'1'),
+                        (22,'0')):
+            with self.subTest(column=col,value=bad):
+                self.mutate(1,col,bad)
+
+    def test_render_batch_counters_must_never_move_backwards(self):
+        for col,bad in ((17,'99'),(18,'49'),(19,'19'),
+                        (20,'29'),(21,'24'),(22,'1')):
+            with self.subTest(column=col,value=bad):
+                self.mutate(2,col,bad)
+
+    def test_fake_batched_only_schedule_with_no_batched_frames_rejected(self):
+        for idx in range(len(self.rows)):
+            self.rows[idx][17]='0'
+            self.rows[idx][18]=str(idx*150)
+            self.rows[idx][19]='0'
+            self.rows[idx][20]=str(idx*50)
+            self.rows[idx][21]='0'
+            self.rows[idx][22]=str(2 if idx else 0)
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
+
     def test_direct_CLI_missing_trace_stays_inconclusive_and_path_free(self):
         script=Path(__file__).resolve().parents[1]/'tools'/'verify_nexium_audio_stress.py'
         cmd=[sys.executable,str(script),'--report',str(self.path),
@@ -207,7 +254,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertEqual(fail.returncode,0,fail.stderr)
         report=json.loads(self.out.read_text())
         self.assertEqual(report['status'],
-                         'INCONCLUSIVE_NO_GUEST_900TICK_AUDOUT_REASON_EVIDENCE')
+                         'INCONCLUSIVE_NO_GUEST_AUDIO_RENDER_BATCH_EVIDENCE')
         self.assertNotIn(str(self.root),self.out.read_text())
 
 
