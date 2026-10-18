@@ -228,3 +228,47 @@ exercise signed-sample endianness, chunk boundaries and error
 inputs, detect single-sample changes and pin the original
 180-tick native-C golden value. The visual smoke workflow
 requires both the state and synthesized-PCM digests to match.
+
+## Stage 129 — real NeXium ARM64 NRO guest execution attempt in CI
+
+A **separate optional** GitHub workflow, `NeXium real Switch NRO
+guest replay`, now cross-compiles a special NRO with the
+`DINO_EMULATOR_SELFTEST` build flag, loads that actual ARM64 homebrew
+binary under a pinned NeXium experimental nightly and requests
+software Vulkan through Mesa Lavapipe/Xvfb. It does not need any
+commercial game ROM, console firmware or Nintendo encryption keys.
+The standard user-facing NRO does **not** auto-start a replay or
+write guest reports; the diagnostic flag is enabled only for the
+standalone emulator CI build.
+
+This isolated test version starts the same ROM-free 180-tick replay
+without simulated keyboard events. Inside the running **Switch guest**,
+it attempts to create `sdmc:/cadillacs-arena-selftest.csv`
+on the emulator's virtual SD device, then records three checkpoints:
+
+- START: training room reset before any simulation tick
+- FRAME_SUBMITTED: native NRO code passed `framebufferEnd` after an
+  advancing tick; this is not guaranteed visible host GPU pixels
+- REPLAY_DONE: 180 simulated ticks, player x=230, HP 4,
+  three confirmed hits and generated-PCM blocks=180, with
+  `STATE FNV64 5BCA2FF01FB244F6` and
+  `PCM FNV64 D82C3B7960857B22`
+
+The workflow isolates the emulator home/config/data directories,
+checks the pinned official nightly archive's SHA-256 before executing
+it, and accepts a PASS only when a strictly validated, **guest-created**
+report was recovered from that isolated virtual SD tree.
+The evaluator rejects missing/extra events, invalid ticks,
+malformed hex, altered gameplay or PCM codes and unexpected report
+sizes. A process surviving, UI window appearing, emulator timing
+out, or the host's synthetic fixtures **cannot** pass this test.
+If guest SD mounting or rendering is unsupported by that NeXium
+nightly, the outcome is explicitly **INCONCLUSIVE**, not fabricated
+emulator success.
+
+The optional captured emulator window may help diagnose software
+Vulkan rendering, but the two guest hashes prove only selected
+gameplay-state and generated-PCM equivalence. Separately measured
+host-screen pixels and audible device sound are still unverified
+unless directly inspected and tested. Both the installation and
+result records are kept in short-lived GitHub Actions artifacts.
