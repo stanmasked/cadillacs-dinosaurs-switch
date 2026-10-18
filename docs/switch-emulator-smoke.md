@@ -584,3 +584,37 @@ are reported), that real-time wall-clock scheduling was sustained, or
 that the original commercial arcade game was executed. A successful
 900-tick count is simulation progress rather than 15 seconds measured
 by external timing equipment.
+
+
+## Stage 138 — identify reasons for skipped PCM admissions
+
+Two independent NeXium trials of the preceding 900-tick test skipped
+121/900 and 126/900 generated PCM blocks even though the queue remained
+internally consistent and added no audout errors. These are genuine
+**device-admission omissions**, not necessarily observed audio glitches
+on physical speakers. Increasing the pending-page limit could hide the
+symptom at the cost of more queued sound, so this stage leaves the
+maximum pending pages **unchanged at two**.
+
+The ROM-free libnx sound adapter now maintains four diagnostic-only
+counters for its *existing* admission decision: skips because the
+two-page queue is full; skips because the backend is inactive; skips
+because the queue claims capacity but cannot find an available page;
+and the maximum consecutive skip streak since the audio backend
+started. These counters do not change synthesis, page ownership or
+allocation. They reset together with queue accounting on successful
+audout initialization.
+
+The same native NeXium NRO stress test appends those four values at
+every one of its seven guest-written checkpoints. A revised
+fail-closed verifier checks that reason counts sum to the already
+observed total skipped blocks, advance monotonically, never exceed
+their logical bounds and do not conceal an inactive backend or
+unexpected page exhaustion between checkpoints. It also reports the
+six separate 150-tick skip counts so a burst can be distinguished
+from evenly distributed skips. The guest-owned ordered HID witness
+remains mandatory.
+
+This instrumentation is not a fix for missing buffers. Real console
+performance, perceptual audio continuity and wall-clock real-time
+scheduling remain unverified. No ROMs or waveform assets are uploaded.
