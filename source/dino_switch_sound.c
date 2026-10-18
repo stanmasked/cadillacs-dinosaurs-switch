@@ -29,8 +29,9 @@ void dino_switch_sound_close(void) {
 }
 
 bool dino_switch_sound_open(void) {
-    dino_sfx_reset(&s_synth);
+    /* Idempotent initialization must not reset a live effect envelope. */
     if (s_initialized) return s_started;
+    dino_sfx_reset(&s_synth);
     if (R_FAILED(audoutInitialize())) return false;
     s_initialized=true;
     if (audoutGetSampleRate()!=DINO_SFX_RATE ||
@@ -66,6 +67,13 @@ void dino_switch_sound_step(uint32_t events) {
                 break;
             }
             if (!count) break;
+            /* The libnx API returns one buffer pointer, not an array.
+             * Multiple releases in one result cannot be accounted for
+             * safely by this adapter: fail closed to preserve ownership. */
+            if (count!=1 || !released) {
+                dino_switch_sound_close();
+                break;
+            }
             /* A foreign or duplicate release must never make an in-flight
              * PCM page available for rewriting: stop the audio backend. */
             bool known=false;
