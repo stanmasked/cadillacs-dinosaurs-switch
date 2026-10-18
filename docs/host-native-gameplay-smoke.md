@@ -116,3 +116,35 @@ No Nintendo Switch emulator, keys, firmware, game ROMs or protected
 assets are used by this Linux desktop verification. Testing the
 **actual NRO in an actual Switch emulator** remains a distinct
 uncompleted task, not a claim implied by a successful Tk window.
+
+## Stage 126 — a single replay trace inside both NRO and desktop execution
+
+`source/dino_replay.c` is now the **one** source of the invented
+180-tick controller script previously duplicated in Python.
+The native-host dynamic library compiles the same C replay module as
+the Nintendo Switch NRO; the headless preview calls it directly.
+Its final local expectation is **x=230, three confirmed hits,
+player HP 4, sparring ON** after 180 fixed 60Hz steps, with no
+original graphics, game ROM or emulator requirement.
+
+The Switch training-room UI has a new **Minus** action to start or
+restart this self-contained test. The same 180 scripted input steps
+update the real Switch training game objects, through exactly the
+same `dino_arena_step()` and combat-event SFX path as controller
+play. It freezes the final frame instead of continuing AI,
+and overlays `C REPLAY 180/180 DONE - Y RESET HP 4 HITS 3`.
+Use **Y** to return to normal play, or **Minus** to replay.
+
+Five new host-native tests check the 180-tick bounds and pointer
+safety, button-mask validity, exact frame numbers of individual
+inputs, parity between calling the C replay API directly and
+calling the desktop preview's replay bridge, final player/enemy
+state and PCM identity, and harmless out-of-range replay calls.
+The dedicated native gameplay workflow now triggers on modifications
+to the replay source and executes these exact tests.
+
+When an emulator becomes available, observing the **actual Switch
+NRO** finish this scripted scenario will be a meaningful first
+runtime test. Until then, any success statement here applies only
+to the compiled NRO and independently executed **host** C code,
+not to Switch emulator GPU, controller or audout behavior.
