@@ -150,6 +150,29 @@ def with_batch_position_poll(report):
 
 
 
+def with_released_page_positions(report):
+    """Stage 151 complete ROM-free fixture with fixed, valid 900-tick data."""
+    report=copy.deepcopy(report)
+    windows=[]
+    for i in range(6):
+        windows.append({
+            'tick_start':150*i,
+            'tick_end':150*(i+1),
+            'single_frame_released_pages':85,
+            'batched_first_released_pages':10,
+            'batched_later_released_pages':5,
+        })
+    report.update({
+        'release_tick_position_probe_present':True,
+        'single_frame_released_pages':510,
+        'batched_first_released_pages':60,
+        'batched_later_released_pages':30,
+        'checkpoint_release_position_intervals':windows,
+    })
+    return report
+
+
+
 class MultiRunAudioTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='synthetic-cross-run-')
@@ -441,6 +464,147 @@ class MultiRunAudioTests(unittest.TestCase):
             self.save(self.one,r)
             with self.assertRaises(ValueError):
                 check.compare([self.one,self.two])
+
+
+    def test_complete_stage151_probes_pool_only_confirmed_pages(self):
+        one=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture(),25))))
+        two=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture(1),30))))
+        self.save(self.one,one)
+        self.save(self.two,two)
+        result=check.compare([self.one,self.two])
+        self.assertTrue(result['all_reports_have_release_tick_position_probe'])
+        self.assertEqual(result['reports_with_release_tick_position_probe'],2)
+        self.assertEqual(result['pooled_single_frame_released_pages'],1020)
+        self.assertEqual(result['pooled_batched_first_released_pages'],120)
+        self.assertEqual(result['pooled_batched_later_released_pages'],60)
+        self.assertEqual(
+            result['batched_later_release_pages_per_100_ticks_rounded'],20)
+        self.assertFalse(result['independent_guest_execution_authenticated'])
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_mixed_stage146_stage151_must_not_pool_partial_releases(self):
+        one=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture(),25)))
+        self.save(self.one,with_released_page_positions(one))
+        self.save(self.two,with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture(1),30))))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_release_tick_position_probe'],1)
+        self.assertFalse(result['all_reports_have_release_tick_position_probe'])
+        self.assertIsNone(result['pooled_batched_later_released_pages'])
+        self.assertIsNone(
+            result['batched_later_release_pages_per_100_ticks_rounded'])
+        self.assertEqual(result['reports_with_batch_position_poll_probe'],2)
+
+    def test_old_reports_report_absence_not_fabricated_zero_ack(self):
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_release_tick_position_probe'],0)
+        self.assertIsNone(result['pooled_single_frame_released_pages'])
+        self.assertIsNone(result['pooled_batched_later_released_pages'])
+        legacy=fixture()
+        legacy.update(
+            release_tick_position_probe_present=False,
+            single_frame_released_pages=None,
+            batched_first_released_pages=None,
+            batched_later_released_pages=None,
+            checkpoint_release_position_intervals=None)
+        self.save(self.one,legacy)
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_release_tick_position_probe'],0)
+        self.assertIsNone(result['pooled_batched_first_released_pages'])
+
+    def test_new_probe_requires_exact_fields_and_boolean_provenance(self):
+        full=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture()))))
+        for key in check.RELEASE_POSITION_FIELDS:
+            with self.subTest(missing=key):
+                bad=copy.deepcopy(full)
+                del bad[key]
+                self.save(self.one,bad)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+        for claimed in (0,1,None,'true',[]):
+            with self.subTest(claimed=claimed):
+                bad=copy.deepcopy(full)
+                bad['release_tick_position_probe_present']=claimed
+                self.save(self.one,bad)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_ack_probe_needs_stage146_poll_prerequisites(self):
+        complete=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture()))))
+        for keys in (check.POLL_PROBE_KEYS,
+                     check.POSITION_FIELDS,check.POSITION_POLL_FIELDS):
+            with self.subTest(keys=keys):
+                missing=copy.deepcopy(complete)
+                for key in keys:
+                    del missing[key]
+                self.save(self.one,missing)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_forged_global_ack_counters_are_refused(self):
+        full=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture()))))
+        for name,bad in (
+                ('single_frame_released_pages',511),
+                ('single_frame_released_pages',True),
+                ('batched_first_released_pages',59),
+                ('batched_later_released_pages',0),
+                ('batched_later_released_pages',2**32),
+                ('batched_later_released_pages',False)):
+            with self.subTest(name=name,bad=bad):
+                forged=copy.deepcopy(full)
+                forged[name]=bad
+                self.save(self.one,forged)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_window_counts_cannot_hide_forged_release_ack_position(self):
+        full=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture()))))
+        for idx,key,bad in (
+                (0,'tick_start',1),
+                (1,'tick_end',301),
+                (2,'single_frame_released_pages',86),
+                (3,'batched_first_released_pages',True),
+                (4,'batched_later_released_pages',0),
+                (5,'batched_later_released_pages',200)):
+            with self.subTest(idx=idx,key=key):
+                forged=copy.deepcopy(full)
+                forged['checkpoint_release_position_intervals'][idx][key]=bad
+                self.save(self.one,forged)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+        for kind in ('missing','extra','short'):
+            with self.subTest(kind=kind):
+                forged=copy.deepcopy(full)
+                w=forged['checkpoint_release_position_intervals']
+                if kind=='missing':
+                    del w[0]['single_frame_released_pages']
+                elif kind=='extra':
+                    w[0]['imagined_ack']=5
+                else:
+                    w.pop()
+                self.save(self.one,forged)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_redistributed_release_ack_window_invalid_even_if_totals_match(self):
+        full=with_released_page_positions(with_batch_position_poll(
+            with_batch_position(with_release_probe(fixture()))))
+        first=full['checkpoint_release_position_intervals'][0]
+        second=full['checkpoint_release_position_intervals'][1]
+        first['batched_later_released_pages']=0
+        second['batched_later_released_pages']=10
+        self.save(self.one,full)
+        # Total count still agrees, but interval 0 no longer has enough
+        # recovered-after-poll releases to justify an ACK count of zero.
+        with self.assertRaises(ValueError):
+            check.compare([self.one,self.two])
 
     def test_refuse_duplicate_file_content_and_too_few_runs(self):
         for paths in ([self.one,self.one],[self.one],[self.one]*9):

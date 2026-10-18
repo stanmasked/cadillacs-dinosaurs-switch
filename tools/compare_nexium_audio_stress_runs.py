@@ -74,6 +74,18 @@ POSITION_POLL_WINDOW_KEYS = {
     'later_full_before_poll', 'later_recovered_after_poll',
     'single_full_before_poll', 'single_recovered_after_poll',
 }
+RELEASE_POSITION_FIELDS = (
+    'release_tick_position_probe_present',
+    'single_frame_released_pages',
+    'batched_first_released_pages',
+    'batched_later_released_pages',
+    'checkpoint_release_position_intervals',
+)
+RELEASE_POSITION_WINDOW_KEYS = {
+    'tick_start', 'tick_end', 'single_frame_released_pages',
+    'batched_first_released_pages', 'batched_later_released_pages',
+}
+RELEASE_POSITION_COUNTS = RELEASE_POSITION_FIELDS[1:4]
 
 
 def nonnegative(value):
@@ -286,6 +298,69 @@ def validate_batch_position_probes(report, totals, modes, release):
     return a,b
 
 
+
+def validate_released_page_positions(report, totals, modes,
+                                     release_probe, positions, position_poll):
+    """Bound and reconcile Stage 151 release ACKs; no timing inference."""
+    enabled=optional_probe_state(
+        report, RELEASE_POSITION_FIELDS, 'release-position')
+    if not enabled:
+        return None
+    if release_probe is None or positions is None or position_poll is None:
+        raise ValueError('release-position witness lacks prior accounting')
+    result={key:nonnegative(report[key]) for key in RELEASE_POSITION_COUNTS}
+    if (sum(result.values())!=totals['audout_blocks_released'] or
+            result['single_frame_released_pages']>
+                2*totals['single_tick_render_steps'] or
+            result['batched_first_released_pages']>
+                2*positions['first_tick_steps'] or
+            result['batched_later_released_pages']>
+                2*positions['later_tick_steps'] or
+            result['batched_first_released_pages']<
+                position_poll['batched_first_recovered_after_poll'] or
+            result['batched_later_released_pages']<
+                position_poll['batched_later_recovered_after_poll'] or
+            result['single_frame_released_pages']<
+                release_probe[1]-
+                position_poll['batched_first_recovered_after_poll']-
+                position_poll['batched_later_recovered_after_poll']):
+        raise ValueError('released page position counts impossible')
+    windows=report['checkpoint_release_position_intervals']
+    if not isinstance(windows,list) or len(windows)!=6:
+        raise ValueError('incomplete released-page position intervals')
+    sums=dict.fromkeys(RELEASE_POSITION_COUNTS,0)
+    for idx,(w,mode) in enumerate(zip(windows,modes)):
+        if not isinstance(w,dict) or set(w)!=RELEASE_POSITION_WINDOW_KEYS:
+            raise ValueError('malformed released-page position window')
+        values={key:nonnegative(value) for key,value in w.items()}
+        single=values['single_frame_released_pages']
+        first=values['batched_first_released_pages']
+        later=values['batched_later_released_pages']
+        previous=report['checkpoint_batch_position_intervals'][idx]
+        poll=report['checkpoint_batch_position_poll_intervals'][idx]
+        total_poll=report['checkpoint_release_poll_intervals'][idx]
+        minimum_single=(total_poll['recovered_before_admission']-
+                        poll['first_recovered_after_poll']-
+                        poll['later_recovered_after_poll'])
+        if (values['tick_start']!=150*idx or
+                values['tick_end']!=150*(idx+1) or
+                single>2*mode['single_tick_render_steps'] or
+                first>2*previous['first_tick_steps'] or
+                later>2*previous['later_tick_steps'] or
+                single<minimum_single or
+                first<poll['first_recovered_after_poll'] or
+                later<poll['later_recovered_after_poll'] or
+                single+first+later>150+2):
+            # At most two pages were pending at the beginning of a
+            # 150-tick interval; at most one fresh page per tick.
+            raise ValueError('release-position window contradicts queue')
+        for key in sums:
+            sums[key]+=values[key]
+    if sums!=result:
+        raise ValueError('released-page windows disagree with totals')
+    return result
+
+
 def validate(report):
     if not isinstance(report, dict) or report.get('schema') != SCHEMA or \
             report.get('status') != STATUS:
@@ -368,7 +443,9 @@ def validate(report):
     probe=validate_release_poll_probe(report,totals,windows)
     positions,position_poll=validate_batch_position_probes(
         report,totals,windows,probe)
-    return totals,windows,probe,positions,position_poll
+    released_by_tick=validate_released_page_positions(
+        report,totals,windows,probe,positions,position_poll)
+    return totals,windows,probe,positions,position_poll,released_by_tick
 
 
 def compare(paths):
@@ -388,13 +465,20 @@ def compare(paths):
     p_first=p_later=p_first_skips=p_later_skips=0
     pp_first_full=pp_first_recovered=0
     pp_later_full=pp_later_recovered=0
+    release_positioned=0
+    released_sums=dict.fromkeys(RELEASE_POSITION_COUNTS,0)
     for path in paths:
         raw, report = read_report(path)
         digest = hashlib.sha256(raw).digest()
         if digest in seen:
             raise ValueError('reused identical guest report')
         seen.add(digest)
-        totals, windows, probe, positions, position_poll = validate(report)
+        totals, windows, probe, positions, position_poll, released_by_tick = (
+            validate(report))
+        if released_by_tick is not None:
+            release_positioned+=1
+            for key in released_sums:
+                released_sums[key]+=released_by_tick[key]
         if positions is not None:
             positioned+=1
             p_first+=positions['first_tick_steps']
@@ -440,6 +524,21 @@ def compare(paths):
         'reports_compared': len(paths),
         'total_guest_simulation_ticks': 900 * len(paths),
         'combined_full_queue_skips': pool['full_queue_skips'],
+        'reports_with_release_tick_position_probe':release_positioned,
+        'all_reports_have_release_tick_position_probe':
+            release_positioned==len(paths),
+        'pooled_single_frame_released_pages':(
+            released_sums['single_frame_released_pages']
+            if release_positioned==len(paths) else None),
+        'pooled_batched_first_released_pages':(
+            released_sums['batched_first_released_pages']
+            if release_positioned==len(paths) else None),
+        'pooled_batched_later_released_pages':(
+            released_sums['batched_later_released_pages']
+            if release_positioned==len(paths) else None),
+        'batched_later_release_pages_per_100_ticks_rounded':(
+            rounded(released_sums['batched_later_released_pages'],p_later)
+            if release_positioned==len(paths) else None),
         'reports_with_batch_position_probe':positioned,
         'all_reports_have_batch_position_probe':positioned==len(paths),
         'pooled_batched_first_tick_steps':(

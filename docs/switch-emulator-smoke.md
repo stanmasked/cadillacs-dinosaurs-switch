@@ -927,3 +927,30 @@ speaker audibility, latency or causal audio fixes. This code changes
 only guest-only diagnostics, ROM-free tests and documentation; it does
 not add an audout call, change music or game time, modify queue policy
 or publish original ROM resources.
+
+## Stage 152 — independent per-position confirmed PCM release accounting
+
+Stage 151 adds guest-only counters for the actual number of PCM pages
+returned by audout on each type of simulated game tick: single, first
+batched, and later batched. These counts are distinct from the older
+`full-before-poll recovered` values, which only cover polls made with a
+full queue. The ROM-free cross-run metadata comparator now validates
+Stage 151's three cumulative counters and all six release-by-position
+windows. Together they must match independently checked guest
+`audout_blocks_released` values exactly, with per-tick maximum two,
+proper prerequisite Stage 143/145/146 witness fields and sufficient
+confirmed pages for already counted capacity recoveries.
+
+For an all-Stage-151 dataset the comparator publishes pooled counts and
+a descriptive number of pages released per 100 later-batched ticks. If
+even one report is older or explicitly records a missing probe, these
+totals are null rather than invented zeroes. Tests corrupt both global
+and 150-tick window fields, counterfeit presence flags, remove nested
+evidence and shift releases between intervals while preserving the
+overall sum; the validator refuses inconsistent reports.
+
+The metrics do NOT authenticate independent NeXium execution, date/time
+of actual playback, speaker audibility, device latency or causal audio
+improvement. This stage touches only the host JSON analyzer, tests and
+documentation, not the Switch sound adapter or game scheduling; no
+original MAME ROM, PCM samples or captured game content is included.
