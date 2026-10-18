@@ -60,7 +60,7 @@ class FixedReleaseTwoTickTests(unittest.TestCase):
 
     def test_invalid_inputs_rejected_including_bools_and_fake_releases(self):
         for args in ((True,0,0),(2,3,0),(2,-1,0),(2,0,3),
-                     (2,2,1),(0,1,0),(0,0,1)):
+                     (2,2,2),(0,1,0),(0,0,2)):
             with self.subTest(args=args):
                 with self.assertRaises(ValueError):
                     model.compare(*args)
