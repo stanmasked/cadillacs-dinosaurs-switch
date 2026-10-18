@@ -538,7 +538,7 @@ int main(int argc, char **argv) {
         (void)fsdevMountSdmc();
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
         if (guest_witness) {
-            fputs("event,ticks,player_x,player_hp,hits,state_fnv64,
+            fputs("event,ticks,player_x,player_hp,hits,state_fnv64,"
                   "pcm_fnv64,pcm_blocks,audio_ticks,audio_active,"
                   "audio_queue_valid,audio_pending,audio_submitted,"
                   "audio_released,audio_skipped,audio_errors\n",guest_witness);
