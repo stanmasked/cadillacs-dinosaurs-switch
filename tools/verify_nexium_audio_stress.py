@@ -106,7 +106,7 @@ def verify(path, guest_timeline, guest_controller):
                 row[17]+row[18]!=row[9]-start[9] or
                 row[17]>row[15] or row[18]>row[16] or
                 row[19]>row[16] or row[20]>15 or
-                (row[16]>0 and row[20]<2) or
+                (row[16]>0 and (row[20]<2 or row[19]==0)) or
                 (row[16]==0 and row[19]!=0) or
                 (elapsed>0 and row[20]==0) or
                 any(row[j]<prev[j] for j in range(15,21))):
