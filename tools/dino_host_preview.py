@@ -47,7 +47,7 @@ class HostArena:
         self.temp=tempfile.TemporaryDirectory(prefix='dino-native-host-')
         self.path=Path(self.temp.name)/'dinohost.so'
         sources=['source/dino_arena.c','source/dino_sfx.c',
-                 'tools/dino_host_bridge.c']
+                 'source/dino_replay.c','tools/dino_host_bridge.c']
         cmd=[compiler,'-std=c11','-O2','-Wall','-Wextra','-Werror',
              '-fPIC','-shared','-Isource',
              *(str(ROOT/x) for x in sources),'-o',str(self.path)]
@@ -58,6 +58,7 @@ class HostArena:
         self.dll=ctypes.CDLL(str(self.path))
         self.dll.dino_host_reset.argtypes=[]
         self.dll.dino_host_step.argtypes=[ctypes.c_uint32,ctypes.c_uint32]
+        self.dll.dino_host_demo_step.argtypes=[ctypes.c_uint32]
         self.dll.dino_host_status.argtypes=[ctypes.POINTER(Status)]
         self.dll.dino_host_render.argtypes=[
             ctypes.POINTER(ctypes.c_uint8),ctypes.c_size_t]
@@ -73,6 +74,11 @@ class HostArena:
     def step(self,held=0,pressed=0):
         self.dll.dino_host_step(held,pressed)
 
+    def demo_step(self,tick):
+        # The replay decisions come directly from the same portable C
+        # routine compiled into the Switch NRO. No duplicate Python script.
+        self.dll.dino_host_demo_step(tick)
+
     def status(self):
         item=Status()
         self.dll.dino_host_status(ctypes.byref(item))
@@ -86,24 +92,13 @@ class HostArena:
         return f'P6\n{WIDTH} {HEIGHT}\n255\n'.encode()+self.render_rgb()
 
 
-def demo_input(t):
-    """Designed 180-frame scenario of locomotion, combo, sparring and jump."""
-    held=RIGHT if t<70 else 0
-    pressed=(ATTACK if t in (75,90,105,148) else 0)
-    if t==130:
-        pressed|=SPAR
-    if t==155:
-        pressed|=JUMP
-    return held,pressed
-
-
 def headless(ticks=180,out_frame=None):
     if not isinstance(ticks,int) or not 1<=ticks<=3600:
         raise ValueError('ticks must be within 1..3600')
     engine=HostArena()
     try:
         for t in range(ticks):
-            engine.step(*demo_input(t))
+            engine.demo_step(t)
         state=engine.status()
         frame=engine.render_rgb()
         if out_frame is not None:
