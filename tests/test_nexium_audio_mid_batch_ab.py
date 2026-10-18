@@ -335,8 +335,8 @@ class ExperimentalABTests(unittest.TestCase):
         baseline=complete(False)
         experimental=complete(True)
         windows=experimental['checkpoint_release_position_intervals']
-        windows[0]['batched_later_released_pages']+=2
-        windows[1]['batched_later_released_pages']-=2
+        windows[0]['batched_later_released_pages']+=1
+        windows[1]['batched_later_released_pages']-=1
         # Test descriptive arithmetic separately; this fixture is not
         # asserted to be a valid complete guest timing ledger.
         result=ab.compare_batch_exposure(baseline,experimental)
@@ -345,7 +345,7 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertEqual(
             [w['extra_minus_baseline_later_page_returns']
              for w in result['matched_exposure_later_ack_window_deltas']],
-            [2,-2,0,0,0,0])
+            [1,-1,0,0,0,0])
         self.assertEqual(result['matched_exposure_later_ack_windows_increased'],1)
         self.assertEqual(result['matched_exposure_later_ack_windows_decreased'],1)
         self.assertTrue(result['matched_exposure_later_ack_directions_mixed'])
@@ -398,8 +398,8 @@ class ExperimentalABTests(unittest.TestCase):
         baseline=complete(False)
         experimental=complete(True,1)
         windows=experimental['checkpoint_release_position_intervals']
-        windows[0]['batched_later_released_pages']+=2
-        windows[1]['batched_later_released_pages']-=2
+        windows[0]['batched_later_released_pages']+=1
+        windows[1]['batched_later_released_pages']-=1
         profile=ab.compare_batch_exposure(baseline,experimental)
         self.assertTrue(profile['per_150tick_batch_exposure_matched'])
         self.assertEqual(profile['matched_exposure_later_ack_count_delta'],0)
@@ -432,6 +432,8 @@ class ExperimentalABTests(unittest.TestCase):
         experimental['checkpoint_release_position_intervals'][4][
             'batched_later_released_pages']+=1
         experimental['batched_later_released_pages']+=1
+        experimental['audout_blocks_released']+=1
+        experimental['queue_pending_at_stress_end']-=1
         # This is a focused arithmetic helper test, not a full guest ledger.
         profile=ab.compare_batch_exposure(baseline,experimental)
         self.assertTrue(profile['per_150tick_batch_exposure_matched'])
@@ -748,11 +750,18 @@ class ExperimentalABTests(unittest.TestCase):
                     ab.compare_batch_exposure(complete(False),broken)
 
     def test_final_queue_is_an_outcome_not_a_matching_prerequisite(self):
-        # Helper-only arithmetic: a different submitted count changes
-        # ending occupancy but not initial occupancy or per-position ACKs.
-        # This intentionally does NOT represent a valid full guest ledger.
+        # One fewer single-frame skip admits one extra page during the
+        # last window. The changed final occupancy is an outcome, not a
+        # prerequisite for comparing initial states and page returns.
         baseline=complete(False)
         experimental=complete(True,1)
+        experimental['checkpoint_mode_intervals'][5][
+            'skips_in_single_tick_render_frames']-=1
+        experimental['checkpoint_mode_intervals'][5]['full_queue_skips']-=1
+        experimental['checkpoint_skipped_deltas'][5]-=1
+        experimental['skips_in_single_tick_render_frames']-=1
+        experimental['full_queue_skips']-=1
+        experimental['audout_blocks_skipped']-=1
         experimental['audout_blocks_submitted']+=1
         experimental['queue_pending_at_stress_end']+=1
         result=ab.compare_batch_exposure(baseline,experimental)
@@ -761,6 +770,56 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertEqual(
             result['matched_exposure_and_returns_later_skip_count_delta'],-6)
         self.assertFalse(result['exact_frame_pacing_matched'])
+
+    def test_queue_checkpoints_conserve_all_six_windows(self):
+        result=ab.compare(self.a,self.b)
+        for name in ('baseline_queue_150tick_boundaries',
+                     'experimental_queue_150tick_boundaries'):
+            rows=result[name]
+            self.assertEqual(len(rows),6)
+            self.assertEqual([w['tick_end'] for w in rows],
+                             [150,300,450,600,750,900])
+            self.assertEqual([w['pending_at_start'] for w in rows],[1]*6)
+            self.assertEqual([w['pending_at_end'] for w in rows],[1]*6)
+            self.assertEqual([w['submitted_in_window'] for w in rows],[100]*6)
+            self.assertEqual([w['released_in_window'] for w in rows],[100]*6)
+
+    def test_queue_checkpoint_rejects_impossible_transient_occupancy(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        windows=experimental['checkpoint_release_position_intervals']
+        windows[0]['batched_later_released_pages']+=2
+        windows[1]['batched_later_released_pages']-=2
+        # Overall releases and queue endpoints still reconcile, but the
+        # first window would leave a negative number of pending pages.
+        with self.assertRaisesRegex(ValueError,'outside two slots'):
+            ab.compare_batch_exposure(baseline,experimental)
+
+    def test_queue_checkpoint_rejects_forged_global_submission_count(self):
+        broken=complete(True,1)
+        broken['audout_blocks_submitted']+=1
+        broken['queue_pending_at_stress_end']+=1
+        # Endpoint arithmetic alone is plausible; the six window-derived
+        # admissions cannot explain the global submitted count.
+        with self.assertRaisesRegex(ValueError,'boundaries do not reconcile'):
+            ab.compare_batch_exposure(complete(False),broken)
+
+    def test_queue_boundaries_accept_guest_preexisting_ack(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        experimental['queue_pending_at_stress_start']=2
+        experimental['queue_pending_at_stress_end']=1
+        experimental['audout_blocks_released']+=1
+        experimental['single_frame_released_pages']+=1
+        experimental['checkpoint_release_position_intervals'][5][
+            'single_frame_released_pages']+=1
+        result=ab.compare_batch_exposure(baseline,experimental)
+        ends=[w['pending_at_end']
+              for w in result['experimental_queue_150tick_boundaries']]
+        self.assertEqual(ends,[2,2,2,2,2,1])
+        self.assertFalse(result['matched_exposure_initial_queue_occupancy_matched'])
+        self.assertIsNone(
+            result['matched_exposure_and_returns_later_skip_count_delta'])
 
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
