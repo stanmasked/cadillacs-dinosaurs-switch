@@ -2,6 +2,8 @@
 import csv
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -161,6 +163,20 @@ class OrderedHidTimelineTests(unittest.TestCase):
         self.path.write_bytes(b'X'*1025)
         with self.assertRaises(ValueError):
             checker.verify(self.path)
+
+    def test_direct_script_mode_works_outside_tools_package(self):
+        self.path.unlink()
+        output = self.root / 'direct-mode.json'
+        script = Path(__file__).resolve().parents[1] / 'tools' / 'verify_nexium_hid_timeline.py'
+        proc = subprocess.run(
+            [sys.executable, str(script), '--report', str(self.path),
+             '--summary', str(self.summary), '--out', str(output)],
+            cwd=self.root, capture_output=True, text=True, check=False)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = json.loads(output.read_text())
+        self.assertEqual(report['status'],
+                         'INCONCLUSIVE_NO_ORDERED_GUEST_HID_TRACE')
+        self.assertFalse(report['host_to_guest_latency_verified'])
 
     def test_cli_inconclusive_never_reports_paths_or_latency(self):
         self.path.unlink()
