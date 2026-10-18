@@ -161,6 +161,20 @@ The actual Switch NRO's frozen replay frame now displays
 `--headless --ticks 180` JSON also reports
 `gameplay_witness_fnv64` produced by the exact same portable C.
 The two values should match after the same 180 replay steps.
+
+The verified native-C stage-127 reference is:
+
+```text
+C REPLAY 180/180 DONE
+STATE FNV64 5BCA2FF01FB244F6
+HP 4   HITS 3   SPAR ON
+```
+
+The code was independently captured in the GitHub Actions
+`host-witness.json` and is locked in a Python regression and the
+ROM-free visual smoke workflow. Treat a different on-emulator digest
+as a simulation/state mismatch even if the characters visually look
+right. A matching digest is not proof of emulator sound or GPU pixels.
 This will help distinguish state divergence from renderer-only
 differences when a compatible Switch emulator becomes available.
 
