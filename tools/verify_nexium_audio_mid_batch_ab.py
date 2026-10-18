@@ -434,6 +434,12 @@ def main(argv=None):
     args=p.parse_args(argv)
     try:
         report=compare(args.baseline,args.experimental)
+        line=json.dumps(report,sort_keys=True)+'\n'
+        if args.out is not None:
+            # No user-provided guest observation or older comparison may
+            # be replaced, including through an existing symlink.
+            with args.out.open('x',encoding='ascii') as output:
+                output.write(line)
     except (ValueError,OSError,TypeError,KeyError,UnicodeError,OverflowError) as exc:
         report={
             'schema':'dino-audout-opt-in-mid-batch-ab-descriptive-v2',
@@ -444,12 +450,10 @@ def main(argv=None):
             'audio_latency_verified':False,
         }
         code=1
+        line=json.dumps(report,sort_keys=True)+'\n'
     else:
         code=0
-    line=json.dumps(report,sort_keys=True)+'\n'
     print(line,end='')
-    if args.out:
-        args.out.write_text(line,encoding='ascii')
     return code
 
 
