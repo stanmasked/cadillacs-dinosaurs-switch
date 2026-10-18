@@ -354,7 +354,21 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
         }
     }
 
-    rectangle(frame,pitch,0,661,1280,59,rgb(11,18,29));
+    /* Technical on-console diagnostics, not actual measured latency:
+     * these are logical blocks submitted, acknowledged or discarded. */
+    DinoSoundDiagnostics audio;
+    dino_switch_sound_diagnostics(&audio);
+    rectangle(frame,pitch,0,626,1280,94,rgb(11,18,29));
+    char audio_line[155];
+    snprintf(audio_line,sizeof(audio_line),
+             "AUDIO %s  QUEUED %u/2  SENT %u  RELEASED %u  SKIPPED %u  ERRORS %u",
+             !audio.queue_valid?"INVALID":audio.active?"ON":"OFF",
+             (unsigned)audio.pending,(unsigned)audio.submitted,
+             (unsigned)audio.released,(unsigned)audio.skipped,
+             (unsigned)audio.audio_errors);
+    label(frame,pitch,52,638,audio_line,1,
+          audio.active && audio.queue_valid?rgb(145,224,166):
+                                              rgb(251,190,130));
     char status[140];
     snprintf(status,sizeof(status),
              "PLAYER %s HP %u  ENEMY %s HP %u  COMBO %u/3  HITS %03u  %s",
