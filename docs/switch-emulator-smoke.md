@@ -547,3 +547,40 @@ Unaltered guest HID and original 180-tick replay checks still gate
 the interpretation. This strengthening does not replace or re-label
 the independently confirmed stage-135 numbers as frequency-verified:
 those earlier measurements were threshold-only.
+
+
+## Stage 137 — 900-tick native audout queue stability after actual HID
+
+After the ROM-free NRO's independently proven 180-tick replay and
+genuine reset/right/attack/jump/spar input, the **same running ARM64
+guest** records 900 additional fixed-60Hz arena/audio steps (15 seconds
+of nominal simulation time), without requiring original game assets.
+
+At the actual guest start, and after every 150 more steps, it writes
+a short CSV checkpoint containing the arena tick, synthesized audio tick,
+PCM tick, the running PCM checksum, audout service state, pending queue
+pages, submitted and released buffers, skipped blocks, and backend errors.
+There are exactly seven rows: START, five CHECKPOINTs, STRESS_DONE.
+No waveform data, keyboard history, absolute host timestamps, ROM
+resources or user-owned paths are published.
+
+The separately tested validator checks that every 150-tick segment
+actually advances the *guest simulation*, the synth and the PCM checksum;
+that each generated tick is either submitted or dropped, not both; that
+the libnx bookkeeping remains balanced (submitted - released = pending)
+and never admits more than two simultaneously outstanding pages; that
+submission continues in every segment; and that the audout service stays
+active with no added errors. It also binds the stress evidence to the
+previously verified native controller and ordered combat events.
+Missing endpoints, a frozen clock, a stopped service, a stalled buffer
+queue or contradictory statistics produce an explicit INCONCLUSIVE
+result, even if the earlier shorter gameplay test was successful.
+
+Passing this guest-side workload establishes only consistency of the
+audio adapter and its bounded admission policy for this trial. It does
+not prove that the host virtual sink or physical Switch speakers heard
+every sound, that no audio buffer underrun occurred (skipped counters
+are reported), that real-time wall-clock scheduling was sustained, or
+that the original commercial arcade game was executed. A successful
+900-tick count is simulation progress rather than 15 seconds measured
+by external timing equipment.
