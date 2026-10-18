@@ -310,6 +310,70 @@ class ExperimentalABTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ab.exposure_profile(report)
 
+    def test_matched_return_schedule_preserves_only_descriptive_skip_delta(self):
+        result=ab.compare(self.a,self.b)
+        self.assertTrue(result['per_150tick_batch_exposure_matched'])
+        self.assertTrue(result['matched_exposure_later_return_counts_matched'])
+        self.assertFalse(
+            result['matched_exposure_return_shift_confounds_skip_comparison'])
+        self.assertEqual(
+            result['matched_exposure_and_returns_later_skip_count_delta'],-6)
+        self.assertEqual(len(
+            result['matched_exposure_and_returns_later_skip_window_deltas']),6)
+        self.assertFalse(result['exact_frame_pacing_matched'])
+        self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_reallocated_acks_hide_behind_unchanged_total_and_exposure(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        windows=experimental['checkpoint_release_position_intervals']
+        windows[0]['batched_later_released_pages']+=2
+        windows[1]['batched_later_released_pages']-=2
+        profile=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(profile['per_150tick_batch_exposure_matched'])
+        self.assertEqual(profile['matched_exposure_later_ack_count_delta'],0)
+        self.assertEqual(profile['matched_exposure_later_skip_count_delta'],-6)
+        self.assertFalse(profile['matched_exposure_later_return_counts_matched'])
+        self.assertTrue(
+            profile['matched_exposure_return_shift_confounds_skip_comparison'])
+        self.assertIsNone(
+            profile['matched_exposure_and_returns_later_skip_count_delta'])
+        self.assertIsNone(
+            profile['matched_exposure_and_returns_later_skip_window_deltas'])
+
+    def test_exposure_drift_cannot_validate_page_return_schedule(self):
+        baseline=complete(False)
+        experimental=complete(True)
+        experimental['checkpoint_batch_position_intervals'][0][
+            'later_tick_steps']=24
+        experimental['checkpoint_batch_position_intervals'][0][
+            'first_tick_steps']=24
+        experimental['checkpoint_mode_intervals'][0][
+            'single_tick_render_steps']=102
+        profile=ab.compare_batch_exposure(baseline,experimental)
+        self.assertFalse(profile['per_150tick_batch_exposure_matched'])
+        self.assertIsNone(profile['matched_exposure_later_return_counts_matched'])
+        self.assertIsNone(
+            profile['matched_exposure_return_shift_confounds_skip_comparison'])
+        self.assertIsNone(
+            profile['matched_exposure_and_returns_later_skip_count_delta'])
+        self.assertIsNone(
+            profile['matched_exposure_and_returns_later_skip_window_deltas'])
+
+    def test_one_extra_page_return_also_nulls_strict_skip_delta(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        experimental['checkpoint_release_position_intervals'][4][
+            'batched_later_released_pages']+=1
+        experimental['batched_later_released_pages']+=1
+        # This is a focused arithmetic helper test, not a full guest ledger.
+        profile=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(profile['per_150tick_batch_exposure_matched'])
+        self.assertEqual(profile['matched_exposure_later_ack_count_delta'],1)
+        self.assertFalse(profile['matched_exposure_later_return_counts_matched'])
+        self.assertIsNone(
+            profile['matched_exposure_and_returns_later_skip_count_delta'])
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
