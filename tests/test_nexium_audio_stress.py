@@ -248,7 +248,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
         ok=subprocess.run(cmd,cwd=self.root,capture_output=True,text=True)
         self.assertEqual(ok.returncode,0,ok.stderr)
         self.assertEqual(json.loads(self.out.read_text())['status'],
-                         'GUEST_900TICK_AUDOUT_SKIP_REASONS_WITNESSED')
+                         'GUEST_900TICK_AUDOUT_FRAME_BATCH_CORRELATION_WITNESSED')
         self.path.unlink()
         fail=subprocess.run(cmd,cwd=self.root,capture_output=True,text=True)
         self.assertEqual(fail.returncode,0,fail.stderr)
