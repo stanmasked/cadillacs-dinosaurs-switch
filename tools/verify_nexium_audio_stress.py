@@ -124,7 +124,7 @@ def verify(path, guest_timeline, guest_controller):
                 row[25]+row[26]!=row[18] or
                 row[25]>row[23] or row[26]>row[24] or
                 row[23]>row[19] or row[19]-row[23]>1):
-            raise ValueError('batched tick position attribution mismatch')
+            raise ValueError('batched tick position interval attribution mismatch')
         if idx>0 and row[14]<prev[14]:
             raise ValueError('maximum consecutive skip streak decreased')
         # Backend remained active at all checkpoints. A transient
