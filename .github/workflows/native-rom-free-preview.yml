@@ -8,17 +8,21 @@ on:
     paths:
       - 'source/dino_arena.*'
       - 'source/dino_sfx.*'
+      - 'source/dino_replay.*'
       - 'tools/dino_host_bridge.c'
       - 'tools/dino_host_preview.py'
       - 'tests/test_dino_host_preview.py'
+      - 'tests/test_dino_replay.py'
       - '.github/workflows/native-rom-free-preview.yml'
   pull_request:
     paths:
       - 'source/dino_arena.*'
       - 'source/dino_sfx.*'
+      - 'source/dino_replay.*'
       - 'tools/dino_host_bridge.c'
       - 'tools/dino_host_preview.py'
       - 'tests/test_dino_host_preview.py'
+      - 'tests/test_dino_replay.py'
       - '.github/workflows/native-rom-free-preview.yml'
 
 permissions:
@@ -30,8 +34,10 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Verify host C gameplay integration
-        run: python3 -m unittest discover -s tests -p 'test_dino_host_preview.py' -v
+      - name: Verify host C gameplay and shared Switch replay contract
+        run: |
+          python3 -m unittest discover -s tests -p 'test_dino_host_preview.py' -v
+          python3 -m unittest discover -s tests -p 'test_dino_replay.py' -v
       - name: Render independently authored practice-room witness
         run: |
           mkdir -p rom-free-preview
