@@ -614,6 +614,22 @@ class MultiRunAudioTests(unittest.TestCase):
         shift=5-later_ack_per_window
         if not 0<=later_ack_per_window<=5:
             raise ValueError('unsupported synthetic test delta')
+        if later_ack_per_window==0:
+            # Original Stage 146 fixture has one later-tick recovery per
+            # window. A zero-page-return witness cannot retain that ACK.
+            # Move the *same* full+recovered poll event to the first
+            # batch tick, leaving first/later skip counts unchanged.
+            poll_windows=record[
+                'checkpoint_batch_position_poll_intervals']
+            for w in poll_windows:
+                w['first_full_before_poll']+=1
+                w['first_recovered_after_poll']+=1
+                w['later_full_before_poll']-=1
+                w['later_recovered_after_poll']-=1
+            record['batched_first_full_before_poll']+=6
+            record['batched_first_recovered_after_poll']+=6
+            record['batched_later_full_before_poll']-=6
+            record['batched_later_recovered_after_poll']-=6
         record['single_frame_released_pages']+=6*shift
         record['batched_later_released_pages']-=6*shift
         for window in record['checkpoint_release_position_intervals']:
