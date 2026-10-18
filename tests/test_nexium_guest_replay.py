@@ -15,11 +15,14 @@ class NeXiumGuestEvidenceContractTests(unittest.TestCase):
         self.file=Path(self.temp.name)/'synthetic-replay.csv'
         self.rows=[
             ['START','0','90','5','0','CBF29CE484222325',
-             'CBF29CE484222325','0'],
+             'CBF29CE484222325','0',
+             '0','1','1','0','0','0','0','0'],
             ['FRAME_SUBMITTED','1','92','5','0','0123456789ABCDEF',
-             'CBF29CE484222325','1'],
+             'CBF29CE484222325','1',
+             '1','1','1','1','1','0','0','0'],
             ['REPLAY_DONE','180','230','4','3',verifier.EXPECTED_STATE,
-             verifier.EXPECTED_PCM,'180'],
+             verifier.EXPECTED_PCM,'180',
+             '180','1','1','2','120','118','60','0'],
         ]
         self.write()
 
@@ -37,6 +40,11 @@ class NeXiumGuestEvidenceContractTests(unittest.TestCase):
         self.assertEqual(result['status'],'GUEST_REPLAY_WITNESSED')
         self.assertTrue(result['guest_frame_submitted'])
         self.assertEqual(result['guest_controller_trace_steps'],180)
+        self.assertTrue(result['guest_audio_queue_valid'])
+        self.assertTrue(result['guest_audio_service_active_at_end'])
+        self.assertEqual(result['guest_audio_submitted_at_end'],120)
+        self.assertEqual(result['guest_audio_released_at_end'],118)
+        self.assertEqual(result['guest_audio_skipped_at_end'],60)
         self.assertFalse(result['device_audio_audible_verified'])
         self.assertFalse(result['host_screen_pixels_verified'])
 
@@ -92,6 +100,75 @@ class NeXiumGuestEvidenceContractTests(unittest.TestCase):
             return
         with self.assertRaises(ValueError):
             verifier.verify(alias)
+
+
+    def test_audio_queue_pending_and_release_invariants(self):
+        for index, bad in ((11,'3'),(11,'1'),(12,'181'),
+                           (13,'121'),(13,'-1'),(14,'181')):
+            with self.subTest(index=index,bad=bad):
+                previous=self.rows[2][index]
+                self.rows[2][index]=bad
+                self.write()
+                with self.assertRaises(ValueError):
+                    verifier.verify(self.file)
+                self.rows[2][index]=previous
+
+    def test_guest_audio_tick_count_follows_simulation(self):
+        for row_index in (0,1,2):
+            with self.subTest(row=row_index):
+                previous=self.rows[row_index][8]
+                self.rows[row_index][8]='178'
+                self.write()
+                with self.assertRaises(ValueError):
+                    verifier.verify(self.file)
+                self.rows[row_index][8]=previous
+
+    def test_audio_service_flags_and_error_bounds(self):
+        for index,bad in ((9,'2'),(10,'0'),(15,'182'),(15,'-1')):
+            with self.subTest(index=index,bad=bad):
+                previous=self.rows[2][index]
+                self.rows[2][index]=bad
+                self.write()
+                with self.assertRaises(ValueError):
+                    verifier.verify(self.file)
+                self.rows[2][index]=previous
+
+    def test_valid_silent_fallback_does_not_claim_sound(self):
+        # No host sound card is required for the generated-PCM witness.
+        for index,row in enumerate(self.rows):
+            ticks=int(row[1])
+            row[9]='0'    # audout unavailable
+            row[11]='0'   # pending
+            row[12]='0'   # submitted
+            row[13]='0'   # released
+            row[14]=str(ticks)  # all generated ticks discarded
+            row[15]='1'   # failed initialization recorded
+        self.write()
+        got=verifier.verify(self.file)
+        self.assertEqual(got['guest_audio_submitted_at_end'],0)
+        self.assertEqual(got['guest_audio_skipped_at_end'],180)
+        self.assertFalse(got['guest_audio_service_active_at_end'])
+        self.assertFalse(got['device_audio_audible_verified'])
+
+    def test_idle_audio_backend_cannot_have_pending_buffers(self):
+        self.rows[2][9]='0'
+        self.write()
+        with self.assertRaises(ValueError):
+            verifier.verify(self.file)
+
+    def test_audio_fields_must_be_complete_numeric_and_ordered(self):
+        for bad in ('oops','','+1','1.1'):
+            with self.subTest(bad=bad):
+                old=self.rows[2][12]
+                self.rows[2][12]=bad
+                self.write()
+                with self.assertRaises(ValueError):
+                    verifier.verify(self.file)
+                self.rows[2][12]=old
+        self.write(columns=verifier.COLUMNS[:8]+
+                   list(reversed(verifier.COLUMNS[8:])))
+        with self.assertRaises(ValueError):
+            verifier.verify(self.file)
 
     def test_cli_returns_inconclusive_with_only_safe_generic_message(self):
         self.rows[2][5]='BADHASH'
