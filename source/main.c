@@ -440,6 +440,27 @@ static void fallback_text(PadState *pad) {
 /* Real ARM64 guest-only telemetry: PCM synthesis, libnx queue admission
  * and actual speaker playback must remain three distinct claims.
  * This is excluded from the normal player-facing homebrew build. */
+/* 900 simulated ticks (15 seconds at target 60 Hz) AFTER real guest
+ * controller actions. Never infer emulator wall-time or audibility. */
+enum { DINO_GUEST_AUDIO_STRESS_TICKS=900,
+       DINO_GUEST_AUDIO_STRESS_PERIOD=150 };
+static void guest_audio_stress_row(FILE *stream, const char *event,
+                                   uint32_t elapsed, const DinoArena *arena) {
+    DinoSoundDiagnostics stats;
+    dino_switch_sound_diagnostics(&stats);
+    fprintf(stream,
+            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX\n",
+            event,(unsigned)elapsed,(unsigned)arena->ticks,
+            (unsigned)stats.simulated_ticks,
+            (unsigned)dino_switch_sound_pcm_ticks(),
+            (unsigned)stats.active,(unsigned)stats.queue_valid,
+            (unsigned)stats.pending,(unsigned)stats.submitted,
+            (unsigned)stats.released,(unsigned)stats.skipped,
+            (unsigned)stats.audio_errors,
+            (unsigned long long)dino_switch_sound_pcm_witness());
+    fflush(stream);
+}
+
 static void guest_report_row(FILE *stream, const char *event,
                              uint32_t ticks, const DinoArena *arena,
                              uint64_t state_witness) {
@@ -538,6 +559,10 @@ int main(int argc, char **argv) {
      * Tick values are guest simulation time, NOT host input latency. */
     FILE *guest_hid_timeline=NULL;
     uint32_t guest_hid_phase=0;
+    FILE *guest_audio_stress=NULL;
+    uint32_t guest_audio_stress_start=0;
+    uint32_t guest_audio_stress_next=DINO_GUEST_AUDIO_STRESS_PERIOD;
+    bool guest_audio_stress_done=false;
     if (arena_active) {
         (void)fsdevMountSdmc();
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
@@ -730,6 +755,42 @@ int main(int argc, char **argv) {
                     demo_witness=dino_replay_witness_tick(demo_witness,&arena);
                 /* Consume precisely the event from this simulated tick. */
                 dino_switch_sound_step(arena.events);
+#ifdef DINO_EMULATOR_SELFTEST
+                if (guest_controller_done && !guest_audio_stress_done) {
+                    /* The completed native Y/Right/A/B/X HID witness,
+                     * not the built-in 180-tick replay, triggers this. */
+                    if (!guest_audio_stress) {
+                        guest_audio_stress=fopen(
+                            "sdmc:/cadillacs-audio-stress.csv","w");
+                        if (guest_audio_stress) {
+                            fputs("event,elapsed_ticks,arena_ticks,audio_ticks,"
+                                  "pcm_ticks,active,queue_valid,pending,"
+                                  "submitted,released,skipped,audio_errors,"
+                                  "pcm_fnv64\n",guest_audio_stress);
+                            guest_audio_stress_start=arena.ticks;
+                            guest_audio_stress_row(guest_audio_stress,
+                                                   "START",0u,&arena);
+                        }
+                    } else {
+                        uint32_t elapsed=arena.ticks-guest_audio_stress_start;
+                        if (elapsed==guest_audio_stress_next) {
+                            guest_audio_stress_row(
+                                guest_audio_stress,
+                                elapsed==DINO_GUEST_AUDIO_STRESS_TICKS
+                                    ? "STRESS_DONE" : "CHECKPOINT",
+                                elapsed,&arena);
+                            if (elapsed==DINO_GUEST_AUDIO_STRESS_TICKS) {
+                                guest_audio_stress_done=true;
+                                fclose(guest_audio_stress);
+                                guest_audio_stress=NULL;
+                            } else {
+                                guest_audio_stress_next+=
+                                    DINO_GUEST_AUDIO_STRESS_PERIOD;
+                            }
+                        }
+                    }
+                }
+#endif
                 if (demo_active && ++demo_ticks==DINO_REPLAY_TICKS) {
                     demo_active=false;
                     demo_complete=true;
@@ -829,6 +890,7 @@ int main(int argc, char **argv) {
     if (guest_witness) fclose(guest_witness);
     if (guest_controller_witness) fclose(guest_controller_witness);
     if (guest_hid_timeline) fclose(guest_hid_timeline);
+    if (guest_audio_stress) fclose(guest_audio_stress);
 #endif
     dino_switch_sound_close();
     framebufferClose(&fb);
