@@ -44,6 +44,8 @@ on:
       - 'tests/test_nexium_audio_controlled_mock.py'
       - 'tools/verify_nexium_audio_controlled_oracle.py'
       - 'tests/test_nexium_audio_controlled_oracle.py'
+      - 'tools/nexium_audio_release_corpus.py'
+      - 'tests/test_nexium_audio_release_corpus.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -76,6 +78,8 @@ on:
       - 'tests/test_nexium_audio_controlled_mock.py'
       - 'tools/verify_nexium_audio_controlled_oracle.py'
       - 'tests/test_nexium_audio_controlled_oracle.py'
+      - 'tools/nexium_audio_release_corpus.py'
+      - 'tests/test_nexium_audio_release_corpus.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -271,6 +275,15 @@ jobs:
             --plan controlled-host-audout-plan.json \
             --result controlled-host-audout-result.json \
             --out controlled-host-audout-oracle.json
+          python3 tools/nexium_audio_release_corpus.py \
+            --out controlled-host-release-corpus-plan.json
+          DINO_CONTROLLED_AUDOUT_CORPUS_PLAN=controlled-host-release-corpus-plan.json \
+            DINO_CONTROLLED_AUDOUT_CORPUS_RESULT=controlled-host-release-corpus-result.json \
+            python3 -m unittest discover -s tests -p 'test_nexium_audio_release_corpus.py' -v
+          python3 tools/nexium_audio_release_corpus.py \
+            --corpus controlled-host-release-corpus-plan.json \
+            --result controlled-host-release-corpus-result.json \
+            --out controlled-host-release-corpus-attestation.json
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -301,5 +314,8 @@ jobs:
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json
+            controlled-host-release-corpus-plan.json
+            controlled-host-release-corpus-result.json
+            controlled-host-release-corpus-attestation.json
           if-no-files-found: warn
           retention-days: 7
