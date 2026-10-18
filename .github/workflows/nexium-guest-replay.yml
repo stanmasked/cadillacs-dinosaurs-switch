@@ -42,6 +42,8 @@ on:
       - 'tests/test_nexium_audio_paired_artifacts.py'
       - 'tools/nexium_audio_control_plan.py'
       - 'tests/test_nexium_audio_controlled_mock.py'
+      - 'tools/verify_nexium_audio_controlled_oracle.py'
+      - 'tests/test_nexium_audio_controlled_oracle.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -72,6 +74,8 @@ on:
       - 'tests/test_nexium_audio_paired_artifacts.py'
       - 'tools/nexium_audio_control_plan.py'
       - 'tests/test_nexium_audio_controlled_mock.py'
+      - 'tools/verify_nexium_audio_controlled_oracle.py'
+      - 'tests/test_nexium_audio_controlled_oracle.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -262,6 +266,11 @@ jobs:
           DINO_CONTROLLED_AUDOUT_RESULT=controlled-host-audout-result.json \
             python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_mock.py' -v
           python3 tools/nexium_audio_control_plan.py --out controlled-host-audout-plan.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_oracle.py' -v
+          python3 tools/verify_nexium_audio_controlled_oracle.py \
+            --plan controlled-host-audout-plan.json \
+            --result controlled-host-audout-result.json \
+            --out controlled-host-audout-oracle.json
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -291,5 +300,6 @@ jobs:
             paired-audio-comparison.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
+            controlled-host-audout-oracle.json
           if-no-files-found: warn
           retention-days: 7
