@@ -444,12 +444,19 @@ static void fallback_text(PadState *pad) {
  * controller actions. Never infer emulator wall-time or audibility. */
 enum { DINO_GUEST_AUDIO_STRESS_TICKS=900,
        DINO_GUEST_AUDIO_STRESS_PERIOD=150 };
+typedef struct {
+    uint32_t single_ticks, batched_ticks;
+    uint32_t single_skips, batched_skips;
+    uint32_t batched_frames, largest_batch;
+    uint32_t previous_skips, previous_frame_id;
+} DinoGuestBatchStats;
 static void guest_audio_stress_row(FILE *stream, const char *event,
-                                   uint32_t elapsed, const DinoArena *arena) {
+                                   uint32_t elapsed, const DinoArena *arena,
+                                   const DinoGuestBatchStats *batch) {
     DinoSoundDiagnostics stats;
     dino_switch_sound_diagnostics(&stats);
     fprintf(stream,
-            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u\n",
+            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
             event,(unsigned)elapsed,(unsigned)arena->ticks,
             (unsigned)stats.simulated_ticks,
             (unsigned)dino_switch_sound_pcm_ticks(),
@@ -461,7 +468,13 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
             (unsigned)stats.full_queue_skips,
             (unsigned)stats.inactive_backend_skips,
             (unsigned)stats.unexpected_slot_skips,
-            (unsigned)stats.max_consecutive_skips);
+            (unsigned)stats.max_consecutive_skips,
+            (unsigned)batch->single_ticks,
+            (unsigned)batch->batched_ticks,
+            (unsigned)batch->single_skips,
+            (unsigned)batch->batched_skips,
+            (unsigned)batch->batched_frames,
+            (unsigned)batch->largest_batch);
     fflush(stream);
 }
 
@@ -567,6 +580,8 @@ int main(int argc, char **argv) {
     uint32_t guest_audio_stress_start=0;
     uint32_t guest_audio_stress_next=DINO_GUEST_AUDIO_STRESS_PERIOD;
     bool guest_audio_stress_done=false;
+    DinoGuestBatchStats guest_batch={0};
+    uint32_t guest_frame_id=0;
     if (arena_active) {
         (void)fsdevMountSdmc();
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
@@ -584,6 +599,9 @@ int main(int argc, char **argv) {
     if (gfx) cache_page(gfx,page);
     u64 last_tick=armGetSystemTick(), clock_carry=0;
     while (appletMainLoop()) {
+#ifdef DINO_EMULATOR_SELFTEST
+        ++guest_frame_id; /* render iteration ID, never host timing */
+#endif
         padUpdate(&pad);
         const u64 down=padGetButtonsDown(&pad);
         const u64 held=padGetButtons(&pad);
@@ -760,6 +778,29 @@ int main(int argc, char **argv) {
                 /* Consume precisely the event from this simulated tick. */
                 dino_switch_sound_step(arena.events);
 #ifdef DINO_EMULATOR_SELFTEST
+                if (guest_audio_stress && !guest_audio_stress_done) {
+                    /* Attribute the just-consumed guest audio tick to
+                     * the render iteration's scheduled batch size.
+                     * No sleeps, resampling or queue-policy changes. */
+                    DinoSoundDiagnostics audio_now;
+                    dino_switch_sound_diagnostics(&audio_now);
+                    const uint32_t skipped_now =
+                        audio_now.skipped-guest_batch.previous_skips;
+                    guest_batch.previous_skips=audio_now.skipped;
+                    if (arena_ticks>=2u) {
+                        ++guest_batch.batched_ticks;
+                        guest_batch.batched_skips+=skipped_now;
+                        if (guest_batch.previous_frame_id!=guest_frame_id) {
+                            ++guest_batch.batched_frames;
+                            guest_batch.previous_frame_id=guest_frame_id;
+                        }
+                    } else {
+                        ++guest_batch.single_ticks;
+                        guest_batch.single_skips+=skipped_now;
+                    }
+                    if (arena_ticks>guest_batch.largest_batch)
+                        guest_batch.largest_batch=arena_ticks;
+                }
                 if (guest_controller_done && !guest_audio_stress_done) {
                     /* The completed native Y/Right/A/B/X HID witness,
                      * not the built-in 180-tick replay, triggers this. */
@@ -772,10 +813,21 @@ int main(int argc, char **argv) {
                                   "submitted,released,skipped,audio_errors,"
                                   "pcm_fnv64,full_queue_skips,"
                                   "inactive_backend_skips,unexpected_slot_skips,"
-                                  "max_consecutive_skips\n",guest_audio_stress);
+                                  "max_consecutive_skips,single_frame_ticks,"
+                                  "batched_frame_ticks,single_frame_skips,"
+                                  "batched_frame_skips,batched_render_frames,"
+                                  "max_ticks_per_render_frame\n",
+                                  guest_audio_stress);
                             guest_audio_stress_start=arena.ticks;
+                            /* The START row follows the first sound step.
+                             * Correlate only the subsequent 900 steps. */
+                            DinoSoundDiagnostics at_start;
+                            dino_switch_sound_diagnostics(&at_start);
+                            guest_batch=(DinoGuestBatchStats){0};
+                            guest_batch.previous_skips=at_start.skipped;
                             guest_audio_stress_row(guest_audio_stress,
-                                                   "START",0u,&arena);
+                                                   "START",0u,&arena,
+                                                   &guest_batch);
                         }
                     } else {
                         uint32_t elapsed=arena.ticks-guest_audio_stress_start;
@@ -784,7 +836,7 @@ int main(int argc, char **argv) {
                                 guest_audio_stress,
                                 elapsed==DINO_GUEST_AUDIO_STRESS_TICKS
                                     ? "STRESS_DONE" : "CHECKPOINT",
-                                elapsed,&arena);
+                                elapsed,&arena,&guest_batch);
                             if (elapsed==DINO_GUEST_AUDIO_STRESS_TICKS) {
                                 guest_audio_stress_done=true;
                                 fclose(guest_audio_stress);
