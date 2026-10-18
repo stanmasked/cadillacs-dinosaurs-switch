@@ -115,7 +115,8 @@ class PairedGuestAudioTests(unittest.TestCase):
         data=bytearray(self.extra_nro.read_bytes())
         struct.pack_into('<I',data,0x18,0xffffffff)
         self.extra_nro.write_bytes(data)
-        self.write()
+        # Keep the original binding intact: the paired verifier must
+        # independently reject the corrupted NRO before comparing modes.
         with self.assertRaisesRegex(ValueError,'declared program size'):
             self.analyze()
 
