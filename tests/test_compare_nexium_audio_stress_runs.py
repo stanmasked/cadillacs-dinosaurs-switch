@@ -782,6 +782,19 @@ class MultiRunAudioTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             check.validate(sample)
 
+    def test_cross_run_comparison_accepts_bounded_initial_page_release(self):
+        baseline=fixture()
+        baseline['audout_blocks_released']+=1
+        baseline=with_fixed_ack_headroom(baseline,start=2)
+        comparison=with_fixed_ack_headroom(fixture(1),start=1)
+        self.save(self.one,baseline)
+        self.save(self.two,comparison)
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_fixed_ack_headroom_probe'],2)
+        self.assertTrue(result['all_reports_have_fixed_ack_headroom_probe'])
+        self.assertFalse(result['catchup_causality_verified'])
+        self.assertFalse(result['audio_latency_verified'])
+
     def test_fixed_ack_headroom_uses_actual_pending_at_start(self):
         self.save(self.one,with_fixed_ack_headroom(fixture(),1))
         self.save(self.two,with_fixed_ack_headroom(fixture(1),2))
