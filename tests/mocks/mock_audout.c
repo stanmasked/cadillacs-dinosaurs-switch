@@ -16,7 +16,8 @@ static Flight flights[MAX_FLIGHTS];
 static u32 pending_count, appended_count, released_count;
 static u32 release_credits, fault_mode, integrity_errors;
 static u32 flushes, stops, layout_ok;
-static bool started;
+static u32 poll_calls, empty_polls;
+static bool started, reverse_release, credit_after_empty;
 
 static uint64_t fingerprint(const void *base, size_t n) {
     const uint8_t *p=(const uint8_t *)base;
@@ -39,12 +40,20 @@ void mock_audout_reset(void) {
     memset(flights,0,sizeof(flights));
     pending_count=appended_count=released_count=0;
     release_credits=fault_mode=integrity_errors=0;
-    flushes=stops=0;
+    flushes=stops=poll_calls=empty_polls=0;
     layout_ok=1;
-    started=false;
+    started=reverse_release=credit_after_empty=false;
 }
 void mock_audout_grant_releases(u32 count) { release_credits=count; }
 void mock_audout_inject_bad_release(u32 mode) { fault_mode=mode; }
+void mock_audout_reverse_release_order(u32 enabled) {
+    reverse_release=(enabled!=0);
+}
+void mock_audout_credit_after_next_empty_poll(void) {
+    credit_after_empty=true;
+}
+u32 mock_audout_poll_calls(void) { return poll_calls; }
+u32 mock_audout_empty_polls(void) { return empty_polls; }
 u32 mock_audout_pending(void) { check_inflight();return pending_count; }
 u32 mock_audout_appended(void) { return appended_count; }
 u32 mock_audout_released(void) { return released_count; }
@@ -66,10 +75,12 @@ void audoutExit(void) {
     started=false;
     pending_count=0;
     release_credits=0;
+    credit_after_empty=false;
 }
 Result audoutGetReleasedAudioOutBuffer(AudioOutBuffer **released,u32 *count) {
     static AudioOutBuffer foreign;
     if (!released || !count) return -1;
+    ++poll_calls;
     check_inflight();
     *released=NULL;
     *count=0;
@@ -84,10 +95,21 @@ Result audoutGetReleasedAudioOutBuffer(AudioOutBuffer **released,u32 *count) {
         }
         return -1;
     }
-    if (!started || !release_credits || !pending_count) return 0;
-    *released=flights[0].buffer;
+    if (!started || !release_credits || !pending_count) {
+        ++empty_polls;
+        /* This fake release becomes available AFTER replying no-count.
+         * The unchanged adapter correctly stops polling for this tick. */
+        if (credit_after_empty && started && pending_count) {
+            release_credits=1;
+            credit_after_empty=false;
+        }
+        return 0;
+    }
+    const u32 index=reverse_release ? pending_count-1u : 0u;
+    *released=flights[index].buffer;
     *count=1;
-    for (u32 i=1;i<pending_count;++i) flights[i-1]=flights[i];
+    for (u32 i=index+1u;i<pending_count;++i)
+        flights[i-1u]=flights[i];
     flights[--pending_count]=(Flight){0};
     --release_credits;
     ++released_count;

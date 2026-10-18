@@ -871,3 +871,29 @@ Only host-side test files/docs are new. The user-facing NRO, libnx
 sound backend and game simulation are unchanged, with the existing
 two-buffer cap. No commercial ROM, private capture, source sprites or
 copyrighted gameplay recordings are committed.
+
+## Stage 150 — out-of-order and post-empty release guest-adapter tests
+
+The Stage 149 native Switch adapter mock tests and real NeXium guest run
+passed at commit 60a7b28a. Stage 150 extends the ROM-free **test-double
+only**, not the production audout implementation.
+
+The fake service can now return an acknowledged PCM page in reverse
+submission order (LIFO), preserving per-page original identities, or
+schedule an externally provided release credit **immediately after**
+answering an empty poll. The unchanged production adapter stops at its
+first empty response and can consume the new credit only on the
+following audio tick. Other tests mix FIFO/LIFO replies and fixed release
+credits across 120 deterministic ticks, ensure PCM backing storage for
+every unacknowledged page remains unchanged, enforce the pending<=2
+bound, and measure exact poll calls for draining two acknowledged pages
+in a single tick. The generated PCM witness remains identical regardless
+of mock scheduling and skip count.
+
+These controls are artificial host-test stimuli; a real audout backend
+may have different ordering and availability semantics. An empty poll
+does not guarantee an immediate future release, and repeated polling
+cannot manufacture credits without an external event. Nothing in this
+stage proves a real-world latency improvement, audible console sound,
+or CPS-1 game parity. There are no changes to gameplay timing, normal
+NRO binaries, or licensed ROM/assets.

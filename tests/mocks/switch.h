@@ -27,6 +27,11 @@ void armDCacheFlush(void *buffer, size_t size);
 void mock_audout_reset(void);
 void mock_audout_grant_releases(u32 count);
 void mock_audout_inject_bad_release(u32 mode);
+/* Test-only delivery order and asynchronous-ready-after-empty stimuli. */
+void mock_audout_reverse_release_order(u32 enabled);
+void mock_audout_credit_after_next_empty_poll(void);
+u32 mock_audout_poll_calls(void);
+u32 mock_audout_empty_polls(void);
 u32 mock_audout_pending(void);
 u32 mock_audout_appended(void);
 u32 mock_audout_released(void);

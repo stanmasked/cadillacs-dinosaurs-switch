@@ -59,11 +59,14 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
         cls.lib.dino_switch_sound_pcm_ticks.restype=ctypes.c_uint32
         cls.lib.mock_audout_grant_releases.argtypes=[ctypes.c_uint32]
         cls.lib.mock_audout_inject_bad_release.argtypes=[ctypes.c_uint32]
+        cls.lib.mock_audout_reverse_release_order.argtypes=[
+            ctypes.c_uint32]
         for name in (
                 'mock_audout_pending','mock_audout_appended',
                 'mock_audout_released','mock_audout_integrity_errors',
                 'mock_audout_flushes','mock_audout_stops',
-                'mock_audout_page_layout_ok'):
+                'mock_audout_page_layout_ok',
+                'mock_audout_poll_calls','mock_audout_empty_polls'):
             getattr(cls.lib,name).restype=ctypes.c_uint32
 
     @classmethod
@@ -204,6 +207,93 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
         self.assertEqual(self.state().audio_errors,start+1)
         self.assertEqual(self.state().active,0)
         self.assertEqual(self.lib.mock_audout_appended(),1)
+
+
+    def test_reverse_order_release_uses_actual_page_identity(self):
+        self.step(1<<3)
+        self.step(1<<4)
+        self.lib.mock_audout_reverse_release_order(1)
+        self.step(1<<6,releases=1)  # The most recently submitted page
+        self.assertEqual(self.delta('released'),1)
+        self.assertEqual(self.state().pending,2)
+        self.step(1<<2,releases=1)
+        self.assertEqual(self.delta('released'),2)
+        self.assertEqual(self.delta('submitted'),4)
+        self.assertEqual(self.delta('skipped'),0)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+        self.assertEqual(self.lib.mock_audout_page_layout_ok(),1)
+
+    def test_reverse_order_mixed_with_fifo_and_stalls_keeps_pages_owned(self):
+        for tick in range(120):
+            self.lib.mock_audout_reverse_release_order(tick % 2)
+            releases=2 if tick % 11 == 0 else (1 if tick % 3 == 0 else 0)
+            self.step(1<<(tick%10),releases=releases)
+        q=self.state()
+        self.assertEqual(self.delta('simulated_ticks'),120)
+        self.assertEqual(self.delta('submitted')+
+                         self.delta('skipped'),120)
+        self.assertEqual(self.delta('submitted')-
+                         self.delta('released'),q.pending)
+        self.assertEqual(q.audio_errors,self.baseline.audio_errors)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_two_distinct_release_acks_drained_before_next_submit(self):
+        self.step()
+        self.step()
+        before_calls=self.lib.mock_audout_poll_calls()
+        before_empty=self.lib.mock_audout_empty_polls()
+        self.step(releases=2)
+        self.assertEqual(self.delta('released'),2)
+        self.assertEqual(self.delta('submitted'),3)
+        self.assertEqual(self.state().pending,1)
+        self.assertEqual(self.lib.mock_audout_poll_calls()-before_calls,3)
+        self.assertEqual(self.lib.mock_audout_empty_polls()-before_empty,1)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_credit_after_empty_poll_is_consumed_only_next_tick(self):
+        self.step()
+        self.step()
+        self.lib.mock_audout_credit_after_next_empty_poll()
+        before=self.lib.mock_audout_poll_calls()
+        self.step(1<<3)
+        self.assertEqual(self.delta('skipped'),1)
+        self.assertEqual(self.delta('released'),0)
+        self.assertEqual(self.lib.mock_audout_poll_calls()-before,1)
+        self.assertEqual(self.state().pending,2)
+        self.step(1<<4)
+        self.assertEqual(self.delta('released'),1)
+        self.assertEqual(self.delta('submitted'),3)
+        self.assertEqual(self.delta('skipped'),1)
+        self.assertEqual(self.delta('pre_poll_recovered_steps'),1)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_empty_poll_without_release_credit_does_not_create_pcm_slot(self):
+        self.step()
+        self.step()
+        before=self.lib.mock_audout_empty_polls()
+        for _ in range(8):
+            self.step(1<<3)
+        self.assertEqual(self.lib.mock_audout_empty_polls()-before,8)
+        self.assertEqual(self.delta('submitted'),2)
+        self.assertEqual(self.delta('skipped'),8)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_reverse_ack_and_delayed_credit_do_not_change_synth_witness(self):
+        events=[1<<3,0,1<<4,1<<1,1<<5,0,1<<9]
+        for i,event in enumerate(events):
+            self.lib.mock_audout_reverse_release_order(i%2)
+            if i==2:
+                self.lib.mock_audout_credit_after_next_empty_poll()
+            self.step(event,releases=1 if i>3 and i%2==0 else 0)
+        hash_with_delays=self.lib.dino_switch_sound_pcm_witness()
+        self.lib.dino_switch_sound_close()
+        self.lib.mock_audout_reset()
+        self.assertTrue(self.lib.dino_switch_sound_open())
+        for event in events:
+            self.step(event,releases=1)
+        self.assertEqual(self.lib.dino_switch_sound_pcm_witness(),
+                         hash_with_delays)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
 
     def test_active_sound_adapter_open_is_idempotent(self):
         self.step(1<<3)
