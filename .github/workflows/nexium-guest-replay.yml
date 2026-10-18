@@ -18,6 +18,8 @@ on:
       - 'source/**'
       - 'Makefile'
       - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/nexium_hid_fallback_guard.py'
+      - 'tests/test_nexium_hid_fallback_guard.py'
       - 'tools/verify_nexium_guest_replay.py'
       - 'tools/verify_nexium_host_audio.py'
       - 'tools/verify_nexium_guest_controller.py'
@@ -44,6 +46,8 @@ on:
       - 'source/**'
       - 'Makefile'
       - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/nexium_hid_fallback_guard.py'
+      - 'tests/test_nexium_hid_fallback_guard.py'
       - 'tools/verify_nexium_guest_replay.py'
       - 'tools/verify_nexium_host_audio.py'
       - 'tools/verify_nexium_guest_controller.py'
@@ -160,6 +164,7 @@ jobs:
         run: |
           bash -n tools/nexium_guest_replay_probe.sh
           python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_hid_fallback_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_hid_timeline.py' -v
