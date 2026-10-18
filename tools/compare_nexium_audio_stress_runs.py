@@ -427,7 +427,11 @@ def validate(report):
             single_skips + batch_skips != skips or
             totals['full_queue_skips'] != skips or
             submitted + skips != 900 or
-            released > submitted or submitted - released > 2 or
+            # This 900-tick window can start with up to two buffers
+            # already pending. Their releases count even though their
+            # submissions happened before the measured window. Bound the
+            # net queue change instead of assuming an empty start.
+            not -2 <= submitted - released <= 2 or
             batch > totals['render_frames_with_batched_steps'] *
                     totals['largest_scheduled_tick_batch'] or
             2 * totals['render_frames_with_batched_steps'] > batch + 2 or
