@@ -11,7 +11,19 @@ nro="$(realpath "$1")"
 out="$(realpath -m "$2")"
 mkdir -p "$out"
 scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT
+pulse_started=0
+recorder_pid=""
+cleanup() {
+    if [ -n "$recorder_pid" ]; then
+        kill "$recorder_pid" 2>/dev/null || true
+        wait "$recorder_pid" 2>/dev/null || true
+    fi
+    if [ "$pulse_started" -eq 1 ]; then
+        pulseaudio --kill >/dev/null 2>&1 || true
+    fi
+    rm -rf "$scratch"
+}
+trap cleanup EXIT
 release="https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz"
 # Release asset digest verified against the public GitHub API on 2026-10-18.
 # Mutable tag: reject changed binary, never silently trust a replacement.
@@ -61,6 +73,54 @@ export XDG_DATA_HOME="$out/xdg-data"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
 vulkaninfo --summary > "$out/vulkan.txt" 2>&1 || true
 
+# Optional and isolated host-audio observation. No physical audio device,
+# original game sound data, firmware or console keys are involved. A private
+# PulseAudio null sink gives NeXium an output target and exposes its MONITOR
+# PCM. This is distinct from guest audout buffer accounting and from actual
+# audible speaker playback.
+export XDG_RUNTIME_DIR="$scratch/xdg-runtime"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+echo "host_audio_monitor=unavailable" >> "$out/metadata.txt"
+if command -v pulseaudio >/dev/null 2>&1 && \
+        command -v pactl >/dev/null 2>&1 && \
+        command -v parec >/dev/null 2>&1; then
+    if pulseaudio --start --exit-idle-time=-1 \
+            > "$out/pulse-startup.txt" 2>&1; then
+        pulse_started=1
+        if pactl load-module module-null-sink \
+                sink_name=dino_ci_sink rate=48000 channels=2 \
+                > /dev/null 2>&1 && \
+                pactl set-default-sink dino_ci_sink >/dev/null 2>&1; then
+            export PULSE_SINK=dino_ci_sink
+            # Route ALSA "default" through the same private Pulse server.
+            # NeXium's other supported audio APIs can also use PULSE_SINK.
+            cat > "$scratch/alsa-pulse.conf" <<'ALSA'
+pcm.!default {
+    type pulse
+}
+ctl.!default {
+    type pulse
+}
+ALSA
+            export ALSA_CONFIG_PATH="$scratch/alsa-pulse.conf"
+            parec --raw --format=s16le --rate=48000 --channels=2 \
+                  --device=dino_ci_sink.monitor \
+                  > "$out/host-monitor.raw" \
+                  2> "$out/pulse-recorder.txt" &
+            recorder_pid=$!
+            # The recorder must already be alive before starting the NRO.
+            sleep 1
+            if kill -0 "$recorder_pid" 2>/dev/null; then
+                echo "host_audio_monitor=private_pulse_sink_started" \
+                    >> "$out/metadata.txt"
+            else
+                recorder_pid=""
+            fi
+        fi
+    fi
+fi
+
 # No false success on launch, 110s timeout, Vulkan initialization or
 # simply seeing the emulator GUI. The guest NRO must itself produce the
 # bounded 180-tick trace with BOTH independently verified golden hashes.
@@ -84,6 +144,14 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
+if [ -n "$recorder_pid" ]; then
+    kill "$recorder_pid" 2>/dev/null || true
+    wait "$recorder_pid" 2>/dev/null || true
+    recorder_pid=""
+fi
+python3 tools/verify_nexium_host_audio.py \
+    --raw "$out/host-monitor.raw" \
+    --out "$out/host-audio-evidence.json"
 find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
     -type f -name 'cadillacs-arena-selftest.csv' -print \
     > "$out/guest-trace-locations.txt"
