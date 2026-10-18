@@ -37,7 +37,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 str(index*25),str(index*25),
                 str(index*10),str(index*20),
                 str(index*13),str(index*3),
-                str(index*30),str(index*10),
+                str(index*24),str(index*4),
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -289,13 +289,13 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertTrue(result['batch_position_poll_probe_present'])
         self.assertEqual(result['batched_first_full_before_poll'],78)
         self.assertEqual(result['batched_first_recovered_after_poll'],18)
-        self.assertEqual(result['batched_later_full_before_poll'],180)
-        self.assertEqual(result['batched_later_recovered_after_poll'],60)
+        self.assertEqual(result['batched_later_full_before_poll'],144)
+        self.assertEqual(result['batched_later_recovered_after_poll'],24)
         self.assertEqual(result['checkpoint_batch_position_poll_intervals'][0],{
             'tick_start':0,'tick_end':150,
             'first_full_before_poll':13,'first_recovered_after_poll':3,
-            'later_full_before_poll':30,'later_recovered_after_poll':10,
-            'single_full_before_poll':32,'single_recovered_after_poll':12})
+            'later_full_before_poll':24,'later_recovered_after_poll':4,
+            'single_full_before_poll':38,'single_recovered_after_poll':18})
         self.assertFalse(result['catchup_causality_verified'])
 
     def test_forged_position_poll_counters_fail_closed(self):
