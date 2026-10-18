@@ -208,6 +208,21 @@ python3 tools/verify_nexium_guest_controller.py \
     --report "$out/guest-controller.csv" \
     --out "$out/guest-controller-evidence.json"
 
+# Independently verify strict RESET -> MOVE -> ATTACK -> JUMP -> SPAR
+# effect ordering in *guest* 60Hz ticks. These tick gaps do not represent
+# host keyboard latency or audio/speaker delivery.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-hid-timeline.csv' -print \
+    > "$out/hid-timeline-locations.txt"
+if [ -s "$out/hid-timeline-locations.txt" ]; then
+    IFS= read -r timeline_path < "$out/hid-timeline-locations.txt"
+    cp "$timeline_path" "$out/guest-hid-timeline.csv"
+fi
+python3 tools/verify_nexium_hid_timeline.py \
+    --report "$out/guest-hid-timeline.csv" \
+    --summary "$out/guest-controller.csv" \
+    --out "$out/guest-hid-timeline-evidence.json"
+
 # A guest-written CSV alone proves native execution, but not pixels.
 # Check that the actual 1280x720 NeXium window contains expected
 # ROM-free arena colors in background, two actors and bottom HUD.
