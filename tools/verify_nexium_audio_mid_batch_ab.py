@@ -8,7 +8,10 @@ These reports are observations from different uncontrolled executions.
 import argparse
 import json
 from pathlib import Path
-from tools import compare_nexium_audio_stress_runs as cross
+if __package__:
+    from tools import compare_nexium_audio_stress_runs as cross
+else:
+    import compare_nexium_audio_stress_runs as cross
 
 POLL_FIELDS=(
     'guest_mid_batch_extra_poll_probe_present',
