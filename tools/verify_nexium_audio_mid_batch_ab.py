@@ -170,6 +170,15 @@ def compare_batch_exposure(a,b):
                       for w in ack_windows) if matched else None)
     fewer_returns=(sum(w['extra_minus_baseline_later_page_returns']<0
                        for w in ack_windows) if matched else None)
+    # Coarse frame exposure is not the whole source of selection bias.
+    # Even when the same kinds of ticks occur, different page-return
+    # distributions can independently change whether admission succeeds.
+    # Keep the earlier descriptive deltas, but expose a strictly gated
+    # counterpart that is null whenever return counts differ by window.
+    return_counts_matched=(
+        all(x['later_batch_page_returns']==y['later_batch_page_returns']
+            for x,y in zip(left,right)) if matched else None)
+    strictly_matched=(matched and return_counts_matched is True)
     return {
         'per_150tick_batch_exposure_matched':matched,
         'matched_exposure_later_skip_window_deltas':skip_windows,
@@ -182,6 +191,14 @@ def compare_batch_exposure(a,b):
         'matched_exposure_later_ack_windows_decreased':fewer_returns,
         'matched_exposure_later_ack_directions_mixed':(
             more_returns>0 and fewer_returns>0 if matched else None),
+        'matched_exposure_later_return_counts_matched':return_counts_matched,
+        'matched_exposure_return_shift_confounds_skip_comparison':(
+            not return_counts_matched if matched else None),
+        'matched_exposure_and_returns_later_skip_window_deltas':(
+            skip_windows if strictly_matched else None),
+        'matched_exposure_and_returns_later_skip_count_delta':(
+            sum(w['extra_minus_baseline_later_skips']
+                for w in skip_windows) if strictly_matched else None),
         'exact_frame_pacing_matched':False,
         'baseline_150tick_batch_exposure':left,
         'experimental_150tick_batch_exposure':right,
@@ -236,7 +253,7 @@ def main(argv=None):
     args=p.parse_args(argv)
     try:
         report=compare(args.baseline,args.experimental)
-    except (ValueError,OSError,TypeError,UnicodeError,OverflowError) as exc:
+    except (ValueError,OSError,TypeError,KeyError,UnicodeError,OverflowError) as exc:
         report={
             'schema':'dino-audout-opt-in-mid-batch-ab-descriptive-v2',
             'status':'INCONCLUSIVE_MISSING_OR_INCONSISTENT_AB_GUEST_PROOF',
