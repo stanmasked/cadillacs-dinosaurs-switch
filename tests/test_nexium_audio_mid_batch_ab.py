@@ -602,6 +602,59 @@ class ExperimentalABTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ab.exposure_profile(report)
 
+    def test_valid_full_queue_and_checkpoint_skips_reconcile(self):
+        report=complete(False,1)
+        windows=ab.exposure_profile(report)
+        self.assertEqual(
+            sum(w['single_skips']+w['first_batch_skips']+
+                w['later_batch_skips'] for w in windows),300)
+        self.assertEqual(report['full_queue_skips'],300)
+        self.assertEqual(report['audout_blocks_skipped'],300)
+
+    def test_checkpoint_skip_windows_reject_forged_counts(self):
+        for change in ('drop','boolean','negative','length'):
+            with self.subTest(change=change):
+                report=complete(False)
+                deltas=report['checkpoint_skipped_deltas']
+                if change=='drop':
+                    deltas[0]=49
+                elif change=='boolean':
+                    deltas[0]=True
+                elif change=='negative':
+                    deltas[0]=-1
+                else:
+                    deltas.pop()
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
+    def test_valid_global_skip_totals_cannot_hide_tampered_window(self):
+        for name in ('full_queue_skips','audout_blocks_skipped'):
+            with self.subTest(name=name):
+                report=complete(False)
+                report[name]+=1
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
+    def test_window_full_queue_skip_must_match_mode_partition(self):
+        report=complete(False)
+        report['checkpoint_mode_intervals'][0]['full_queue_skips']=49
+        with self.assertRaises(ValueError):
+            ab.exposure_profile(report)
+
+    def test_balanced_reallocation_still_works_for_descriptive_comparison(self):
+        left=complete(False)
+        right=complete(True)
+        position=right['checkpoint_batch_position_intervals']
+        position[0]['later_tick_skips']+=2
+        position[0]['first_tick_skips']-=2
+        position[1]['later_tick_skips']-=2
+        position[1]['first_tick_skips']+=2
+        result=ab.compare_batch_exposure(left,right)
+        self.assertTrue(result['per_150tick_batch_exposure_matched'])
+        self.assertEqual(result['matched_exposure_later_skip_count_delta'],0)
+        self.assertTrue(result['matched_exposure_later_skip_directions_mixed'])
+        self.assertFalse(result['exact_frame_pacing_matched'])
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
