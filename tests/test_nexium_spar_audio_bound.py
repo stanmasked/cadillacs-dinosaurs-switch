@@ -1,5 +1,7 @@
 """ROM-free synthetic fixtures for Pulse monitor spar-response evidence."""
 import json
+import math
+import struct
 from pathlib import Path
 import subprocess
 import sys
@@ -19,10 +21,12 @@ class SparAudioResponseTests(unittest.TestCase):
         self.timeline = self.root / 'timeline.csv'
         self.controller = self.root / 'controller.csv'
         self.out = self.root / 'summary.json'
-        self.value = pulse.record('HOST_SPAR_PCM_OBSERVED_UNBOUND',
+        self.value = pulse.record('HOST_SPAR_530HZ_PCM_OBSERVED_UNBOUND',
                                   host_monitor_read_upper_bound_ms=185,
                                   monitor_read_chunks=3,
                                   baseline_quiet=True,
+                                  tone_reference_hz=530,
+                                  tone_coherence_milli=980,
                                   format='s16le-stereo-48000')
         self.save()
         self.timeline.write_text(
@@ -46,7 +50,7 @@ class SparAudioResponseTests(unittest.TestCase):
 
     def test_valid_host_monitor_and_actual_guest_spar(self):
         v = verifier.verify(self.host, self.timeline, self.controller)
-        self.assertEqual(v['status'], 'GUEST_SPAR_AND_HOST_PCM_RESPONSE_OBSERVED')
+        self.assertEqual(v['status'], 'GUEST_SPAR_AND_530HZ_MONITOR_TONE_OBSERVED')
         self.assertEqual(v['host_monitor_read_upper_bound_ms'], 185)
         self.assertEqual(v['host_monitor_read_chunks'], 3)
         self.assertTrue(v['host_read_and_pipe_overhead_included'])
@@ -71,13 +75,14 @@ class SparAudioResponseTests(unittest.TestCase):
     def test_requires_quiet_baseline_and_observed_post_event_pcm(self):
         for value in ('INCONCLUSIVE_NO_QUIET_BASELINE',
                       'INCONCLUSIVE_NO_POST_KEY_PCM',
-                      'INCONCLUSIVE_AUDIO_MONITOR_UNAVAILABLE'):
+                      'INCONCLUSIVE_AUDIO_MONITOR_UNAVAILABLE',
+                      'INCONCLUSIVE_NOT_530HZ_SPAR_TONE'):
             with self.subTest(value=value):
                 self.value['status'] = value
                 self.save()
                 with self.assertRaises(ValueError):
                     verifier.verify(self.host, self.timeline, self.controller)
-        self.value['status'] = 'HOST_SPAR_PCM_OBSERVED_UNBOUND'
+        self.value['status'] = 'HOST_SPAR_530HZ_PCM_OBSERVED_UNBOUND'
         self.value['baseline_quiet'] = False
         self.save()
         with self.assertRaises(ValueError):
@@ -109,6 +114,36 @@ class SparAudioResponseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verifier.verify(self.host, self.timeline, self.controller)
                 self.value[field] = old
+
+    def test_matching_530hz_tone_and_rejection_of_other_tones(self):
+        def make_pcm(hz):
+            wave = []
+            for i in range(pulse.TONE_WINDOW_FRAMES):
+                # The production synth emits a roughly triangular tone;
+                # the fundamental also dominates this simple sine fixture.
+                v = round(1100*math.sin(2*math.pi*hz*i/pulse.RATE))
+                wave.append(struct.pack('<hh',v,v))
+            return b''.join(wave)
+        good = pulse.spar_tone_coherence(make_pcm(530))
+        wrong = pulse.spar_tone_coherence(make_pcm(260))
+        self.assertGreater(good, 0.85)
+        self.assertLess(wrong, 0.10)
+        self.assertEqual(pulse.spar_tone_coherence(b'\x00' *
+                         (pulse.TONE_WINDOW_FRAMES*4)),0.0)
+        with self.assertRaises(ValueError):
+            pulse.spar_tone_coherence(b'\x00'*8)
+
+    def test_forged_spar_frequency_or_coherence_fails_closed(self):
+        for field, vals in (('tone_reference_hz',(529,531,True,'530')),
+                            ('tone_coherence_milli',(599,-1,1001,True,700.0))):
+            for value in vals:
+                with self.subTest(field=field,value=value):
+                    old = self.value[field]
+                    self.value[field] = value
+                    self.save()
+                    with self.assertRaises(ValueError):
+                        verifier.verify(self.host,self.timeline,self.controller)
+                    self.value[field] = old
 
     def test_missing_guest_timeline_refuses_host_pcm(self):
         self.timeline.unlink()
