@@ -128,6 +128,7 @@ jobs:
             emulator-evidence/guest-hid-timeline-evidence.json
             emulator-evidence/guest-hid-timeline.csv
             emulator-evidence/host-input-bound-evidence.json
+            emulator-evidence/host-pixel-raw.json
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn
           retention-days: 7
