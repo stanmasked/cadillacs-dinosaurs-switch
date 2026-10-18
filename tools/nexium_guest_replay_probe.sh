@@ -149,9 +149,6 @@ if [ -n "$recorder_pid" ]; then
     wait "$recorder_pid" 2>/dev/null || true
     recorder_pid=""
 fi
-python3 tools/verify_nexium_host_audio.py \
-    --raw "$out/host-monitor.raw" \
-    --out "$out/host-audio-evidence.json"
 find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
     -type f -name 'cadillacs-arena-selftest.csv' -print \
     > "$out/guest-trace-locations.txt"
@@ -162,6 +159,12 @@ fi
 python3 tools/verify_nexium_guest_replay.py \
     --report "$out/guest-replay.csv" \
     --out "$out/result.txt"
+
+# No host-sink audio classification is published unless the guest's
+# independently verified replay and native audio adapter counters passed.
+python3 tools/verify_nexium_host_audio.py \
+    --raw "$out/host-monitor.raw" \
+    --out "$out/host-audio-evidence.json"
 
 # A guest-written CSV alone proves native execution, but not pixels.
 # Check that the actual 1280x720 NeXium window contains expected
