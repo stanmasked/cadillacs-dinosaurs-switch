@@ -94,6 +94,61 @@ def verify_mode(report, expect_enabled):
     }
 
 
+
+def exposure_profile(report):
+    """Extract validated render exposure, without pretending clocks matched."""
+    windows=report['checkpoint_batch_position_intervals']
+    mode=report['checkpoint_mode_intervals']
+    if (not isinstance(windows,list) or len(windows)!=6 or
+            not isinstance(mode,list) or len(mode)!=6):
+        raise ValueError('missing exposure windows')
+    result=[]
+    for i,(w,m) in enumerate(zip(windows,mode)):
+        first=integer(w['first_tick_steps'],'first tick exposure')
+        later=integer(w['later_tick_steps'],'later tick exposure')
+        single=integer(m['single_tick_render_steps'],'single tick exposure')
+        first_skips=integer(w['first_tick_skips'],'first tick skips')
+        later_skips=integer(w['later_tick_skips'],'later tick skips')
+        if (first+later+single!=150 or
+                first_skips>first or later_skips>later or
+                w['tick_start']!=150*i or w['tick_end']!=150*(i+1)):
+            raise ValueError('inconsistent 150-tick exposure partition')
+        result.append({
+            'tick_start':150*i,
+            'tick_end':150*(i+1),
+            'single_ticks':single,
+            'first_batch_ticks':first,
+            'later_batch_ticks':later,
+            'first_batch_skips':first_skips,
+            'later_batch_skips':later_skips,
+        })
+    return result
+
+
+def compare_batch_exposure(a,b):
+    """Descriptive exposure diagnostic; not an audio treatment estimate."""
+    left=exposure_profile(a)
+    right=exposure_profile(b)
+    fields=('single_ticks','first_batch_ticks','later_batch_ticks')
+    matched=all(all(x[k]==y[k] for k in fields)
+                for x,y in zip(left,right))
+    return {
+        'per_150tick_batch_exposure_matched':matched,
+        'exact_frame_pacing_matched':False,
+        'baseline_150tick_batch_exposure':left,
+        'experimental_150tick_batch_exposure':right,
+        # Suppress apparent skip improvements if the exposed tick
+        # population differs at this coarse resolution. Even with
+        # matched exposure, a rate change is descriptive, not causal.
+        'matched_exposure_later_skip_count_delta':(
+            sum(y['later_batch_skips']-x['later_batch_skips']
+                for x,y in zip(left,right)) if matched else None),
+        'matched_exposure_later_ack_count_delta':(
+            b['batched_later_released_pages']-
+            a['batched_later_released_pages'] if matched else None),
+    }
+
+
 def compare(baseline, experimental):
     # Deep validation of every preceding guest stress field and all six
     # checkpoint windows is reused; no raw game ROM or PCM is required.
@@ -102,6 +157,7 @@ def compare(baseline, experimental):
     _,b=cross.read_report(Path(experimental))
     first=verify_mode(a,False)
     second=verify_mode(b,True)
+    exposure=compare_batch_exposure(a,b)
     return {
         'schema':'dino-audout-opt-in-mid-batch-ab-descriptive-v2',
         'status':'UNCONTROLLED_GUEST_RUN_DESCRIPTIVE_ONLY',
@@ -115,6 +171,7 @@ def compare(baseline, experimental):
             second['later_tick_page_returns']-
             first['later_tick_page_returns']),
         'preexisting_comparator_status':pair['status'],
+        **exposure,
         'runtime_and_host_conditions_held_constant':False,
         'independent_guest_execution_authenticated':False,
         'causal_audio_improvement_verified':False,

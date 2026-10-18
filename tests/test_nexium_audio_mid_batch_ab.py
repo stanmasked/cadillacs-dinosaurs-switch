@@ -128,6 +128,61 @@ class ExperimentalABTests(unittest.TestCase):
                          ['pages_released_by_additional_polls'],6)
         self.assertFalse(result['causal_audio_improvement_verified'])
 
+
+    def test_identical_150tick_tick_exposure_is_not_causal_matching(self):
+        result=ab.compare(self.a,self.b)
+        self.assertTrue(result['per_150tick_batch_exposure_matched'])
+        self.assertFalse(result['exact_frame_pacing_matched'])
+        self.assertEqual(result['matched_exposure_later_skip_count_delta'],0)
+        self.assertEqual(result['matched_exposure_later_ack_count_delta'],0)
+        self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_unmatched_catchup_exposure_suppresses_skip_improvement(self):
+        valid=complete(True,1)
+        # A pure exposure diagnostic accepts a different legal render
+        # partition; deep report verification happens before it is used.
+        windows=valid['checkpoint_batch_position_intervals']
+        modes=valid['checkpoint_mode_intervals']
+        windows[0]['later_tick_steps']=24
+        windows[0]['first_tick_steps']=24
+        modes[0]['single_tick_render_steps']=102
+        profile=ab.compare_batch_exposure(complete(False),valid)
+        self.assertFalse(profile['per_150tick_batch_exposure_matched'])
+        self.assertIsNone(
+            profile['matched_exposure_later_skip_count_delta'])
+        self.assertIsNone(
+            profile['matched_exposure_later_ack_count_delta'])
+        self.assertFalse(profile['exact_frame_pacing_matched'])
+
+    def test_catchup_exposure_mismatch_is_descriptive_not_a_failed_run(self):
+        # Production report validation correctly rejects a single forged
+        # window when it disagrees with all other guest ledger fields.
+        bad=complete(True,1)
+        bad['checkpoint_batch_position_intervals'][0][
+            'later_tick_steps']=24
+        self.write(self.b,bad)
+        with self.assertRaises(ValueError):
+            ab.compare(self.a,self.b)
+
+    def test_exposure_helper_rejects_noncanonical_and_unpartitioned_ticks(self):
+        for bad in (True,-1,151,24):
+            with self.subTest(bad=bad):
+                forged=complete(False)
+                forged['checkpoint_batch_position_intervals'][0][
+                    'later_tick_steps']=bad
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(forged)
+
+    def test_exposure_profile_keeps_all_six_disjoint_windows(self):
+        out=ab.exposure_profile(complete(True,1))
+        self.assertEqual(len(out),6)
+        self.assertEqual(sum(w['single_ticks']+
+                             w['first_batch_ticks']+
+                             w['later_batch_ticks'] for w in out),900)
+        self.assertEqual(out[0]['tick_start'],0)
+        self.assertEqual(out[-1]['tick_end'],900)
+        self.assertEqual(sum(w['later_batch_skips'] for w in out),117)
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
