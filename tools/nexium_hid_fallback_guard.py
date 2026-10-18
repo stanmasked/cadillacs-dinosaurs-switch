@@ -52,7 +52,8 @@ def may_send_fallback(roots):
                     return False
                 if any(line.startswith('INPUT_DONE,31,') for line in lines):
                     return False
-    return True
+    # Missing roots make absence of a witness unprovable, not safe.
+    return bool(seen)
 
 
 def main(argv=None):
