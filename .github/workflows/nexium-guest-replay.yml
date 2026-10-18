@@ -12,9 +12,11 @@ on:
       - 'tools/verify_nexium_guest_replay.py'
       - 'tools/verify_nexium_host_audio.py'
       - 'tools/verify_nexium_guest_controller.py'
+      - 'tools/verify_nexium_hid_timeline.py'
       - 'tests/test_nexium_guest_replay.py'
       - 'tests/test_nexium_host_audio.py'
       - 'tests/test_nexium_guest_controller.py'
+      - 'tests/test_nexium_hid_timeline.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -24,9 +26,11 @@ on:
       - 'tools/verify_nexium_guest_replay.py'
       - 'tools/verify_nexium_host_audio.py'
       - 'tools/verify_nexium_guest_controller.py'
+      - 'tools/verify_nexium_hid_timeline.py'
       - 'tests/test_nexium_guest_replay.py'
       - 'tests/test_nexium_host_audio.py'
       - 'tests/test_nexium_guest_controller.py'
+      - 'tests/test_nexium_hid_timeline.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 permissions:
@@ -82,6 +86,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_hid_timeline.py' -v
       - name: Install Xvfb and software Vulkan dependencies for NeXium
         run: |
           sudo apt-get update -qq
@@ -113,6 +118,8 @@ jobs:
             emulator-evidence/host-audio-evidence.json
             emulator-evidence/guest-controller-evidence.json
             emulator-evidence/guest-controller.csv
+            emulator-evidence/guest-hid-timeline-evidence.json
+            emulator-evidence/guest-hid-timeline.csv
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn
           retention-days: 7
