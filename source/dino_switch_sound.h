@@ -9,6 +9,10 @@
 bool dino_switch_sound_open(void);
 void dino_switch_sound_step(uint32_t events);
 void dino_switch_sound_close(void);
+/* The checksum covers every generated 48kHz PCM tick before queueing.
+ * It does NOT show that emulator/console speakers actually played it. */
+uint64_t dino_switch_sound_pcm_witness(void);
+uint32_t dino_switch_sound_pcm_ticks(void);
 
 /* Read-only on-device diagnostics, not a measurement of actual latency.
  * They intentionally contain no audio PCM, private file paths or ROM data. */
