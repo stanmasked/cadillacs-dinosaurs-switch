@@ -183,6 +183,65 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertEqual(out[-1]['tick_end'],900)
         self.assertEqual(sum(w['later_batch_skips'] for w in out),114)
 
+    def test_six_matched_windows_report_separate_skip_directions(self):
+        result=ab.compare(self.a,self.b)
+        windows=result['matched_exposure_later_skip_window_deltas']
+        self.assertEqual(len(windows),6)
+        self.assertEqual(
+            [w['extra_minus_baseline_later_skips'] for w in windows],
+            [-1]*6)
+        self.assertEqual(
+            [w['tick_start'] for w in windows],
+            [0,150,300,450,600,750])
+        self.assertEqual(result['matched_exposure_later_skip_windows_improved'],6)
+        self.assertEqual(result['matched_exposure_later_skip_windows_worsened'],0)
+        self.assertFalse(
+            result['matched_exposure_later_skip_directions_mixed'])
+        self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_zero_aggregate_can_hide_opposing_window_changes(self):
+        baseline=complete(False)
+        experimental=complete(True)
+        windows=experimental['checkpoint_batch_position_intervals']
+        windows[0]['later_tick_skips']+=2
+        windows[1]['later_tick_skips']-=2
+        # This helper exercises descriptive arithmetic only; a forged
+        # standalone guest report must still fail the full ledger verifier.
+        result=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(result['per_150tick_batch_exposure_matched'])
+        self.assertEqual(result['matched_exposure_later_skip_count_delta'],0)
+        self.assertEqual(
+            [w['extra_minus_baseline_later_skips']
+             for w in result['matched_exposure_later_skip_window_deltas']],
+            [2,-2,0,0,0,0])
+        self.assertEqual(result['matched_exposure_later_skip_windows_improved'],1)
+        self.assertEqual(result['matched_exposure_later_skip_windows_worsened'],1)
+        self.assertTrue(result['matched_exposure_later_skip_directions_mixed'])
+        self.assertFalse(result['exact_frame_pacing_matched'])
+
+    def test_equal_exposure_and_equal_skips_is_not_an_improvement(self):
+        result=ab.compare_batch_exposure(complete(False),complete(True))
+        self.assertEqual(result['matched_exposure_later_skip_count_delta'],0)
+        self.assertEqual(result['matched_exposure_later_skip_windows_improved'],0)
+        self.assertEqual(result['matched_exposure_later_skip_windows_worsened'],0)
+        self.assertFalse(result['matched_exposure_later_skip_directions_mixed'])
+
+    def test_exposure_drift_nulls_all_window_direction_claims(self):
+        baseline=complete(False)
+        experimental=complete(True)
+        windows=experimental['checkpoint_batch_position_intervals']
+        modes=experimental['checkpoint_mode_intervals']
+        windows[2]['later_tick_steps']=24
+        windows[2]['first_tick_steps']=24
+        modes[2]['single_tick_render_steps']=102
+        result=ab.compare_batch_exposure(baseline,experimental)
+        self.assertFalse(result['per_150tick_batch_exposure_matched'])
+        self.assertIsNone(result['matched_exposure_later_skip_window_deltas'])
+        self.assertIsNone(result['matched_exposure_later_skip_windows_improved'])
+        self.assertIsNone(result['matched_exposure_later_skip_windows_worsened'])
+        self.assertIsNone(result['matched_exposure_later_skip_directions_mixed'])
+        self.assertIsNone(result['matched_exposure_later_skip_count_delta'])
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
