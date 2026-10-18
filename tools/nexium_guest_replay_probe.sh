@@ -162,7 +162,11 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
           # A missing pixel sampler must never prevent the existing
           # guest-HID test from receiving all five original actions.
           # Only the guest-written timeline can prove HID delivery.
-          if ! grep -q HOST_PIXEL_CHANGE_OBSERVED_UNBOUND "$5" 2>/dev/null; then
+          if ! grep -q HOST_PIXEL_CHANGE_OBSERVED_UNBOUND "$5" 2>/dev/null &&
+             python3 tools/nexium_hid_fallback_guard.py \
+               "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"; then
+            # A missing host pixel is not a reason to reset a guest whose
+            # actual HID witness is complete or whose stress CSV exists.
             xdotool windowactivate --sync "$window" || true
             xdotool windowfocus "$window" || true
             xdotool keydown z; sleep 0.25; xdotool keyup z
