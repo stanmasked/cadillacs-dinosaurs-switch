@@ -242,6 +242,23 @@ python3 tools/verify_nexium_hid_timeline.py \
     --summary "$out/guest-controller.csv" \
     --out "$out/guest-hid-timeline-evidence.json"
 
+# Stage 137: the actual guest must continue for 900 simulation ticks
+# AFTER the independently verified native X11->HID game actions.
+# This is a separate audout queue health witness; missing/stalled guest
+# evidence reports INCONCLUSIVE without changing the baseline NRO PASS.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-audio-stress.csv' -print \
+    > "$out/audio-stress-locations.txt"
+if [ -s "$out/audio-stress-locations.txt" ]; then
+    IFS= read -r stress_path < "$out/audio-stress-locations.txt"
+    cp "$stress_path" "$out/guest-audio-stress.csv"
+fi
+python3 tools/verify_nexium_audio_stress.py \
+    --report "$out/guest-audio-stress.csv" \
+    --timeline "$out/guest-hid-timeline.csv" \
+    --controller "$out/guest-controller.csv" \
+    --out "$out/guest-audio-stress-evidence.json"
+
 # Accept the software-only host-window sample bound ONLY after the
 # guest's ordered HID witness is verified. The result is explicitly
 # NOT an actual controller, hardware display or audio latency.
