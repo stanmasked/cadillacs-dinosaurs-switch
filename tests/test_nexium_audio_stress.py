@@ -29,7 +29,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
                 check.EVENTS[index],str(ticks),str(210+ticks),
                 str(240+ticks),str(240+ticks),'1','1','1',
                 str(submitted),str(released),str(skipped),'0',
-                f'{index+1:016X}',
+                f'{index+1:016X}',str(skipped),'0','0','2',
             ])
         self.timeline.write_text(
             'event,tick,player_x,sparring,event_mask\n'
@@ -66,13 +66,18 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_valid_900_ticks_with_bounded_queue_and_native_HID_binding(self):
         result=check.verify(self.path,self.timeline,self.controller)
-        self.assertEqual(result['status'],'GUEST_900TICK_AUDOUT_QUEUE_WITNESSED')
+        self.assertEqual(result['status'],'GUEST_900TICK_AUDOUT_SKIP_REASONS_WITNESSED')
         self.assertEqual(result['simulation_ticks'],900)
         self.assertEqual(result['checkpoints'],7)
         self.assertEqual(result['audout_blocks_submitted'],600)
         self.assertEqual(result['audout_blocks_released'],600)
         self.assertEqual(result['audout_blocks_skipped'],300)
         self.assertEqual(result['peak_observed_pending'],1)
+        self.assertEqual(result['full_queue_skips'],300)
+        self.assertEqual(result['inactive_backend_skips'],0)
+        self.assertEqual(result['unexpected_slot_skips'],0)
+        self.assertEqual(result['max_skip_streak_since_audio_open'],2)
+        self.assertEqual(result['checkpoint_skipped_deltas'],[50]*6)
         self.assertFalse(result['sound_device_audible_verified'])
         self.assertFalse(result['audio_latency_verified'])
 
@@ -158,6 +163,36 @@ class LongGuestAudioStressTests(unittest.TestCase):
             with self.subTest(bad=bad):
                 self.mutate(1,1,bad)
 
+    def test_tampered_classified_skip_total_is_refused(self):
+        for i,col,value in ((2,13,'171'),(2,14,'1'),(2,15,'1'),
+                             (1,13,'109'),(4,13,'999')):
+            with self.subTest(row=i,column=col):
+                self.mutate(i,col,value)
+
+    def test_decreasing_or_impossible_consecutive_skip_streak_refused(self):
+        for i,bad in ((1,'1'),(2,'301'),(1,'0'),(3,'2000')):
+            with self.subTest(i=i,bad=bad):
+                self.mutate(i,16,bad)
+        # A maximum may increase, but must never decrease thereafter.
+        self.rows[2][16]='3'
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
+        self.rows[2][16]='2'
+        self.write()
+
+    def test_classification_must_agree_with_stress_deltas(self):
+        # Splitting 50 skipped ticks between full and inactive while
+        # preserving the sum is still a failed active-backend trial.
+        self.rows[3][13]=str(int(self.rows[3][13])-1)
+        self.rows[3][14]='1'
+        self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
+        self.rows[3][13]=str(int(self.rows[3][13])+1)
+        self.rows[3][14]='0'
+        self.write()
+
     def test_direct_CLI_missing_trace_stays_inconclusive_and_path_free(self):
         script=Path(__file__).resolve().parents[1]/'tools'/'verify_nexium_audio_stress.py'
         cmd=[sys.executable,str(script),'--report',str(self.path),
@@ -172,7 +207,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertEqual(fail.returncode,0,fail.stderr)
         report=json.loads(self.out.read_text())
         self.assertEqual(report['status'],
-                         'INCONCLUSIVE_NO_GUEST_900TICK_AUDOUT_EVIDENCE')
+                         'INCONCLUSIVE_NO_GUEST_900TICK_AUDOUT_REASON_EVIDENCE')
         self.assertNotIn(str(self.root),self.out.read_text())
 
 
