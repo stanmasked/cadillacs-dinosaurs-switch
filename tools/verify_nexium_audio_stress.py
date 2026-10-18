@@ -59,7 +59,8 @@ def verify(path, guest_timeline, guest_controller):
             raise ValueError('guest stress PCM witness malformed')
         # The PCM hex digest separates standard counters from classified
         # skip reasons. Keep both sets strictly decimal/canonical.
-        values=[row[key] for key in COLUMNS[1:12]+COLUMNS[13:]]
+        active_columns=COLUMNS if has_pre_poll_probe else LEGACY_COLUMNS
+        values=[row[key] for key in active_columns[1:12]+active_columns[13:]]
         if any(not v.isascii() or not v.isdecimal() or
                (len(v)>1 and v.startswith('0')) for v in values):
             raise ValueError('noncanonical stress counter')

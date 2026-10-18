@@ -201,7 +201,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_impossible_pre_poll_counts_fail_closed(self):
         for index,column,bad in ((0,23,'61'),(0,24,'1'),
-                                 (1,23,'135'),(1,24,'20'),
+                                 (1,23,'134'),(1,24,'20'),
                                  (1,23,'200'),(3,24,'0'),(5,23,'0')):
             with self.subTest(index=index,column=column):
                 self.mutate(index,column,bad)
