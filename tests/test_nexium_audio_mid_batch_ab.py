@@ -161,6 +161,33 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertEqual(result['matched_exposure_later_ack_count_delta'],0)
         self.assertFalse(result['causal_audio_improvement_verified'])
 
+    def test_repartitioned_fixture_is_valid_for_exposure_helper(self):
+        candidate=repartition_one_batch_frame_as_two_singles(
+            complete(True,1),window=3)
+        profile=ab.exposure_profile(candidate)
+        self.assertEqual(len(profile),6)
+        self.assertEqual(profile[3]['single_ticks'],102)
+        self.assertEqual(profile[3]['first_batch_ticks'],24)
+        self.assertEqual(profile[3]['later_batch_ticks'],24)
+        self.assertEqual(
+            sum(w['single_ticks']+w['first_batch_ticks']+
+                w['later_batch_ticks'] for w in profile),900)
+        self.assertEqual(candidate['single_tick_render_steps'],602)
+        self.assertEqual(candidate['batched_render_steps'],298)
+        self.assertEqual(candidate['render_frames_with_batched_steps'],149)
+
+    def test_repartition_changes_exposure_without_faking_releases(self):
+        baseline=complete(False)
+        candidate=repartition_one_batch_frame_as_two_singles(complete(True))
+        profile=ab.compare_batch_exposure(baseline,candidate)
+        self.assertFalse(profile['per_150tick_batch_exposure_matched'])
+        self.assertIsNone(profile['matched_exposure_later_skip_count_delta'])
+        self.assertIsNone(profile['matched_exposure_later_ack_count_delta'])
+        self.assertIsNone(
+            profile['matched_exposure_and_returns_later_skip_count_delta'])
+        self.assertEqual(candidate['batched_later_released_pages'],30)
+        self.assertFalse(profile['exact_frame_pacing_matched'])
+
     def test_unmatched_catchup_exposure_suppresses_skip_improvement(self):
         valid=complete(True,1)
         # A pure exposure diagnostic accepts a different legal render
