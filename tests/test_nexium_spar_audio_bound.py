@@ -27,6 +27,7 @@ class SparAudioResponseTests(unittest.TestCase):
                                   baseline_quiet=True,
                                   tone_reference_hz=530,
                                   tone_coherence_milli=980,
+                                  tone_windows_scanned=3,
                                   format='s16le-stereo-48000')
         self.save()
         self.timeline.write_text(
@@ -144,6 +145,16 @@ class SparAudioResponseTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         verifier.verify(self.host,self.timeline,self.controller)
                     self.value[field] = old
+
+    def test_scan_count_must_be_finite_and_integral(self):
+        for value in (0, 33, -1, 1.4, True, '3'):
+            with self.subTest(value=value):
+                old=self.value['tone_windows_scanned']
+                self.value['tone_windows_scanned']=value
+                self.save()
+                with self.assertRaises(ValueError):
+                    verifier.verify(self.host,self.timeline,self.controller)
+                self.value['tone_windows_scanned']=old
 
     def test_missing_guest_timeline_refuses_host_pcm(self):
         self.timeline.unlink()
