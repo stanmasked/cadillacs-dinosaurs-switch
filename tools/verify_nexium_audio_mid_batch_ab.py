@@ -221,12 +221,48 @@ def queue_start_profile(report):
     return {'start':start,'end':end}
 
 
+def queue_checkpoint_profile(report, windows, endpoints):
+    """Conserve page ownership at six boundaries; no per-call timestamps."""
+    if endpoints is None:
+        return None
+    pending=endpoints['start']
+    out=[]
+    for window in windows:
+        skipped=(window['single_skips']+window['first_batch_skips']+
+                 window['later_batch_skips'])
+        submitted=150-skipped
+        released=(window['single_frame_page_returns']+
+                  window['first_batch_page_returns']+
+                  window['later_batch_page_returns'])
+        after=pending+submitted-released
+        if not 0<=after<=2:
+            raise ValueError('150-tick audio queue boundary outside two slots')
+        out.append({
+            'tick_start':window['tick_start'],
+            'tick_end':window['tick_end'],
+            'pending_at_start':pending,
+            'submitted_in_window':submitted,
+            'released_in_window':released,
+            'pending_at_end':after,
+        })
+        pending=after
+    if (pending!=endpoints['end'] or
+            sum(w['submitted_in_window'] for w in out)!=
+            integer(report['audout_blocks_submitted'],'guest submitted pages') or
+            sum(w['released_in_window'] for w in out)!=
+            integer(report['audout_blocks_released'],'guest released pages')):
+        raise ValueError('150-tick audio queue boundaries do not reconcile')
+    return out
+
+
 def compare_batch_exposure(a,b):
     """Descriptive exposure diagnostic; not an audio treatment estimate."""
     left=exposure_profile(a)
     right=exposure_profile(b)
     initial_left=queue_start_profile(a)
     initial_right=queue_start_profile(b)
+    queue_left=queue_checkpoint_profile(a,left,initial_left)
+    queue_right=queue_checkpoint_profile(b,right,initial_right)
     fields=('single_ticks','first_batch_ticks','later_batch_ticks')
     matched=all(all(x[k]==y[k] for k in fields)
                 for x,y in zip(left,right))
@@ -320,6 +356,8 @@ def compare_batch_exposure(a,b):
         'matched_exposure_return_position_window_deltas':return_position_windows,
         'matched_exposure_all_position_return_counts_matched':
             all_returns_matched,
+        'baseline_queue_150tick_boundaries':queue_left,
+        'experimental_queue_150tick_boundaries':queue_right,
         'baseline_queue_pending_at_stress_start':(
             initial_left['start'] if initial_left is not None else None),
         'baseline_queue_pending_at_stress_end':(
