@@ -14,6 +14,7 @@
 #include "cps1_scene.h"
 #include "cps1_sequence.h"
 #include "dino_arena.h"
+#include "dino_replay.h"
 #include "dino_switch_sound.h"
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
@@ -262,7 +263,9 @@ static const char *arena_pose_name(DinoArenaPose pose) {
 }
 
 static void arena_frame(uint32_t *frame, unsigned pitch,
-                        const DinoArena *arena, bool have_gfx) {
+                        const DinoArena *arena, bool have_gfx,
+                        uint32_t demo_ticks, bool demo_active,
+                        bool demo_complete) {
     const DinoArenaPose player=dino_arena_player_pose(arena);
     const DinoArenaPose enemy=dino_arena_dummy_pose(arena);
     const unsigned phase=dino_arena_pose_phase(arena);
@@ -372,6 +375,16 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
     label(frame,pitch,52,82,audio_line,1,
           audio.active && audio.queue_valid?rgb(145,224,166):
                                               rgb(251,190,130));
+    if (demo_active || demo_complete) {
+        char demo_line[86];
+        snprintf(demo_line,sizeof(demo_line),
+                 "C REPLAY %03u/180  %s  HP %u  HITS %u",
+                 (unsigned)demo_ticks,
+                 demo_complete?"DONE - Y RESET":"PLAYING",
+                 (unsigned)arena->player_hp,
+                 (unsigned)arena->successful_hits);
+        label(frame,pitch,52,110,demo_line,1,rgb(248,215,119));
+    }
     char status[140];
     snprintf(status,sizeof(status),
              "PLAYER %s HP %u  ENEMY %s HP %u  COMBO %u/3  HITS %03u  %s",
@@ -382,7 +395,7 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
     label(frame,pitch,52,698,
-          "DPAD MOVE  A ATTACK  B JUMP  X SPAR  Y RESET  PLUS EXIT",
+          "DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT",
           1,rgb(182,207,219));
     if (have_gfx)
         label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,
@@ -462,6 +475,8 @@ int main(int argc, char **argv) {
      * Only the ROM-free arena requires synthesized training audio. */
     if (arena_active) (void)dino_switch_sound_open();
     uint32_t pending_actions=0;
+    uint32_t demo_ticks=0;
+    bool demo_active=false, demo_complete=false;
     u64 arena_clock_carry=0;
     if (gfx) cache_page(gfx,page);
     u64 last_tick=armGetSystemTick(), clock_carry=0;
@@ -478,14 +493,29 @@ int main(int argc, char **argv) {
             arena_active=!arena_active;
             arena_clock_carry=0;
             pending_actions=0;
+            demo_active=false;
+            demo_complete=false;
+            demo_ticks=0;
             /* Leaving the arena discards any unfinished cue envelopes
              * and releases audout. Re-entry starts a fresh PCM timeline. */
             if (arena_active) (void)dino_switch_sound_open();
             else dino_switch_sound_close();
         }
         if (arena_active) {
-            if (down & HidNpadButton_Y) {
+            if (down & HidNpadButton_Minus) {
+                /* ROM-free built-in deterministic test: no game assets,
+                 * no emulator-specific scripts or private input captures. */
                 dino_arena_reset(&arena);
+                demo_ticks=0;
+                demo_active=true;
+                demo_complete=false;
+                pending_actions=0;
+                arena_clock_carry=0;
+            } else if (down & HidNpadButton_Y) {
+                dino_arena_reset(&arena);
+                demo_ticks=0;
+                demo_active=false;
+                demo_complete=false;
                 arena_clock_carry=0;
                 pending_actions=0;
             }
@@ -501,12 +531,24 @@ int main(int argc, char **argv) {
             uint32_t arena_ticks=(uint32_t)(arena_clock_carry/1000000000ULL);
             arena_clock_carry%=1000000000ULL;
             for (uint32_t i=0;i<arena_ticks;++i) {
-                dino_arena_step(&arena,held_arena,
-                                i==0 ? pending_actions : 0);
-                /* Consume the event during this exact tick, before the
-                 * simulation clears it on the following tick. */
+                uint32_t step_held=held_arena;
+                uint32_t step_pressed=i==0 ? pending_actions : 0u;
+                if (demo_complete) break; /* stable screenshot/witness */
+                if (demo_active) {
+                    if (!dino_replay_input(demo_ticks,
+                                           &step_held,&step_pressed))
+                        break; /* invalid trace never runs unknown input */
+                }
+                dino_arena_step(&arena,step_held,step_pressed);
+                /* Consume precisely the event from this simulated tick. */
                 dino_switch_sound_step(arena.events);
+                if (demo_active && ++demo_ticks==DINO_REPLAY_TICKS) {
+                    demo_active=false;
+                    demo_complete=true;
+                    break; /* remain frozen at independently known state */
+                }
             }
+            if (demo_complete) arena_clock_carry=0;
             if (arena_ticks) pending_actions=0;
             clock_carry=0;
         } else {
@@ -569,7 +611,8 @@ int main(int argc, char **argv) {
         uint32_t *frame=(uint32_t*)framebufferBegin(&fb,&stride);
         if (!frame) break;
         if (arena_active)
-            arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL);
+            arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL,
+                        demo_ticks,demo_active,demo_complete);
         else if (show_scene && scene_rgba)
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
