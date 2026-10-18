@@ -22,6 +22,9 @@ COLUMNS = [
     'audio_errors','pcm_fnv64','full_queue_skips',
     'inactive_backend_skips','unexpected_slot_skips',
     'max_consecutive_skips',
+    'single_frame_ticks','batched_frame_ticks',
+    'single_frame_skips','batched_frame_skips',
+    'batched_render_frames','max_ticks_per_render_frame',
 ]
 CHECKPOINTS = [0,150,300,450,600,750,900]
 EVENTS = ['START'] + ['CHECKPOINT']*5 + ['STRESS_DONE']
@@ -64,12 +67,15 @@ def verify(path, guest_timeline, guest_controller):
     start=measurements[0]
     # elapsed, arena, audio ticks, PCM ticks, active, valid, pending,
     # submitted, released, skipped, errors, full, inactive, unexpected,
-    # max_streak
+    # max_streak, single_ticks, batched_ticks, single_skips,
+    # batched_skips, batched_frames, max_scheduled_tick_batch
     if start[0]!=0 or start[4:6]!=[1,1] or start[6]>2 or (
             start[7]-start[8]!=start[6]) or start[10]!=0:
         raise ValueError('native audout baseline not healthy')
     if sum(start[11:14])!=start[9] or start[14]>start[9]:
         raise ValueError('starting skip classification not balanced')
+    if start[15:]!=[0]*6:
+        raise ValueError('render batch correlation must start at zero')
     if start[1]<1 or start[2]<1 or start[3]<1:
         raise ValueError('guest never advanced before stress started')
     prev=start
@@ -96,6 +102,15 @@ def verify(path, guest_timeline, guest_controller):
         # inactive/unexpected-slot skip remains a failed stress run.
         if row[12]!=start[12] or row[13]!=start[13]:
             raise ValueError('stopped backend or unexpected page starvation')
+        if (row[15]+row[16]!=elapsed or
+                row[17]+row[18]!=row[9]-start[9] or
+                row[17]>row[15] or row[18]>row[16] or
+                row[19]>row[16] or row[20]>15 or
+                (row[16]>0 and row[20]<2) or
+                (row[16]==0 and row[19]!=0) or
+                (elapsed>0 and row[20]==0) or
+                any(row[j]<prev[j] for j in range(15,21))):
+            raise ValueError('render scheduling / skipped admission mismatch')
         if idx>0:
             if row[7]<=prev[7]:
                 raise ValueError('guest audout queue completely stalled')
@@ -113,9 +128,15 @@ def verify(path, guest_timeline, guest_controller):
     unexpected=measurements[-1][13]-start[13]
     if full+inactive+unexpected!=skipped:
         raise ValueError('stress skip reason totals inconsistent')
+    single_ticks=measurements[-1][15]
+    batched_ticks=measurements[-1][16]
+    single_skips=measurements[-1][17]
+    batched_skips=measurements[-1][18]
+    if single_ticks+batched_ticks!=900 or single_skips+batched_skips!=skipped:
+        raise ValueError('unattributed guest audio ticks or skips')
     return {
-        'schema':'dino-nexium-audout-900tick-v2',
-        'status':'GUEST_900TICK_AUDOUT_SKIP_REASONS_WITNESSED',
+        'schema':'dino-nexium-audout-900tick-v3',
+        'status':'GUEST_900TICK_AUDOUT_FRAME_BATCH_CORRELATION_WITNESSED',
         'simulation_ticks':900,
         'checkpoints':7,
         'native_guest_hid_bound':True,
@@ -127,6 +148,20 @@ def verify(path, guest_timeline, guest_controller):
         'inactive_backend_skips':inactive,
         'unexpected_slot_skips':unexpected,
         'max_skip_streak_since_audio_open':measurements[-1][14],
+        'single_tick_render_steps':single_ticks,
+        'batched_render_steps':batched_ticks,
+        'skips_in_single_tick_render_frames':single_skips,
+        'skips_in_batched_render_frames':batched_skips,
+        'render_frames_with_batched_steps':measurements[-1][19],
+        'largest_scheduled_tick_batch':measurements[-1][20],
+        'batched_skip_percent_rounded':(
+            (100*batched_skips+batched_ticks//2)//batched_ticks
+            if batched_ticks else None),
+        'single_skip_percent_rounded':(
+            (100*single_skips+single_ticks//2)//single_ticks
+            if single_ticks else None),
+        'catchup_causality_verified':False,
+        'host_wall_clock_real_time_verified':False,
         'checkpoint_skipped_deltas':[
             measurements[i][9]-measurements[i-1][9]
             for i in range(1,len(measurements))
@@ -152,8 +187,8 @@ def main(argv=None):
         result=verify(opts.report,opts.timeline,opts.controller)
     except (OSError,ValueError,OverflowError,UnicodeError):
         result={
-            'schema':'dino-nexium-audout-900tick-v2',
-            'status':'INCONCLUSIVE_NO_GUEST_900TICK_AUDOUT_REASON_EVIDENCE',
+            'schema':'dino-nexium-audout-900tick-v3',
+            'status':'INCONCLUSIVE_NO_GUEST_AUDIO_RENDER_BATCH_EVIDENCE',
             'sound_device_audible_verified':False,
             'physical_switch_audio_verified':False,
             'audio_latency_verified':False,
