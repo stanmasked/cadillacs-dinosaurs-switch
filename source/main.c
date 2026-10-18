@@ -449,7 +449,7 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
     DinoSoundDiagnostics stats;
     dino_switch_sound_diagnostics(&stats);
     fprintf(stream,
-            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX\n",
+            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u\n",
             event,(unsigned)elapsed,(unsigned)arena->ticks,
             (unsigned)stats.simulated_ticks,
             (unsigned)dino_switch_sound_pcm_ticks(),
@@ -457,7 +457,11 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
             (unsigned)stats.pending,(unsigned)stats.submitted,
             (unsigned)stats.released,(unsigned)stats.skipped,
             (unsigned)stats.audio_errors,
-            (unsigned long long)dino_switch_sound_pcm_witness());
+            (unsigned long long)dino_switch_sound_pcm_witness(),
+            (unsigned)stats.full_queue_skips,
+            (unsigned)stats.inactive_backend_skips,
+            (unsigned)stats.unexpected_slot_skips,
+            (unsigned)stats.max_consecutive_skips);
     fflush(stream);
 }
 
@@ -766,7 +770,9 @@ int main(int argc, char **argv) {
                             fputs("event,elapsed_ticks,arena_ticks,audio_ticks,"
                                   "pcm_ticks,active,queue_valid,pending,"
                                   "submitted,released,skipped,audio_errors,"
-                                  "pcm_fnv64\n",guest_audio_stress);
+                                  "pcm_fnv64,full_queue_skips,"
+                                  "inactive_backend_skips,unexpected_slot_skips,"
+                                  "max_consecutive_skips\n",guest_audio_stress);
                             guest_audio_stress_start=arena.ticks;
                             guest_audio_stress_row(guest_audio_stress,
                                                    "START",0u,&arena);
