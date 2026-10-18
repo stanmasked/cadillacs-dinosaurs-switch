@@ -32,6 +32,8 @@ WINDOW_SAMPLE_MAX = 65536
 PCM_FORMAT = 's16le-stereo-48000'
 SPAR_HZ = 530
 TONE_WINDOW_FRAMES = 2048
+TONE_HOP_FRAMES = 1024
+MAX_TONE_WINDOWS = 32
 MIN_TONE_COHERENCE = 0.60
 
 
@@ -159,6 +161,8 @@ def measure():
         strong_count = 0
         tone_window = bytearray()
         tone_started = False
+        tone_scans = 0
+        best_tone_coherence = 0.0
         deadline = time.monotonic() + MAX_OBSERVE_SECONDS
         release_ns = start_ns + 250_000_000
         try:
@@ -171,35 +175,53 @@ def measure():
                 if frames:
                     count += 1
                     strong_count += strong
-                    # Capture starts on the first strong post-key frame
-                    # and is bounded to a single 2048-frame analysis
-                    # window. Reject residual/non-spar tones instead of
-                    # claiming that any nonzero audio is the target cue.
+                    # The first non-silent frame may contain a residual
+                    # jump/landing sound already queued by audout. Search
+                    # multiple overlapping, bounded 2048-frame windows,
+                    # rather than treating the FIRST window as definitive.
                     if not tone_started and strong:
                         offset = _first_strong_frame(raw)
                         if offset is not None:
                             tone_started = True
                             raw = raw[4*offset:]
-                    if tone_started and len(tone_window)<TONE_WINDOW_FRAMES*4:
-                        need = TONE_WINDOW_FRAMES*4-len(tone_window)
-                        tone_window.extend(raw[:need])
-                    if (strong_count >= MIN_SIGNAL_FRAMES and
-                            len(tone_window)==TONE_WINDOW_FRAMES*4):
-                        score = spar_tone_coherence(tone_window)
-                        if score < MIN_TONE_COHERENCE:
-                            return record('INCONCLUSIVE_NOT_530HZ_SPAR_TONE',
-                                          baseline_quiet=True)
-                        elapsed_ms = (time.monotonic_ns() - start_ns + 999_999)//1_000_000
-                        if not 1 <= elapsed_ms <= MAX_OBSERVE_MS:
-                            raise ValueError('monitor observation outside bounds')
-                        return record(
-                            'HOST_SPAR_530HZ_PCM_OBSERVED_UNBOUND',
-                            host_monitor_read_upper_bound_ms=int(elapsed_ms),
-                            monitor_read_chunks=count,
-                            baseline_quiet=True,
-                            tone_reference_hz=SPAR_HZ,
-                            tone_coherence_milli=min(1000,int(score*1000)),
-                            format=PCM_FORMAT)
+                    if tone_started:
+                        tone_window.extend(raw)
+                        while (len(tone_window)>=TONE_WINDOW_FRAMES*4 and
+                               tone_scans<MAX_TONE_WINDOWS):
+                            score = spar_tone_coherence(
+                                tone_window[:TONE_WINDOW_FRAMES*4])
+                            tone_scans += 1
+                            best_tone_coherence = max(best_tone_coherence,score)
+                            if (strong_count>=MIN_SIGNAL_FRAMES and
+                                    score>=MIN_TONE_COHERENCE):
+                                elapsed_ms = (
+                                    time.monotonic_ns()-start_ns+999_999
+                                )//1_000_000
+                                if not 1 <= elapsed_ms <= MAX_OBSERVE_MS:
+                                    raise ValueError('monitor response outside bounds')
+                                return record(
+                                    'HOST_SPAR_530HZ_PCM_OBSERVED_UNBOUND',
+                                    host_monitor_read_upper_bound_ms=int(elapsed_ms),
+                                    monitor_read_chunks=count,
+                                    baseline_quiet=True,
+                                    tone_reference_hz=SPAR_HZ,
+                                    tone_coherence_milli=min(1000,int(score*1000)),
+                                    tone_windows_scanned=tone_scans,
+                                    format=PCM_FORMAT)
+                            del tone_window[:TONE_HOP_FRAMES*4]
+                        if tone_scans>=MAX_TONE_WINDOWS:
+                            return record(
+                                'INCONCLUSIVE_NOT_530HZ_SPAR_TONE',
+                                baseline_quiet=True,
+                                tone_windows_scanned=tone_scans,
+                                best_tone_coherence_milli=min(
+                                    1000,int(best_tone_coherence*1000)))
+            if tone_scans:
+                return record('INCONCLUSIVE_NOT_530HZ_SPAR_TONE',
+                              baseline_quiet=True,
+                              tone_windows_scanned=tone_scans,
+                              best_tone_coherence_milli=min(
+                                  1000,int(best_tone_coherence*1000)))
             return record('INCONCLUSIVE_NO_POST_KEY_PCM',
                           baseline_quiet=True)
         finally:
