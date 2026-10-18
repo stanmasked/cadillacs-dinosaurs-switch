@@ -59,7 +59,10 @@ class LongGuestAudioStressTests(unittest.TestCase):
     def write(self,fields=None):
         with self.path.open('w',encoding='ascii',newline='') as stream:
             w=csv.writer(stream)
-            w.writerow(fields if fields is not None else check.STAGE151_COLUMNS)
+            if fields is None:
+                fields=(check.COLUMNS if len(self.rows[0])==len(check.COLUMNS)
+                        else check.STAGE151_COLUMNS)
+            w.writerow(fields)
             w.writerows(self.rows)
 
     def mutate(self,index,column,bad):
