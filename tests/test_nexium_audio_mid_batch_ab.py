@@ -242,6 +242,74 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertIsNone(result['matched_exposure_later_skip_directions_mixed'])
         self.assertIsNone(result['matched_exposure_later_skip_count_delta'])
 
+    def test_matched_exposure_reports_all_six_page_return_windows(self):
+        result=ab.compare(self.a,self.b)
+        windows=result['matched_exposure_later_ack_window_deltas']
+        self.assertEqual(len(windows),6)
+        self.assertEqual(
+            [w['extra_minus_baseline_later_page_returns'] for w in windows],
+            [0]*6)
+        self.assertEqual(result['matched_exposure_later_ack_count_delta'],0)
+        self.assertEqual(result['matched_exposure_later_ack_windows_increased'],0)
+        self.assertEqual(result['matched_exposure_later_ack_windows_decreased'],0)
+        self.assertFalse(result['matched_exposure_later_ack_directions_mixed'])
+        self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_page_return_cross_window_cancellation_is_visible(self):
+        baseline=complete(False)
+        experimental=complete(True)
+        windows=experimental['checkpoint_release_position_intervals']
+        windows[0]['batched_later_released_pages']+=2
+        windows[1]['batched_later_released_pages']-=2
+        # Test descriptive arithmetic separately; this fixture is not
+        # asserted to be a valid complete guest timing ledger.
+        result=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(result['per_150tick_batch_exposure_matched'])
+        self.assertEqual(result['matched_exposure_later_ack_count_delta'],0)
+        self.assertEqual(
+            [w['extra_minus_baseline_later_page_returns']
+             for w in result['matched_exposure_later_ack_window_deltas']],
+            [2,-2,0,0,0,0])
+        self.assertEqual(result['matched_exposure_later_ack_windows_increased'],1)
+        self.assertEqual(result['matched_exposure_later_ack_windows_decreased'],1)
+        self.assertTrue(result['matched_exposure_later_ack_directions_mixed'])
+        self.assertFalse(result['exact_frame_pacing_matched'])
+
+    def test_mismatched_exposure_nulls_all_ack_direction_claims(self):
+        baseline=complete(False)
+        experimental=complete(True)
+        experimental['checkpoint_batch_position_intervals'][0][
+            'later_tick_steps']=24
+        experimental['checkpoint_batch_position_intervals'][0][
+            'first_tick_steps']=24
+        experimental['checkpoint_mode_intervals'][0][
+            'single_tick_render_steps']=102
+        result=ab.compare_batch_exposure(baseline,experimental)
+        self.assertFalse(result['per_150tick_batch_exposure_matched'])
+        self.assertIsNone(result['matched_exposure_later_ack_count_delta'])
+        self.assertIsNone(result['matched_exposure_later_ack_window_deltas'])
+        self.assertIsNone(result['matched_exposure_later_ack_windows_increased'])
+        self.assertIsNone(result['matched_exposure_later_ack_windows_decreased'])
+        self.assertIsNone(result['matched_exposure_later_ack_directions_mixed'])
+
+    def test_exposure_helper_rejects_bad_page_return_window_ledgers(self):
+        for kind in ('boolean','negative','total','start','missing'):
+            with self.subTest(kind=kind):
+                report=complete(False)
+                windows=report['checkpoint_release_position_intervals']
+                if kind=='boolean':
+                    windows[0]['batched_later_released_pages']=True
+                elif kind=='negative':
+                    windows[0]['batched_later_released_pages']=-1
+                elif kind=='total':
+                    windows[0]['batched_later_released_pages']=6
+                elif kind=='start':
+                    windows[0]['tick_start']=1
+                else:
+                    windows.pop()
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
