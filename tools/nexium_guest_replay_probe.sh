@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Attempt REAL Nintendo Switch NRO execution in the NeXium guest.
+# Unlike host-C smoke, this must find a guest-written replay report.
+# Keys, Nintendo firmware, private ROMs, and commercial assets are not used.
+set -euo pipefail
+if [ "$#" -ne 2 ]; then
+    echo "Usage: bash tools/nexium_guest_replay_probe.sh ci-app.nro evidence-dir" >&2
+    exit 2
+fi
+nro="$(realpath "$1")"
+out="$(realpath -m "$2")"
+mkdir -p "$out"
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+release="https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz"
+# Release asset digest verified against the public GitHub API on 2026-10-18.
+# Mutable tag: reject changed binary, never silently trust a replacement.
+expected="0ec2da5d58b6b362a9f0a4c927af0e55d36a0b50d1ab3f035dd075ea12d76761"
+{
+    echo "scope=REAL_NE_XIUM_GUEST_CI_NO_NINTENDO_ROM"
+    echo "emulator=NeXium pinned experimental nightly"
+    echo "expected_emulator_sha256=$expected"
+    echo "nro_sha256=$(sha256sum "$nro" | cut -d ' ' -f1)"
+    echo "host_arch=$(uname -m)"
+} > "$out/metadata.txt"
+if ! curl -fL --retry 2 --connect-timeout 20 --max-time 240 \
+        "$release" -o "$scratch/nexium.tar.gz" \
+        > "$out/download.txt" 2>&1; then
+    echo "INCONCLUSIVE: emulator download failed" > "$out/result.txt"
+    exit 1
+fi
+if ! echo "$expected  $scratch/nexium.tar.gz" | sha256sum -c - \
+        > "$out/emulator-hash-check.txt" 2>&1; then
+    echo "BLOCKED: unrecognized emulator release hash" > "$out/result.txt"
+    exit 1
+fi
+tar -tzf "$scratch/nexium.tar.gz" > "$out/archive-files.txt"
+# Pinned binary only; refuse potentially dangerous archive entry paths.
+if grep -Eq '(^/|(^|/)\.\.(\/|$))' "$out/archive-files.txt"; then
+    echo "BLOCKED: unsafe emulator archive paths" > "$out/result.txt"
+    exit 1
+fi
+mkdir -p "$scratch/app"
+tar -xzf "$scratch/nexium.tar.gz" -C "$scratch/app" --no-same-owner
+exe="$(find "$scratch/app" -type f \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+if [ -z "$exe" ]; then
+    echo "INCONCLUSIVE: verified archive has no emulator executable" > "$out/result.txt"
+    exit 1
+fi
+chmod +x "$exe"
+export LIBGL_ALWAYS_SOFTWARE=1
+driver="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*json' -print -quit 2>/dev/null || true)"
+if [ -n "$driver" ]; then export VK_ICD_FILENAMES="$driver"; else unset VK_ICD_FILENAMES; fi
+export WGPU_BACKEND=vulkan
+export GDK_BACKEND=x11
+export NEXIUM_VIDEO_FFMPEG=0
+export HOME="$out/isolated-home"
+export XDG_CONFIG_HOME="$out/xdg-config"
+export XDG_CACHE_HOME="$out/xdg-cache"
+export XDG_DATA_HOME="$out/xdg-data"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
+vulkaninfo --summary > "$out/vulkan.txt" 2>&1 || true
+
+# No false success on launch, 110s timeout, Vulkan initialization or
+# simply seeing the emulator GUI. The guest NRO must itself produce the
+# bounded 180-tick trace with BOTH independently verified golden hashes.
+set +e
+xvfb-run -a -s "-screen 0 1280x720x24" \
+    bash -c '
+      timeout --signal=TERM --kill-after=5s 110s "$1" "$2" > "$3" 2>&1 &
+      emulator_pid=$!
+      (
+        sleep 12
+        window="$(xdotool search --onlyvisible --name "NeXium" | tail -n1)"
+        if [ -n "$window" ]; then
+          xdotool windowfocus "$window" || true
+          import -window "$window" "$4" 2>/dev/null || true
+        fi
+      ) >/dev/null 2>&1 &
+      wait "$emulator_pid"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png"
+rc=$?
+set -e
+echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-arena-selftest.csv' -print \
+    > "$out/guest-trace-locations.txt"
+if [ -s "$out/guest-trace-locations.txt" ]; then
+    IFS= read -r path < "$out/guest-trace-locations.txt"
+    cp "$path" "$out/guest-replay.csv"
+fi
+python3 tools/verify_nexium_guest_replay.py \
+    --report "$out/guest-replay.csv" \
+    --out "$out/result.txt"
