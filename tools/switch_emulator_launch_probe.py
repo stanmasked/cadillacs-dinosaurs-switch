@@ -8,6 +8,7 @@ No firmware, prod.keys, ROMs, screenshots or private emulator logs are read,
 copied, uploaded or printed. Results contain safe booleans and durations.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,18 +23,56 @@ MIN_RUNTIME=0.2
 
 
 def check_nro(path):
-    """Check the public homebrew binary header; never read game assets."""
+    """Validate NRO header and bounded, nonoverlapping executable segments.
+
+    This is static format validation, not CPU execution, code signing,
+    device compatibility or proof that the homebrew rendered a frame.
+    """
     try:
-        stat=path.stat()
-        if not path.is_file() or not 0x80<=stat.st_size<=128*1024*1024:
+        path=Path(path)
+        if path.is_symlink() or not path.is_file():
+            return False
+        size=path.stat().st_size
+        if not 0x80<=size<=128*1024*1024:
             return False
         with path.open('rb') as stream:
-            head=stream.read(0x20)
-        if len(head)<0x20 or head[0x10:0x14]!=b'NRO0':
+            head=stream.read(0x40)
+        if len(head)<0x40 or head[0x10:0x14]!=b'NRO0':
             return False
         image_size=struct.unpack_from('<I',head,0x18)[0]
-        return 0x80<=image_size<=stat.st_size
+        if not (0x80<=image_size<=size and image_size%0x1000==0):
+            return False
+        sections=[
+            struct.unpack_from('<II',head,offset)
+            for offset in (0x20,0x28,0x30)
+        ]
+        previous_end=0
+        for index,(start,length) in enumerate(sections):
+            if (not length or start%0x1000 or
+                    (index==0 and start!=0) or
+                    start<previous_end or
+                    start+length>image_size):
+                return False
+            previous_end=start+length
+        return True
     except (OSError,ValueError,OverflowError):
+        return False
+
+
+def check_sha256(path,expected):
+    """Compare optional user-provided build digest without logging it."""
+    if expected is None:
+        return None
+    if (not isinstance(expected,str) or len(expected)!=64 or
+            any(ch not in '0123456789abcdefABCDEF' for ch in expected)):
+        return False
+    try:
+        digest=hashlib.sha256()
+        with Path(path).open('rb') as f:
+            for block in iter(lambda:f.read(65536),b''):
+                digest.update(block)
+        return digest.hexdigest()==expected.lower()
+    except OSError:
         return False
 
 
@@ -46,11 +85,12 @@ def resolve_executable(candidate):
     return shutil.which(candidate)
 
 
-def probe(emulator,nro,*,runtime=2.0,extra_args=()):
+def probe(emulator,nro,*,runtime=2.0,extra_args=(),sha256=None):
     """Perform one bounded process check; no emulated-frame claim is made."""
     report={
-        'schema':'dino-emulator-launch-v1',
+        'schema':'dino-emulator-launch-v2',
         'nro_format_valid':check_nro(nro),
+        'nro_sha256_matches':None,
         'emulator_available':bool(resolve_executable(emulator)),
         'process_launched':False,
         'process_survived_window':False,
@@ -61,6 +101,15 @@ def probe(emulator,nro,*,runtime=2.0,extra_args=()):
     }
     if not report['nro_format_valid']:
         report['status']='INVALID_NRO'
+        return report
+    if sha256 is not None and (not isinstance(sha256,str) or
+            len(sha256)!=64 or
+            any(ch not in '0123456789abcdefABCDEF' for ch in sha256)):
+        report['status']='INVALID_CHECKSUM_ARGUMENT'
+        return report
+    report['nro_sha256_matches']=check_sha256(nro,sha256)
+    if report['nro_sha256_matches'] is False:
+        report['status']='NRO_CHECKSUM_MISMATCH'
         return report
     executable=resolve_executable(emulator)
     if not executable:
@@ -108,13 +157,15 @@ def main(argv=None):
                         help='Installed emulator executable, e.g. Ryujinx')
     parser.add_argument('--nro',type=Path,required=True,
                         help='ROM-free, user-built .nro application')
+    parser.add_argument('--sha256',
+                        help='Expected 64-character SHA-256 of NRO (optional)')
     parser.add_argument('--runtime',type=float,default=3.0,
                         help='Seconds to observe (0.2 to 120)')
     parser.add_argument('--emulator-arg',action='append',default=[],
                         help='Extra emulator argument preceding the .nro')
     args=parser.parse_args(argv)
     report=probe(args.emulator,args.nro,runtime=args.runtime,
-                 extra_args=args.emulator_arg)
+                 extra_args=args.emulator_arg,sha256=args.sha256)
     print(json.dumps(report,sort_keys=True))
     return 0 if report['process_survived_window'] else 2
 
