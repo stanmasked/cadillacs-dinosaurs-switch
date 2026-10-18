@@ -40,6 +40,8 @@ on:
       - 'tests/test_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_audio_paired_artifacts.py'
       - 'tests/test_nexium_audio_paired_artifacts.py'
+      - 'tools/nexium_audio_control_plan.py'
+      - 'tests/test_nexium_audio_controlled_mock.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -68,6 +70,8 @@ on:
       - 'tests/test_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_audio_paired_artifacts.py'
       - 'tests/test_nexium_audio_paired_artifacts.py'
+      - 'tools/nexium_audio_control_plan.py'
+      - 'tests/test_nexium_audio_controlled_mock.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -255,6 +259,8 @@ jobs:
       - name: Verify bound guest evidence and compare two modes
         run: |
           python3 -m unittest discover -s tests -p 'test_nexium_audio_paired_artifacts.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_mock.py' -v
+          python3 tools/nexium_audio_control_plan.py --out controlled-host-audout-plan.json
           python3 tools/verify_nexium_audio_paired_artifacts.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
             --baseline-binding paired/baseline/guest-audio-mode-binding.json \
@@ -268,6 +274,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dino-ne-xium-bound-audio-ab-comparison
-          path: paired-audio-comparison.json
+          path: |
+            paired-audio-comparison.json
+            controlled-host-audout-plan.json
           if-no-files-found: warn
           retention-days: 7
