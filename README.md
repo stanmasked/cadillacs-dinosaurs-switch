@@ -24,6 +24,14 @@ python3 tools/dino_sfx_preview.py --out /your/private/folder/dino-training-effec
 Actual speaker/headphone output on a physical Switch remains unverified;
 audio hardware failures leave the technical prototype playable without sound.
 
+To **actually play and inspect the portable C mechanics on a desktop**,
+run `python3 tools/dino_host_preview.py` with Python, GCC and Tkinter.
+No ROM or Switch emulator is required. The headless mode
+(`--headless --ticks 180`) runs actual C combat and synthetic audio
+and optionally writes a no-overwrite PPM frame; this is not
+Switch hardware or GPU emulation. See
+[desktop gameplay preview and CI artifact](docs/host-native-gameplay-smoke.md).
+
 For ROM-free testing in an installed Nintendo Switch emulator, follow
 [the emulator launch and manual smoke-test guide](docs/switch-emulator-smoke.md).
 It includes a strict NRO format check, a bounded launcher probe and
