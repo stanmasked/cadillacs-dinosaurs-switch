@@ -21,6 +21,15 @@ class Queue(ctypes.Structure):
         ('released',ctypes.c_uint32),
     ]
 
+class QueueStats(ctypes.Structure):
+    _fields_=[
+        ('busy_mask',ctypes.c_uint32),
+        ('pending',ctypes.c_uint32),
+        ('submitted',ctypes.c_uint32),
+        ('released',ctypes.c_uint32),
+        ('skipped',ctypes.c_uint32),
+    ]
+
 @unittest.skipUnless(shutil.which('gcc'), 'Host GCC needed for portable sound queue tests')
 class SoundQueueTests(unittest.TestCase):
     @classmethod
@@ -45,6 +54,9 @@ class SoundQueueTests(unittest.TestCase):
             ctypes.POINTER(Queue),ctypes.c_uint]
         cls.dll.dino_audio_queue_release.restype=ctypes.c_bool
         cls.dll.dino_audio_queue_skip.argtypes=[ctypes.POINTER(Queue)]
+        cls.dll.dino_audio_queue_snapshot.argtypes=[
+            ctypes.POINTER(Queue),ctypes.POINTER(QueueStats)]
+        cls.dll.dino_audio_queue_snapshot.restype=ctypes.c_bool
 
     @classmethod
     def tearDownClass(cls):
@@ -165,6 +177,63 @@ class SoundQueueTests(unittest.TestCase):
                 self.assertLessEqual(q.pending,2)
         self.assertEqual(bytes(a),bytes(b))
         self.assertGreater(a.skipped,0)
+
+    def test_snapshot_captures_released_and_skipped_blocks(self):
+        q=self.fresh()
+        stats=QueueStats()
+        self.assertTrue(self.dll.dino_audio_queue_snapshot(
+            ctypes.byref(q),ctypes.byref(stats)))
+        self.assertEqual((stats.busy_mask,stats.pending,
+                          stats.submitted,stats.released,stats.skipped),
+                         (0,0,0,0,0))
+        self.assertTrue(self.submit(q,1))
+        self.assertTrue(self.submit(q,3))
+        self.dll.dino_audio_queue_skip(ctypes.byref(q))
+        self.assertTrue(self.release(q,1))
+        self.assertTrue(self.dll.dino_audio_queue_snapshot(
+            ctypes.byref(q),ctypes.byref(stats)))
+        self.assertEqual((stats.busy_mask,stats.pending,
+                          stats.submitted,stats.released,stats.skipped),
+                         (8,1,2,1,1))
+
+    def test_snapshot_does_not_mutate_queue(self):
+        q=self.fresh()
+        self.assertTrue(self.submit(q,0))
+        before=bytes(q)
+        for _ in range(20):
+            stats=QueueStats()
+            self.assertTrue(self.dll.dino_audio_queue_snapshot(
+                ctypes.byref(q),ctypes.byref(stats)))
+        self.assertEqual(bytes(q),before)
+
+    def test_snapshot_refuses_inconsistent_queue_without_writing_output(self):
+        cases=[
+            ('pending_count',lambda q:setattr(q,'pending',2)),
+            ('bad_busy_value',lambda q:q.busy.__setitem__(0,2)),
+            ('missing_submitted',lambda q:setattr(q,'submitted',0)),
+            ('phantom_released',lambda q:setattr(q,'released',2)),
+            ('over_capacity',lambda q:setattr(q,'pending',3)),
+        ]
+        for name,mutate in cases:
+            with self.subTest(name=name):
+                q=self.fresh()
+                self.assertTrue(self.submit(q,0))
+                mutate(q)
+                stats=QueueStats(101,102,103,104,105)
+                self.assertFalse(self.dll.dino_audio_queue_snapshot(
+                    ctypes.byref(q),ctypes.byref(stats)))
+                self.assertEqual(
+                    (stats.busy_mask,stats.pending,
+                     stats.submitted,stats.released,stats.skipped),
+                    (101,102,103,104,105))
+
+    def test_snapshot_null_arguments_refused(self):
+        q=self.fresh()
+        stats=QueueStats()
+        self.assertFalse(self.dll.dino_audio_queue_snapshot(
+            None,ctypes.byref(stats)))
+        self.assertFalse(self.dll.dino_audio_queue_snapshot(
+            ctypes.byref(q),None))
 
     def test_null_pointer_handling_is_fail_closed(self):
         self.dll.dino_audio_queue_reset(None)
