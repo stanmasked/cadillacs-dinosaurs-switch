@@ -113,6 +113,10 @@ def exposure_profile(report):
         later_skips=integer(w['later_tick_skips'],'later tick skips')
         later_returns=integer(r['batched_later_released_pages'],
                               'later tick page returns')
+        first_returns=integer(r['batched_first_released_pages'],
+                              'first batch tick page returns')
+        single_returns=integer(r['single_frame_released_pages'],
+                               'single frame page returns')
         if (first+later+single!=150 or
                 first_skips>first or later_skips>later or
                 w['tick_start']!=150*i or w['tick_end']!=150*(i+1) or
@@ -126,12 +130,17 @@ def exposure_profile(report):
             'later_batch_ticks':later,
             'first_batch_skips':first_skips,
             'later_batch_skips':later_skips,
+            'single_frame_page_returns':single_returns,
+            'first_batch_page_returns':first_returns,
             'later_batch_page_returns':later_returns,
         })
-    if (sum(w['later_batch_page_returns'] for w in result)!=
-            integer(report['batched_later_released_pages'],
-                    'later page-return total')):
-        raise ValueError('inconsistent 150-tick later page-return ledger')
+    for position,field in (
+            ('single_frame_page_returns','single_frame_released_pages'),
+            ('first_batch_page_returns','batched_first_released_pages'),
+            ('later_batch_page_returns','batched_later_released_pages')):
+        if (sum(w[position] for w in result)!=
+                integer(report[field],position+' total')):
+            raise ValueError('inconsistent 150-tick page-return ledger: '+position)
     return result
 
 
@@ -178,7 +187,30 @@ def compare_batch_exposure(a,b):
     return_counts_matched=(
         all(x['later_batch_page_returns']==y['later_batch_page_returns']
             for x,y in zip(left,right)) if matched else None)
-    strictly_matched=(matched and return_counts_matched is True)
+    # Equal later-tick returns alone do not control the audout queue:
+    # single-frame/first-batch releases affect the same two slots.
+    return_position_fields=(
+        'single_frame_page_returns',
+        'first_batch_page_returns',
+        'later_batch_page_returns',
+    )
+    all_returns_matched=(
+        all(all(x[k]==y[k] for k in return_position_fields)
+            for x,y in zip(left,right)) if matched else None)
+    return_position_windows=([
+        {
+            'tick_start':x['tick_start'],
+            'tick_end':x['tick_end'],
+            'extra_minus_baseline_single_frame_page_returns':(
+                y['single_frame_page_returns']-x['single_frame_page_returns']),
+            'extra_minus_baseline_first_batch_page_returns':(
+                y['first_batch_page_returns']-x['first_batch_page_returns']),
+            'extra_minus_baseline_later_batch_page_returns':(
+                y['later_batch_page_returns']-x['later_batch_page_returns']),
+        }
+        for x,y in zip(left,right)
+    ] if matched else None)
+    strictly_matched=(matched and all_returns_matched is True)
     return {
         'per_150tick_batch_exposure_matched':matched,
         'matched_exposure_later_skip_window_deltas':skip_windows,
@@ -194,6 +226,11 @@ def compare_batch_exposure(a,b):
         'matched_exposure_later_return_counts_matched':return_counts_matched,
         'matched_exposure_return_shift_confounds_skip_comparison':(
             not return_counts_matched if matched else None),
+        'matched_exposure_return_position_window_deltas':return_position_windows,
+        'matched_exposure_all_position_return_counts_matched':
+            all_returns_matched,
+        'matched_exposure_any_position_return_shift_confounds_skip_comparison':(
+            not all_returns_matched if matched else None),
         'matched_exposure_and_returns_later_skip_window_deltas':(
             skip_windows if strictly_matched else None),
         'matched_exposure_and_returns_later_skip_count_delta':(
