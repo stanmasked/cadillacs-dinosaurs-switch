@@ -60,19 +60,16 @@ class BaselineRepeatabilityTests(unittest.TestCase):
         self.assertEqual(
             diag['experimental_queue_150tick_boundaries'][0]['pending_at_start'],2)
 
-    def test_missing_optional_queue_witness_stays_unknown(self):
+    def test_missing_fixed_ack_witness_fails_closed(self):
+        # Stage 157 baseline pairing requires a complete headroom witness.
+        # An older report without endpoints is inconclusive, never zero.
         report=complete(False,1)
         from tools import compare_nexium_audio_stress_runs as cross
         for name in cross.FIXED_ACK_FIELDS:
             report.pop(name)
         self.save(self.second,report)
-        result=repeats.compare(self.first,self.second)
-        diag=result['exposure_and_queue_diagnostics']
-        self.assertIsNone(diag['experimental_queue_pending_at_stress_start'])
-        self.assertIsNone(diag['experimental_queue_150tick_boundaries'])
-        self.assertIsNone(diag['matched_exposure_initial_queue_occupancy_matched'])
-        self.assertIsNone(diag[
-            'matched_exposure_and_returns_later_skip_count_delta'])
+        with self.assertRaisesRegex(ValueError,'fixed-ACK queue witness'):
+            repeats.compare(self.first,self.second)
 
     def test_experimental_poll_variant_must_not_masquerade_as_baseline(self):
         self.save(self.second,complete(True,1))
