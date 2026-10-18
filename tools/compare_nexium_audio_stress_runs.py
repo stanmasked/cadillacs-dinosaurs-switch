@@ -49,6 +49,31 @@ POLL_WINDOW_KEYS = {
     'tick_start', 'tick_end', 'full_before_poll',
     'recovered_before_admission', 'still_full_after_poll',
 }
+POSITION_FIELDS = (
+    'batch_tick_position_probe_present',
+    'batched_first_tick_steps', 'batched_later_tick_steps',
+    'batched_first_tick_skips', 'batched_later_tick_skips',
+    'checkpoint_batch_position_intervals',
+)
+POSITION_WINDOW_KEYS = {
+    'tick_start', 'tick_end', 'first_tick_steps', 'later_tick_steps',
+    'first_tick_skips', 'later_tick_skips',
+    'first_skip_percent_rounded', 'later_skip_percent_rounded',
+}
+POSITION_POLL_FIELDS = (
+    'batch_position_poll_probe_present',
+    'batched_first_full_before_poll',
+    'batched_first_recovered_after_poll',
+    'batched_later_full_before_poll',
+    'batched_later_recovered_after_poll',
+    'checkpoint_batch_position_poll_intervals',
+)
+POSITION_POLL_WINDOW_KEYS = {
+    'tick_start', 'tick_end',
+    'first_full_before_poll', 'first_recovered_after_poll',
+    'later_full_before_poll', 'later_recovered_after_poll',
+    'single_full_before_poll', 'single_recovered_after_poll',
+}
 
 
 def nonnegative(value):
@@ -127,6 +152,138 @@ def validate_release_poll_probe(report, totals, mode_windows):
     if sums_before!=before or sums_recovered!=recovered or sums_still!=still:
         raise ValueError('release-poll window totals do not reconcile')
     return (before,recovered)
+
+
+
+def optional_probe_state(report, keys, name):
+    supplied=set(keys).intersection(report)
+    if not supplied:
+        return False
+    if supplied!=set(keys):
+        raise ValueError('partial '+name+' evidence')
+    enabled=report[keys[0]]
+    if enabled is False:
+        if any(report[key] is not None for key in keys[1:]):
+            raise ValueError('absent '+name+' claimed non-null counters')
+        return False
+    if enabled is not True:
+        raise ValueError('invalid '+name+' presence')
+    return True
+
+
+def validate_batch_position_probes(report, totals, modes, release):
+    """Fail closed on Stage 145/146 counters, never infer provenance."""
+    has_position=optional_probe_state(
+        report,POSITION_FIELDS,'batched-tick position')
+    has_poll=optional_probe_state(
+        report,POSITION_POLL_FIELDS,'position release poll')
+    if has_poll and (not has_position or release is None):
+        raise ValueError('position release poll lacks prerequisite evidence')
+    if not has_position:
+        return None,None
+    totals_by_position={
+        'first_tick_steps':nonnegative(report['batched_first_tick_steps']),
+        'later_tick_steps':nonnegative(report['batched_later_tick_steps']),
+        'first_tick_skips':nonnegative(report['batched_first_tick_skips']),
+        'later_tick_skips':nonnegative(report['batched_later_tick_skips']),
+    }
+    a=totals_by_position
+    if (a['first_tick_steps']+a['later_tick_steps']!=
+            totals['batched_render_steps'] or
+            a['first_tick_skips']+a['later_tick_skips']!=
+            totals['skips_in_batched_render_frames'] or
+            a['first_tick_skips']>a['first_tick_steps'] or
+            a['later_tick_skips']>a['later_tick_steps'] or
+            abs(a['first_tick_steps']-
+                totals['render_frames_with_batched_steps'])>1):
+        raise ValueError('batched-tick position totals inconsistent')
+    pos_windows=report['checkpoint_batch_position_intervals']
+    if not isinstance(pos_windows,list) or len(pos_windows)!=6:
+        raise ValueError('incomplete batch-position windows')
+    sums=dict.fromkeys(a,0)
+    for i,(w,mode) in enumerate(zip(pos_windows,modes)):
+        if not isinstance(w,dict) or set(w)!=POSITION_WINDOW_KEYS:
+            raise ValueError('invalid batch-position window fields')
+        sample={key:nonnegative(w[key]) for key in sums}
+        first=sample['first_tick_steps']
+        later=sample['later_tick_steps']
+        first_drop=sample['first_tick_skips']
+        later_drop=sample['later_tick_skips']
+        if (nonnegative(w['tick_start'])!=i*150 or
+                nonnegative(w['tick_end'])!=(i+1)*150 or
+                first+later!=mode['batched_render_steps'] or
+                first_drop+later_drop!=
+                    mode['skips_in_batched_render_frames'] or
+                first_drop>first or later_drop>later or
+                abs(first-mode['render_frames_with_batched_steps'])>1 or
+                w['first_skip_percent_rounded']!=
+                    rounded(first_drop,first) or
+                w['later_skip_percent_rounded']!=
+                    rounded(later_drop,later)):
+            raise ValueError('batch-position window contradicts mode')
+        for key in sums:
+            sums[key]+=sample[key]
+    if sums!=a:
+        raise ValueError('batch-position windows do not sum to totals')
+    if not has_poll:
+        return a,None
+
+    poll_windows=report['checkpoint_batch_position_poll_intervals']
+    if not isinstance(poll_windows,list) or len(poll_windows)!=6:
+        raise ValueError('incomplete position release-poll windows')
+    fields=(
+        'batched_first_full_before_poll',
+        'batched_first_recovered_after_poll',
+        'batched_later_full_before_poll',
+        'batched_later_recovered_after_poll',
+    )
+    b={key:nonnegative(report[key]) for key in fields}
+    if (b[fields[0]]-b[fields[1]]!=a['first_tick_skips'] or
+            b[fields[2]]-b[fields[3]]!=a['later_tick_skips'] or
+            b[fields[0]]>a['first_tick_steps'] or
+            b[fields[2]]>a['later_tick_steps'] or
+            b[fields[1]]>b[fields[0]] or
+            b[fields[3]]>b[fields[2]]):
+        raise ValueError('batch-position release-poll totals invalid')
+    sums_poll=dict.fromkeys(fields,0)
+    for i,(w,mode,pos) in enumerate(zip(poll_windows,modes,pos_windows)):
+        if not isinstance(w,dict) or set(w)!=POSITION_POLL_WINDOW_KEYS:
+            raise ValueError('invalid position release-poll window fields')
+        values={key:nonnegative(v) for key,v in w.items()}
+        ff=values['first_full_before_poll']
+        fr=values['first_recovered_after_poll']
+        lf=values['later_full_before_poll']
+        lr=values['later_recovered_after_poll']
+        sf=values['single_full_before_poll']
+        sr=values['single_recovered_after_poll']
+        if (values['tick_start']!=i*150 or
+                values['tick_end']!=(i+1)*150 or
+                ff>pos['first_tick_steps'] or
+                lf>pos['later_tick_steps'] or
+                sf>mode['single_tick_render_steps'] or
+                ff-fr!=pos['first_tick_skips'] or
+                lf-lr!=pos['later_tick_skips'] or
+                sf-sr!=mode['skips_in_single_tick_render_frames'] or
+                (ff+lf+sf)!=
+                    report['checkpoint_release_poll_intervals'][i]
+                          ['full_before_poll'] or
+                (fr+lr+sr)!=
+                    report['checkpoint_release_poll_intervals'][i]
+                          ['recovered_before_admission']):
+            raise ValueError('release-poll subgroups contradict window')
+        for key,subgroup in zip(
+                fields,
+                ('first_full_before_poll',
+                 'first_recovered_after_poll',
+                 'later_full_before_poll',
+                 'later_recovered_after_poll')):
+            sums_poll[key]+=values[subgroup]
+    if sums_poll!=b:
+        raise ValueError('position release-poll window totals mismatch')
+    if (b[fields[0]]+b[fields[2]]>release[0] or
+            b[fields[1]]+b[fields[3]]>release[1]):
+        raise ValueError('position recovery exceeds total release polling')
+    return a,b
 
 
 def validate(report):
@@ -209,7 +366,9 @@ def validate(report):
             higher != totals['windows_with_higher_batched_skip_rate']):
         raise ValueError('window rate comparison contradicted')
     probe=validate_release_poll_probe(report,totals,windows)
-    return totals, windows, probe
+    positions,position_poll=validate_batch_position_probes(
+        report,totals,windows,probe)
+    return totals,windows,probe,positions,position_poll
 
 
 def compare(paths):
@@ -225,13 +384,31 @@ def compare(paths):
     per_run_higher = []
     probed_runs=0
     probed_full=probed_recovered=0
+    positioned=position_polled=0
+    p_first=p_later=p_first_skips=p_later_skips=0
+    pp_first_full=pp_first_recovered=0
+    pp_later_full=pp_later_recovered=0
     for path in paths:
         raw, report = read_report(path)
         digest = hashlib.sha256(raw).digest()
         if digest in seen:
             raise ValueError('reused identical guest report')
         seen.add(digest)
-        totals, windows, probe = validate(report)
+        totals, windows, probe, positions, position_poll = validate(report)
+        if positions is not None:
+            positioned+=1
+            p_first+=positions['first_tick_steps']
+            p_later+=positions['later_tick_steps']
+            p_first_skips+=positions['first_tick_skips']
+            p_later_skips+=positions['later_tick_skips']
+        if position_poll is not None:
+            position_polled+=1
+            pp_first_full+=position_poll['batched_first_full_before_poll']
+            pp_first_recovered+=position_poll[
+                'batched_first_recovered_after_poll']
+            pp_later_full+=position_poll['batched_later_full_before_poll']
+            pp_later_recovered+=position_poll[
+                'batched_later_recovered_after_poll']
         if probe is not None:
             probed_runs+=1
             probed_full+=probe[0]
@@ -263,6 +440,33 @@ def compare(paths):
         'reports_compared': len(paths),
         'total_guest_simulation_ticks': 900 * len(paths),
         'combined_full_queue_skips': pool['full_queue_skips'],
+        'reports_with_batch_position_probe':positioned,
+        'all_reports_have_batch_position_probe':positioned==len(paths),
+        'pooled_batched_first_tick_steps':(
+            p_first if positioned==len(paths) else None),
+        'pooled_batched_later_tick_steps':(
+            p_later if positioned==len(paths) else None),
+        'pooled_batched_first_tick_skips':(
+            p_first_skips if positioned==len(paths) else None),
+        'pooled_batched_later_tick_skips':(
+            p_later_skips if positioned==len(paths) else None),
+        'batched_first_skip_percent_rounded':(
+            rounded(p_first_skips,p_first)
+            if positioned==len(paths) else None),
+        'batched_later_skip_percent_rounded':(
+            rounded(p_later_skips,p_later)
+            if positioned==len(paths) else None),
+        'reports_with_batch_position_poll_probe':position_polled,
+        'all_reports_have_batch_position_poll_probe':
+            position_polled==len(paths),
+        'pooled_batched_first_full_before_poll':(
+            pp_first_full if position_polled==len(paths) else None),
+        'pooled_batched_first_recovered_after_poll':(
+            pp_first_recovered if position_polled==len(paths) else None),
+        'pooled_batched_later_full_before_poll':(
+            pp_later_full if position_polled==len(paths) else None),
+        'pooled_batched_later_recovered_after_poll':(
+            pp_later_recovered if position_polled==len(paths) else None),
         'reports_with_release_poll_probe':probed_runs,
         'all_reports_have_release_poll_probe':probed_runs==len(paths),
         # Mixed or legacy inputs get NULL rather than misleading partial

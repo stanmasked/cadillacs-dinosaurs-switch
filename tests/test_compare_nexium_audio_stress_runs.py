@@ -79,6 +79,77 @@ def with_release_probe(report, recovery=25):
 
 
 
+def with_batch_position(report):
+    """Synthetically partition 50 batch steps per window, never raw PCM."""
+    report=copy.deepcopy(report)
+    windows=[]
+    for i,w in enumerate(report['checkpoint_mode_intervals']):
+        steps=w['batched_render_steps']
+        if steps!=50:
+            raise ValueError('position fixture only supports 50 batch steps')
+        first_skips=10
+        later_skips=w['skips_in_batched_render_frames']-first_skips
+        windows.append({
+            'tick_start':150*i,'tick_end':150*(i+1),
+            'first_tick_steps':25,'later_tick_steps':25,
+            'first_tick_skips':first_skips,
+            'later_tick_skips':later_skips,
+            'first_skip_percent_rounded':40,
+            'later_skip_percent_rounded':check.rounded(later_skips,25),
+        })
+    report.update({
+        'batch_tick_position_probe_present':True,
+        'batched_first_tick_steps':150,
+        'batched_later_tick_steps':150,
+        'batched_first_tick_skips':60,
+        'batched_later_tick_skips':sum(
+            w['later_tick_skips'] for w in windows),
+        'checkpoint_batch_position_intervals':windows,
+    })
+    return report
+
+
+def with_batch_position_poll(report):
+    """Stage 146 nested release-poll counters, exactly reconciled."""
+    report=copy.deepcopy(report)
+    windows=[]
+    for i,(mode,pos,poll) in enumerate(zip(
+            report['checkpoint_mode_intervals'],
+            report['checkpoint_batch_position_intervals'],
+            report['checkpoint_release_poll_intervals'])):
+        first_skips=pos['first_tick_skips']
+        later_skips=pos['later_tick_skips']
+        first_full=first_skips+4
+        first_recovered=4
+        later_full=later_skips+1
+        later_recovered=1
+        single_full=poll['full_before_poll']-first_full-later_full
+        single_recovered=poll['recovered_before_admission']-5
+        assert single_full-single_recovered==mode[
+            'skips_in_single_tick_render_frames']
+        windows.append({
+            'tick_start':i*150,'tick_end':(i+1)*150,
+            'first_full_before_poll':first_full,
+            'first_recovered_after_poll':first_recovered,
+            'later_full_before_poll':later_full,
+            'later_recovered_after_poll':later_recovered,
+            'single_full_before_poll':single_full,
+            'single_recovered_after_poll':single_recovered,
+        })
+    report.update({
+        'batch_position_poll_probe_present':True,
+        'batched_first_full_before_poll':sum(
+            w['first_full_before_poll'] for w in windows),
+        'batched_first_recovered_after_poll':24,
+        'batched_later_full_before_poll':sum(
+            w['later_full_before_poll'] for w in windows),
+        'batched_later_recovered_after_poll':6,
+        'checkpoint_batch_position_poll_intervals':windows,
+    })
+    return report
+
+
+
 class MultiRunAudioTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='synthetic-cross-run-')
@@ -259,6 +330,117 @@ class MultiRunAudioTests(unittest.TestCase):
         self.assertEqual(result['release_poll_recovery_percent_rounded'],100)
         self.assertEqual(result['combined_full_queue_skips'],0)
         self.assertFalse(result['catchup_causality_verified'])
+
+
+    def test_full_stage146_comparison_reconciles_nested_audio_witnesses(self):
+        one=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture(),25)))
+        two=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture(1),30)))
+        self.save(self.one,one)
+        self.save(self.two,two)
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_batch_position_probe'],2)
+        self.assertEqual(result['reports_with_batch_position_poll_probe'],2)
+        self.assertEqual(result['pooled_batched_first_tick_steps'],300)
+        self.assertEqual(result['pooled_batched_later_tick_steps'],300)
+        self.assertEqual(result['pooled_batched_first_tick_skips'],120)
+        self.assertEqual(result['pooled_batched_later_tick_skips'],234)
+        self.assertEqual(result['batched_first_skip_percent_rounded'],40)
+        self.assertEqual(result['batched_later_skip_percent_rounded'],78)
+        self.assertEqual(result['pooled_batched_first_full_before_poll'],168)
+        self.assertEqual(result['pooled_batched_first_recovered_after_poll'],48)
+        self.assertEqual(result['pooled_batched_later_full_before_poll'],246)
+        self.assertEqual(result['pooled_batched_later_recovered_after_poll'],12)
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_stage145_without_position_poll_keeps_missing_data_null(self):
+        one=with_batch_position(with_release_probe(fixture(),25))
+        self.save(self.one,one)
+        self.save(self.two,with_batch_position(
+            with_release_probe(fixture(1),30)))
+        result=check.compare([self.one,self.two])
+        self.assertTrue(result['all_reports_have_batch_position_probe'])
+        self.assertEqual(result['reports_with_batch_position_poll_probe'],0)
+        self.assertIsNone(result['pooled_batched_first_full_before_poll'])
+        self.assertIsNone(result['pooled_batched_later_recovered_after_poll'])
+
+    def test_mixed_stage145_stage146_suppresses_partial_poll_totals(self):
+        sample=with_batch_position(with_release_probe(fixture(),25))
+        self.save(self.one,with_batch_position_poll(sample))
+        self.save(self.two,with_batch_position(
+            with_release_probe(fixture(1),30)))
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_batch_position_probe'],2)
+        self.assertEqual(result['reports_with_batch_position_poll_probe'],1)
+        self.assertIsNone(result['pooled_batched_later_full_before_poll'])
+
+    def test_mixed_legacy_and_stage146_suppresses_position_rates(self):
+        sample=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture(),25)))
+        self.save(self.one,sample)
+        result=check.compare([self.one,self.two])
+        self.assertEqual(result['reports_with_batch_position_probe'],1)
+        self.assertIsNone(result['batched_first_skip_percent_rounded'])
+        self.assertIsNone(result['pooled_batched_first_tick_skips'])
+
+    def test_position_partial_nonboolean_and_fake_presence_rejected(self):
+        sample=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture())))
+        for fields,flag in (
+                (check.POSITION_FIELDS,'batch_tick_position_probe_present'),
+                (check.POSITION_POLL_FIELDS,'batch_position_poll_probe_present')):
+            for key in fields:
+                with self.subTest(missing=key):
+                    r=copy.deepcopy(sample)
+                    del r[key]
+                    self.save(self.one,r)
+                    with self.assertRaises(ValueError):
+                        check.compare([self.one,self.two])
+            for value in (0,1,None,'true'):
+                with self.subTest(flag=flag,value=value):
+                    r=copy.deepcopy(sample)
+                    r[flag]=value
+                    self.save(self.one,r)
+                    with self.assertRaises(ValueError):
+                        check.compare([self.one,self.two])
+        sample['batch_tick_position_probe_present']=False
+        self.save(self.one,sample)
+        with self.assertRaises(ValueError):
+            check.compare([self.one,self.two])
+
+    def test_stage146_forged_windows_are_rejected_with_plausible_totals(self):
+        sample=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture())))
+        for key,bad,which in (
+                ('first_tick_steps',24,'checkpoint_batch_position_intervals'),
+                ('later_tick_skips',19,'checkpoint_batch_position_intervals'),
+                ('first_skip_percent_rounded',39,
+                 'checkpoint_batch_position_intervals'),
+                ('first_full_before_poll',13,
+                 'checkpoint_batch_position_poll_intervals'),
+                ('single_recovered_after_poll',19,
+                 'checkpoint_batch_position_poll_intervals'),
+                ('later_full_before_poll',True,
+                 'checkpoint_batch_position_poll_intervals'),
+                ('tick_end',149,'checkpoint_batch_position_poll_intervals')):
+            with self.subTest(key=key,bad=bad):
+                r=copy.deepcopy(sample)
+                r[which][0][key]=bad
+                self.save(self.one,r)
+                with self.assertRaises(ValueError):
+                    check.compare([self.one,self.two])
+
+    def test_position_poll_cannot_exist_without_stage143_or_stage145(self):
+        sample=with_batch_position_poll(with_batch_position(
+            with_release_probe(fixture())))
+        for fields in (check.POLL_PROBE_KEYS,check.POSITION_FIELDS):
+            r=copy.deepcopy(sample)
+            for name in fields:
+                del r[name]
+            self.save(self.one,r)
+            with self.assertRaises(ValueError):
+                check.compare([self.one,self.two])
 
     def test_refuse_duplicate_file_content_and_too_few_runs(self):
         for paths in ([self.one,self.one],[self.one],[self.one]*9):
