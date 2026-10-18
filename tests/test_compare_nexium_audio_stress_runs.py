@@ -793,7 +793,7 @@ class MultiRunAudioTests(unittest.TestCase):
         self.assertEqual(result['reports_with_fixed_ack_headroom_probe'],2)
         self.assertTrue(result['all_reports_have_fixed_ack_headroom_probe'])
         self.assertFalse(result['catchup_causality_verified'])
-        self.assertFalse(result['audio_latency_verified'])
+        self.assertFalse(result['physical_switch_audio_verified'])
 
     def test_fixed_ack_headroom_uses_actual_pending_at_start(self):
         self.save(self.one,with_fixed_ack_headroom(fixture(),1))
