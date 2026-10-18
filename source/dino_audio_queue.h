@@ -28,4 +28,17 @@ bool dino_audio_queue_submit(DinoAudioQueue *queue, unsigned index);
 /* Reject unknown/duplicate release indices without damaging bookkeeping. */
 bool dino_audio_queue_release(DinoAudioQueue *queue, unsigned index);
 void dino_audio_queue_skip(DinoAudioQueue *queue);
+
+/* Portable read-only diagnostics. Output is written only for consistent
+ * queue state; callers can display useful counters on the homebrew HUD.
+ * These are logical PCM-block counts, NOT real audio latency estimates. */
+typedef struct {
+    uint32_t busy_mask;
+    uint32_t pending;
+    uint32_t submitted;
+    uint32_t released;
+    uint32_t skipped;
+} DinoAudioQueueStats;
+bool dino_audio_queue_snapshot(const DinoAudioQueue *queue,
+                               DinoAudioQueueStats *out);
 #endif
