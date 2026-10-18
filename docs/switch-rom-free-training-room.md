@@ -339,3 +339,11 @@ This stage does **not** confirm practical audio latency,
 sound output or buffer return behavior on physical hardware.
 All game sounds remain original synthetic PCM; no MAME/Capcom
 audio has been used.
+
+Stage 120 follow-up: repeated attempts to open an already initialized
+audio service no longer reset the active synthesized envelopes.
+Because `audoutGetReleasedAudioOutBuffer` returns only a single
+buffer pointer per call, a reported count other than exactly one
+for a nonempty release is now treated as ambiguous and fails
+closed to silent operation. This is an added conservative adapter
+guard; it does not claim real device behavior has been observed.
