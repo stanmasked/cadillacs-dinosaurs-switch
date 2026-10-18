@@ -838,3 +838,36 @@ are not reused before acknowledgement. The production NRO and audio
 queue code are unchanged. No commercial ROM, user assets, PCM samples,
 private paths, original sprites or controller histories are included.
 This is an infeasibility/pressure diagnostic, not a measured audio fix.
+
+## Stage 149 — direct host test of production libnx audout adapter
+
+Two completed NeXium runs from Stage 146 found first-batch poll
+recoveries of 88/88 and 79/79 and no later-batch poll recoveries.
+Stage 148's fixed-release model showed that reserving a slot for the
+second step merely shifts a dropped tick when the device releases
+no additional buffer.
+
+Stage 149 introduces a **host-only fake libnx audout ABI** under
+`tests/mocks/`, and ROM-free GCC-compiled tests that actually invoke
+the **unchanged production** `source/dino_switch_sound.c`,
+`source/dino_audio_queue.c`, `source/dino_sfx.c` and
+`source/dino_pcm_witness.c`. The fake service receives externally
+granted release credits, preserves the exact C adapter's poll/append
+sequence and fingerprints the PCM contents of every outstanding page
+to detect premature rewriting. It checks capacity <=2, exact 3200-byte
+tick data in aligned 4096-byte pages, and fail-closed behavior for
+foreign releases, impossible multi-count replies and release-poll errors.
+
+The crucial comparison is an actual C adapter driven by two artificial
+release schedules: one acknowledgement before the first tick but none
+before the later tick gives a later skip; an **additional externally
+supplied** later acknowledgement admits both. The mock **cannot cause**
+that extra acknowledgement on a real device. Even dropped admissions
+still advance the synthesized tick and produced-sample witness.
+It does not measure audible output, real-time audio latency or causal
+improvements and does not expose raw PCM.
+
+Only host-side test files/docs are new. The user-facing NRO, libnx
+sound backend and game simulation are unchanged, with the existing
+two-buffer cap. No commercial ROM, private capture, source sprites or
+copyrighted gameplay recordings are committed.
