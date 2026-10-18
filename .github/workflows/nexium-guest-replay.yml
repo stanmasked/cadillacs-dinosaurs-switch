@@ -152,6 +152,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_input_pixel.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_mode_binding.py' -v
       - name: Install Xvfb and software Vulkan dependencies for NeXium
         run: |
           sudo apt-get update -qq
@@ -172,7 +173,8 @@ jobs:
         run: |
           python3 tools/verify_nexium_audio_mode_binding.py \
             --selected-mode "$DINO_AUDIO_MODE" \
-            --report emulator-evidence/guest-audio-stress-evidence.json
+            --report emulator-evidence/guest-audio-stress-evidence.json \
+            --out emulator-evidence/guest-audio-mode-binding.json
       - name: Preserve verified result or honest inconclusive evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -197,6 +199,7 @@ jobs:
             emulator-evidence/host-spar-raw.json
             emulator-evidence/host-spar-audio-evidence.json
             emulator-evidence/guest-audio-stress-evidence.json
+            emulator-evidence/guest-audio-mode-binding.json
             emulator-evidence/guest-audio-stress.csv
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn

@@ -6,6 +6,7 @@ execution, validate the full stress report and read the guest-emitted
 optional-poll flag/call counters. No original arcade assets are needed.
 """
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -22,13 +23,14 @@ MODES=('baseline','extra-poll')
 def attest(selected_mode, report_path):
     if selected_mode not in MODES:
         raise ValueError('unsupported requested NRO audio mode')
-    _,report=cross.read_report(Path(report_path))
+    raw,report=cross.read_report(Path(report_path))
     cross.validate(report)
     witness=ab.verify_mode(report,selected_mode=='extra-poll')
     return {
         'schema':'dino-nexium-guest-audio-mode-binding-v1',
         'status':'SELECTED_AUDIO_MODE_WITNESSED_BY_GUEST',
         'selected_mode':selected_mode,
+        'guest_report_sha256':hashlib.sha256(raw).hexdigest(),
         'guest_poll_enabled':selected_mode=='extra-poll',
         'guest_poll_calls':witness['additional_nonblocking_poll_calls'],
         'guest_poll_released_pages':witness['pages_released_by_additional_polls'],
@@ -45,9 +47,16 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--selected-mode',required=True,choices=MODES)
     parser.add_argument('--report',type=Path,required=True)
+    parser.add_argument('--out',type=Path)
     args=parser.parse_args(argv)
     try:
         result=attest(args.selected_mode,args.report)
+        line=json.dumps(result,sort_keys=True)+'\n'
+        if args.out is not None:
+            # Exclusive creation protects the original guest evidence and
+            # earlier attestations even if --out is a symlink to either.
+            with args.out.open('x',encoding='ascii') as stream:
+                stream.write(line)
     except (OSError,ValueError,KeyError,TypeError,OverflowError,
             UnicodeError) as exc:
         result={
@@ -60,9 +69,10 @@ def main(argv=None):
             'original_arcade_audio_verified':False,
         }
         code=1
+        line=json.dumps(result,sort_keys=True)+'\n'
     else:
         code=0
-    print(json.dumps(result,sort_keys=True))
+    print(line,end='')
     return code
 
 

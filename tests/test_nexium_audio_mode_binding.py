@@ -1,6 +1,7 @@
 """ROM-free binding of the selected NRO audio mode to guest witnesses."""
 from contextlib import redirect_stdout
 from io import StringIO
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -88,6 +89,78 @@ class GuestAudioModeBindingTests(unittest.TestCase):
         self.assertEqual(report['selected_mode'],'extra-poll')
         self.assertFalse(report['original_arcade_audio_verified'])
         self.assertFalse(report['physical_switch_audio_verified'])
+
+    def test_guest_report_hash_binds_exact_raw_report(self):
+        self.write(False)
+        raw=self.report.read_bytes()
+        result=binding.attest('baseline',self.report)
+        self.assertEqual(result['guest_report_sha256'],
+                         hashlib.sha256(raw).hexdigest())
+        self.assertEqual(len(result['guest_report_sha256']),64)
+
+    def test_cli_writes_new_mode_attestation_without_overwriting_input(self):
+        self.write(True,1)
+        raw=self.report.read_bytes()
+        destination=Path(self.temp.name)/'mode-binding.json'
+        captured=StringIO()
+        with redirect_stdout(captured):
+            rc=binding.main(['--selected-mode','extra-poll',
+                             '--report',str(self.report),
+                             '--out',str(destination)])
+        self.assertEqual(rc,0)
+        self.assertEqual(self.report.read_bytes(),raw)
+        self.assertEqual(destination.read_text(encoding='ascii'),
+                         captured.getvalue())
+        result=json.loads(captured.getvalue())
+        self.assertEqual(result['guest_report_sha256'],
+                         hashlib.sha256(raw).hexdigest())
+        self.assertEqual(result['status'],'SELECTED_AUDIO_MODE_WITNESSED_BY_GUEST')
+
+    def test_cli_never_overwrites_existing_guest_input(self):
+        self.write(False)
+        original=self.report.read_bytes()
+        captured=StringIO()
+        with redirect_stdout(captured):
+            rc=binding.main(['--selected-mode','baseline',
+                             '--report',str(self.report),
+                             '--out',str(self.report)])
+        self.assertEqual(rc,1)
+        self.assertEqual(self.report.read_bytes(),original)
+        result=json.loads(captured.getvalue())
+        self.assertEqual(result['reason'],'FileExistsError')
+        self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_cli_never_replaces_previous_mode_attestation(self):
+        self.write(False)
+        destination=Path(self.temp.name)/'prior-mode-binding.json'
+        destination.write_text('KEEP_PREVIOUS_ATTESTATION\n',encoding='ascii')
+        captured=StringIO()
+        with redirect_stdout(captured):
+            rc=binding.main(['--selected-mode','baseline',
+                             '--report',str(self.report),
+                             '--out',str(destination)])
+        self.assertEqual(rc,1)
+        self.assertEqual(destination.read_text(encoding='ascii'),
+                         'KEEP_PREVIOUS_ATTESTATION\n')
+        self.assertEqual(json.loads(captured.getvalue())['reason'],'FileExistsError')
+
+    def test_cli_never_follows_symlink_output_to_guest_input(self):
+        import os
+        if not hasattr(os,'symlink'):
+            self.skipTest('symlink unavailable')
+        self.write(False)
+        alias=Path(self.temp.name)/'alias.json'
+        alias.symlink_to(self.report)
+        original=self.report.read_bytes()
+        captured=StringIO()
+        with redirect_stdout(captured):
+            rc=binding.main(['--selected-mode','baseline',
+                             '--report',str(self.report),
+                             '--out',str(alias)])
+        self.assertEqual(rc,1)
+        self.assertTrue(alias.is_symlink())
+        self.assertEqual(self.report.read_bytes(),original)
+        self.assertEqual(json.loads(captured.getvalue())['reason'],'FileExistsError')
 
     def test_cli_guest_mode_mismatch_fails_closed(self):
         self.write(False)
