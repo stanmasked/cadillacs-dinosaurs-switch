@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -119,6 +120,49 @@ class HostGameExecutionTests(unittest.TestCase):
             with self.subTest(count=count):
                 with self.assertRaises(ValueError):
                     host.headless(count)
+
+    def test_keyboard_edges_match_training_controls(self):
+        keys=host.KeyboardInput()
+        self.assertEqual(keys.tick_input(),(0,0))
+        keys.key_down('Right')
+        keys.key_down('Up')
+        keys.key_down('j')
+        keys.key_down('j')  # OS key-repeat does not double fire
+        self.assertEqual(keys.tick_input(),
+                         (host.RIGHT|host.UP,host.ATTACK))
+        self.assertEqual(keys.tick_input(),(host.RIGHT|host.UP,0))
+        keys.key_up('J')
+        keys.key_down('j')
+        self.assertEqual(keys.tick_input(),
+                         (host.RIGHT|host.UP,host.ATTACK))
+        keys.key_up('Right')
+        keys.key_up('Up')
+        keys.key_down('r')
+        keys.key_down('r')
+        self.assertTrue(keys.reset_requested)
+        keys.key_down('Escape')
+        self.assertTrue(keys.exit_requested)
+
+    @unittest.skipUnless(os.environ.get('DISPLAY'),
+                         'Actual Tk pixel and key smoke needs X11/Xvfb')
+    def test_real_tk_widget_pixel_and_key_events_without_emulator_claim(self):
+        # This executes genuine tkinter Canvas + PhotoImage + X11 key events,
+        # not a fake root or a Nintendo Switch emulator.
+        try:
+            import tkinter
+        except ImportError:
+            self.skipTest('Tkinter not installed on this host')
+        result=host.gui_smoke()
+        self.assertEqual(result['schema'],'dino-native-gui-smoke-v1')
+        self.assertEqual(result['runtime'],'tk_desktop_not_switch_emulator')
+        self.assertEqual((result['ticks'],result['player_x']),(9,98))
+        self.assertEqual(result['image_dimensions'],[768,448])
+        self.assertTrue(result['tk_image_rendered'])
+        self.assertTrue(result['edge_input_verified'])
+        self.assertTrue(result['held_input_verified'])
+        self.assertFalse(result['switch_emulator_verified'])
+        self.assertFalse(result['switch_gpu_verified'])
+        self.assertFalse(result['switch_audio_verified'])
 
     def test_cli_machine_report_does_not_claim_emulator(self):
         text=io.StringIO()
