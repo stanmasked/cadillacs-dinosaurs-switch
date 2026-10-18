@@ -196,10 +196,37 @@ def exposure_profile(report):
     return result
 
 
+def queue_start_profile(report):
+    """Validated optional starting audout occupancy, never inferred as zero."""
+    present=report.get('fixed_ack_headroom_probe_present')
+    if present is not True:
+        if present is not False and present is not None:
+            raise ValueError('noncanonical fixed-ACK queue witness flag')
+        # Explicitly absent probes may only carry null witness fields.
+        if present is False and any(
+                report.get(field) is not None
+                for field in cross.FIXED_ACK_FIELDS[1:]):
+            raise ValueError('absent fixed-ACK probe claims queue endpoints')
+        return None
+    start=integer(report['queue_pending_at_stress_start'],
+                  'initial queue occupancy')
+    end=integer(report['queue_pending_at_stress_end'],
+                'final queue occupancy')
+    submitted=integer(report['audout_blocks_submitted'],
+                      'submitted page total')
+    released=integer(report['audout_blocks_released'],
+                     'released page total')
+    if start>2 or end>2 or start+submitted-released!=end:
+        raise ValueError('inconsistent audio queue initial/final occupancy')
+    return {'start':start,'end':end}
+
+
 def compare_batch_exposure(a,b):
     """Descriptive exposure diagnostic; not an audio treatment estimate."""
     left=exposure_profile(a)
     right=exposure_profile(b)
+    initial_left=queue_start_profile(a)
+    initial_right=queue_start_profile(b)
     fields=('single_ticks','first_batch_ticks','later_batch_ticks')
     matched=all(all(x[k]==y[k] for k in fields)
                 for x,y in zip(left,right))
@@ -262,7 +289,19 @@ def compare_batch_exposure(a,b):
         }
         for x,y in zip(left,right)
     ] if matched else None)
-    strictly_matched=(matched and all_returns_matched is True)
+    # Initial occupancy is an independent queue-capacity confounder.
+    # Final occupancy can be the *result* of changed admission counts,
+    # so it is recorded but must NOT be a gate on observed skip deltas.
+    endpoints_available=(initial_left is not None and
+                         initial_right is not None)
+    initial_queue_matched=(
+        initial_left['start']==initial_right['start']
+        if matched and endpoints_available else None)
+    final_queue_matched=(
+        initial_left['end']==initial_right['end']
+        if matched and endpoints_available else None)
+    strictly_matched=(matched and all_returns_matched is True and
+                      initial_queue_matched is True)
     return {
         'per_150tick_batch_exposure_matched':matched,
         'matched_exposure_later_skip_window_deltas':skip_windows,
@@ -281,6 +320,21 @@ def compare_batch_exposure(a,b):
         'matched_exposure_return_position_window_deltas':return_position_windows,
         'matched_exposure_all_position_return_counts_matched':
             all_returns_matched,
+        'baseline_queue_pending_at_stress_start':(
+            initial_left['start'] if initial_left is not None else None),
+        'baseline_queue_pending_at_stress_end':(
+            initial_left['end'] if initial_left is not None else None),
+        'experimental_queue_pending_at_stress_start':(
+            initial_right['start'] if initial_right is not None else None),
+        'experimental_queue_pending_at_stress_end':(
+            initial_right['end'] if initial_right is not None else None),
+        'matched_exposure_initial_queue_occupancy_matched':
+            initial_queue_matched,
+        'matched_exposure_final_queue_occupancy_matched':
+            final_queue_matched,
+        'matched_exposure_initial_queue_shift_confounds_skip_comparison':(
+            not initial_queue_matched if initial_queue_matched is not None
+            else None),
         'matched_exposure_any_position_return_shift_confounds_skip_comparison':(
             not all_returns_matched if matched else None),
         'matched_exposure_and_returns_later_skip_window_deltas':(
