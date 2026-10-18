@@ -677,3 +677,32 @@ This is a ROM-free metadata-consistency improvement only. It neither
 modifies audio admission or frame scheduling nor proves catch-up caused
 audio skips, wall-clock real-time performance, physical speaker output,
 CPS-1 pixel parity or execution of original licensed gameplay.
+
+## Stage 141 — per-window guest audio admission diagnosis
+
+The previous 900-tick stress evidence contained six 150-tick checkpoint
+windows, but its published comparison of single-tick and catch-up-batch
+skips was aggregated over the whole test. Stage 141 derives a **small,
+ROM-free, metadata-only** breakdown for each window: single/batched
+guest ticks, rejected audout admissions by mode, counted batch-render
+frames, full-queue rejects and independently rounded mode-specific
+skip percentages. Empty-mode rates are JSON null, not zero. It also
+reports the number of windows containing both modes and how often
+the batched skip fraction exceeded the single-mode fraction, using
+integer cross multiplication so intermediate rounding cannot flip the
+comparison. No user paths, private ROM bytes, original RGB, PCM
+waveforms or raw HID events are exposed in these counts.
+
+The verifier now checks per-window tick accounting and makes it
+impossible for the skips of one mode to exceed its tick count **within
+that specific window**, even if both cumulative counts looked valid.
+Conservative batch-frame capacity checks account for an in-progress
+frame at each checkpoint: one uncounted carry-in frame may contribute
+steps; the first window additionally permits START and end fragments.
+This retains the genuine prior 900-tick guest shape (65 batched ticks,
+33 batched frames and a max batch of 2). It does not claim that catch-up
+frames caused any missing audio. Rates are conditional descriptive
+statistics within one emulated run, not device latency or speaker sound.
+
+The NRO, libnx queue cap of two pages, synthesizer, per-tick scheduler,
+real guest CSV and original-game privacy rules remain unchanged.

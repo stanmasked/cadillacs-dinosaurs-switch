@@ -94,6 +94,89 @@ class LongGuestAudioStressTests(unittest.TestCase):
         self.assertFalse(result['sound_device_audible_verified'])
         self.assertFalse(result['audio_latency_verified'])
 
+    def test_checkpoint_mode_intervals_reconcile_without_rounding_bias(self):
+        result=check.verify(self.path,self.timeline,self.controller)
+        windows=result['checkpoint_mode_intervals']
+        self.assertEqual(len(windows),6)
+        self.assertEqual(windows[0],{
+            'tick_start':0, 'tick_end':150,
+            'single_tick_render_steps':100, 'batched_render_steps':50,
+            'skips_in_single_tick_render_frames':20,
+            'skips_in_batched_render_frames':30,
+            'render_frames_with_batched_steps':25,
+            'full_queue_skips':50,
+            'single_skip_percent_rounded':20,
+            'batched_skip_percent_rounded':60,
+        })
+        self.assertEqual([w['tick_end'] for w in windows],
+                         check.CHECKPOINTS[1:])
+        for k,expected in (
+                ('single_tick_render_steps',600),
+                ('batched_render_steps',300),
+                ('skips_in_single_tick_render_frames',120),
+                ('skips_in_batched_render_frames',180),
+                ('full_queue_skips',300),
+                ('render_frames_with_batched_steps',150)):
+            self.assertEqual(sum(w[k] for w in windows),expected)
+        self.assertEqual(result['windows_with_both_render_modes'],6)
+        self.assertEqual(result['windows_with_higher_batched_skip_rate'],6)
+        self.assertFalse(result['catchup_causality_verified'])
+
+    def test_zero_batched_steps_are_reported_without_division_by_zero(self):
+        for idx,row in enumerate(self.rows):
+            row[17]=str(idx*150)
+            row[18]='0'
+            row[19]=str(idx*50)
+            row[20]='0'
+            row[21]='0'
+            row[22]=str(1 if idx else 0)
+        self.write()
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertEqual(result['batched_render_steps'],0)
+        self.assertIsNone(result['batched_skip_percent_rounded'])
+        self.assertEqual(result['windows_with_both_render_modes'],0)
+        self.assertEqual(result['windows_with_higher_batched_skip_rate'],0)
+        self.assertTrue(all(w['batched_skip_percent_rounded'] is None
+                            for w in result['checkpoint_mode_intervals']))
+        self.assertEqual([w['single_skip_percent_rounded']
+                          for w in result['checkpoint_mode_intervals']],[33]*6)
+
+    def test_interval_rejects_unattributed_batched_ticks_with_zero_new_frames(self):
+        # F=25, B=100, M=4 passes the old cumulative capacity
+        # checks but cannot add 50 batched ticks with no newly
+        # observed frame between two 150-tick checkpoints.
+        self.rows[2][21]='25'
+        for idx in range(2,len(self.rows)):
+            self.rows[idx][22]='4'
+        self.write()
+        with self.assertRaisesRegex(ValueError,'interval attribution'):
+            check.verify(self.path,self.timeline,self.controller)
+
+    def test_window_rejects_skips_exceeding_ticks_despite_valid_totals(self):
+        # Cumulative group skip counts fit cumulative group ticks,
+        # yet the second window attributes 20 single-frame skips
+        # to only 5 single-frame ticks. Adjust all later rows to
+        # preserve monotonicity and valid frame-capacity bounds.
+        singles=[0,100,105,200,250,300,350]
+        batched=[0,50,195,250,350,450,550]
+        frames=[0,25,98,125,175,225,275]
+        for idx,row in enumerate(self.rows):
+            row[17]=str(singles[idx])
+            row[18]=str(batched[idx])
+            row[21]=str(frames[idx])
+        self.write()
+        with self.assertRaisesRegex(ValueError,'interval attribution'):
+            check.verify(self.path,self.timeline,self.controller)
+
+    def test_partial_first_and_last_render_batches_survive_interval_check(self):
+        self.rows[1][21]='26'
+        self.write()
+        report=check.verify(self.path,self.timeline,self.controller)
+        self.assertEqual(report['checkpoint_mode_intervals'][0]
+                         ['render_frames_with_batched_steps'],26)
+        self.assertEqual(report['checkpoint_mode_intervals'][1]
+                         ['render_frames_with_batched_steps'],24)
+
     def test_missing_duplicate_out_of_order_and_partial_checkpoints(self):
         before=self.rows
         for rows in (before[:-1],before+[before[-1]],

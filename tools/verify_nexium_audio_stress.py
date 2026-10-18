@@ -125,6 +125,47 @@ def verify(path, guest_timeline, guest_controller):
             if rows[idx]['pcm_fnv64']==rows[idx-1]['pcm_fnv64']:
                 raise ValueError('guest PCM synthesis witness was frozen')
         prev=row
+    # Check each 150-tick interval separately. A plausible cumulative
+    # partition can conceal an impossible single-interval admission.
+    # A batched render frame may straddle a checkpoint: at most one
+    # already-counted frame contributes steps without incrementing F.
+    # At START, a frame may already be in progress, so both edges of the
+    # first interval allow one incomplete frame each.
+    intervals=[]
+    for idx in range(1,len(measurements)):
+        before=measurements[idx-1]
+        after=measurements[idx]
+        single_ticks=after[15]-before[15]
+        batched_ticks=after[16]-before[16]
+        single_skips=after[17]-before[17]
+        batched_skips=after[18]-before[18]
+        batched_frames=after[19]-before[19]
+        max_batch=after[20]
+        interval_skips=after[9]-before[9]
+        if (single_ticks+batched_ticks!=150 or
+                single_skips+batched_skips!=interval_skips or
+                single_skips>single_ticks or
+                batched_skips>batched_ticks or
+                batched_frames>batched_ticks or
+                batched_ticks>(batched_frames+1)*max_batch or
+                2*batched_frames>batched_ticks+(2 if idx==1 else 1)):
+            raise ValueError('guest audout interval attribution inconsistent')
+        intervals.append({
+            'tick_start':CHECKPOINTS[idx-1],
+            'tick_end':CHECKPOINTS[idx],
+            'single_tick_render_steps':single_ticks,
+            'batched_render_steps':batched_ticks,
+            'skips_in_single_tick_render_frames':single_skips,
+            'skips_in_batched_render_frames':batched_skips,
+            'render_frames_with_batched_steps':batched_frames,
+            'full_queue_skips':after[11]-before[11],
+            'single_skip_percent_rounded':(
+                (100*single_skips+single_ticks//2)//single_ticks
+                if single_ticks else None),
+            'batched_skip_percent_rounded':(
+                (100*batched_skips+batched_ticks//2)//batched_ticks
+                if batched_ticks else None),
+        })
     guest=timeline.verify(guest_timeline,guest_controller)
     if guest['status']!='GUEST_HID_ORDER_WITNESSED':
         raise ValueError('native HID spar sequence not witnessed')
@@ -174,6 +215,15 @@ def verify(path, guest_timeline, guest_controller):
             measurements[i][9]-measurements[i-1][9]
             for i in range(1,len(measurements))
         ],
+        'checkpoint_mode_intervals':intervals,
+        'windows_with_both_render_modes':sum(
+            w['single_tick_render_steps']>0 and w['batched_render_steps']>0
+            for w in intervals),
+        'windows_with_higher_batched_skip_rate':sum(
+            w['single_tick_render_steps']>0 and w['batched_render_steps']>0 and
+            w['skips_in_batched_render_frames']*w['single_tick_render_steps']>
+            w['skips_in_single_tick_render_frames']*w['batched_render_steps']
+            for w in intervals),
         'peak_observed_pending':max(row[6] for row in measurements),
         'audio_errors_added':0,
         'queued_buffers_never_above_two':True,
