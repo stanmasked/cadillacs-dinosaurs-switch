@@ -301,3 +301,41 @@ Two additional ROM-free tests independently verify WAV header
 dimensions and sample count, byte-for-byte reproducibility, agreement
 with the sound engine's direct PCM output, and the no-overwrite rule.
 The expanded expected full test count is **768**, subject to CI.
+
+## Stage 120 — bounded audio queue and host-tested release safety
+
+The native libnx `audout` adapter now routes its output-buffer
+lifetime decisions through a small platform-independent policy in
+`source/dino_audio_queue.c`.
+
+The adapter still owns **four independent, page-aligned 4096-byte**
+PCM memory buffers, but it may have **at most two 800-frame blocks**
+submitted to the service simultaneously. This corresponds to **no
+more than 1600 frames (33.3 ms) of PCM submitted**; it is *not a
+measurement of real-world latency or the hardware mixer*. If the
+audio device stalls or rendering runs several simulation ticks at
+once, no further PCM pages are submitted until an earlier buffer
+has been released. The sound synthesizer keeps advancing its
+envelopes into a private discard buffer each tick so the game
+simulation never waits for audio and never catches up later by
+playing stale impact sounds.
+
+A buffer becomes writable again **only** after libnx returns its
+exact `AudioOutBuffer*` and the queue finds that buffer
+outstanding. Foreign pointers, duplicate releases and audio API
+failures cause the adapter to stop the service and fall back to
+silence, rather than possibly rewriting a page that the device
+is still reading. The independent queue maintains bounded
+admission, rejected release/submit checks and counters
+(`submitted`, `released`, `skipped`) without allocating memory.
+
+Ten host-native ROM-free tests drive the exact queue C code
+against full stalls, invalid indices, duplicate acknowledgments,
+out-of-order release, cap enforcement, re-use after release,
+state reset, null inputs and an 800-tick repeatability trace.
+The privacy and Switch build checks run on the same branch.
+
+This stage does **not** confirm practical audio latency,
+sound output or buffer return behavior on physical hardware.
+All game sounds remain original synthetic PCM; no MAME/Capcom
+audio has been used.
