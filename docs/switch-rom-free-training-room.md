@@ -356,3 +356,41 @@ assertions ensure that the number of backend slots matches the
 portable policy and that one 800-frame stereo block fits in the
 aligned audio page. No claims are made about physical Switch
 switching latency or actual audible playback.
+
+## Stage 121 — diagnostic audio-health overlay for physical Switch testing
+
+The ROM-free homebrew training arena now shows a compact technical
+audio line above the combat HUD:
+
+`AUDIO ON/OFF/INVALID · QUEUED n/2 · SENT · RELEASED · SKIPPED · ERRORS`
+
+These are **logical PCM block counters**, not measured audio
+latency, underrun rate, sound quality or proof that speakers
+produced sound. `ON` means libnx's audio-output start call
+succeeded; `OFF` indicates the service is not currently
+running. `SKIPPED` increments when the service cannot accept
+another 800-frame block. `ERRORS` records failures during
+audio initialization, submission or buffer-release handling.
+After closing the audio service, queue-specific counters reset
+because their underlying session is over, while the error counter
+is retained so the status display can still flag the failure.
+
+The independent queue exposes a new read-only diagnostic snapshot.
+It checks that every busy flag is Boolean, the number of busy
+buffers matches the queued count, the two-block cap holds, and
+the modular submitted-minus-released count agrees with the
+pending count. Inconsistent state returns failure **without
+changing the output** or the queue; the Switch UI then shows
+`INVALID` instead of a fictitious healthy queue.
+
+Four additional host-native ROM-free regression methods check
+snapshot counting across submit/acknowledge/skip, read-only
+behavior, refusal of contradictory/injected queue states, and
+null-pointer safety. This stage does not depend on original ROM
+assets or arcade sound sources.
+
+**Still required for actual device validation:** launch the NRO
+on an authorized Switch homebrew device, listen to the synthetic
+effects and inspect the on-device audio line for dropped buffers
+or audio-service errors. No physical device execution or real
+headphone output has been verified by these host tests.
