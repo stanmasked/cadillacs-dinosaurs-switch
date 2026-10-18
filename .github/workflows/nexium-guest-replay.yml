@@ -1,0 +1,103 @@
+name: NeXium real Switch NRO guest replay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/mame-capture-crossprobe-session-id
+    paths:
+      - 'source/**'
+      - 'Makefile'
+      - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/verify_nexium_guest_replay.py'
+      - 'tests/test_nexium_guest_replay.py'
+      - '.github/workflows/nexium-guest-replay.yml'
+  pull_request:
+    paths:
+      - 'source/**'
+      - 'Makefile'
+      - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/verify_nexium_guest_replay.py'
+      - 'tests/test_nexium_guest_replay.py'
+      - '.github/workflows/nexium-guest-replay.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-guest-nro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure devkitPro and compile ROM-free Switch guest probe
+        run: |
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          make -j2 DEFINES=-DDINO_EMULATOR_SELFTEST
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          file=Path("cadillacs-dinosaurs-switch.nro")
+          blob=file.read_bytes()
+          assert blob[0x10:0x14]==b"NRO0"
+          declared=struct.unpack_from("<I",blob,0x18)[0]
+          assert 0x80<=declared<=len(blob)
+          assert b"cadillacs-arena-selftest.csv" in blob
+          assert b"FRAME_SUBMITTED" in blob
+          assert b"REPLAY_DONE" in blob
+          print("ROM-free NRO with guest-origin evidence compiled")
+          PY
+          sha256sum cadillacs-dinosaurs-switch.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro
+          path: cadillacs-dinosaurs-switch.nro
+          retention-days: 7
+          if-no-files-found: error
+
+  run-real-guest:
+    needs: build-guest-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro
+          path: emulator-input
+      - name: Test script syntax and refuse synthetic malformed guest reports
+        run: |
+          bash -n tools/nexium_guest_replay_probe.sh
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+      - name: Install Xvfb and software Vulkan dependencies for NeXium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0
+      - name: Attempt actual ARM64 homebrew guest execution
+        run: |
+          bash tools/nexium_guest_replay_probe.sh \
+            emulator-input/cadillacs-dinosaurs-switch.nro \
+            emulator-evidence
+      - name: Preserve verified result or honest inconclusive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-ne-xium-actual-nro-guest-evidence
+          path: |
+            emulator-evidence/result.txt
+            emulator-evidence/metadata.txt
+            emulator-evidence/emulator-hash-check.txt
+            emulator-evidence/emulator-stdout.txt
+            emulator-evidence/vulkan.txt
+            emulator-evidence/guest-replay.csv
+            emulator-evidence/guest-window.png
+            emulator-evidence/xdg-config/NeXium/logs/*.log
+          if-no-files-found: warn
+          retention-days: 7
