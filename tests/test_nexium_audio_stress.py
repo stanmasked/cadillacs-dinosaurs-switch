@@ -349,9 +349,9 @@ class LongGuestAudioStressTests(unittest.TestCase):
 
     def test_forged_release_position_counts_fail_closed(self):
         for index,column,bad in (
-                (0,34,'1'),(1,34,'84'),(1,35,'11'),(1,36,'6'),
-                (2,35,'0'),(3,36,'0'),(1,34,'4294967296'),
-                (1,35,'01'),(1,36,'true')):
+                (0,33,'1'),(1,33,'84'),(1,34,'11'),(1,35,'6'),
+                (2,34,'0'),(3,35,'0'),(1,33,'4294967296'),
+                (1,34,'01'),(1,35,'true')):
             with self.subTest(row=index,column=column):
                 self.mutate(index,column,bad)
 
