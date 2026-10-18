@@ -33,6 +33,12 @@ on:
       - 'tests/test_dino_pcm_witness.py'
       - '.github/workflows/native-rom-free-preview.yml'
 
+# Cancel superseded runs for the same event and PR/ref. Keep different
+# workflows, branches and manually dispatched checks independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

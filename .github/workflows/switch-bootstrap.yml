@@ -17,6 +17,12 @@ on:
       - '.github/workflows/switch-bootstrap.yml'
   workflow_dispatch:
 
+# Cancel superseded runs for the same event and PR/ref. Keep different
+# workflows, branches and manually dispatched checks independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
