@@ -59,6 +59,10 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
             ctypes.POINTER(Diagnostics)]
         cls.lib.dino_switch_sound_pcm_witness.restype=ctypes.c_uint64
         cls.lib.dino_switch_sound_pcm_ticks.restype=ctypes.c_uint32
+        for symbol in ('dino_switch_sound_guest_mid_batch_enabled',
+                       'dino_switch_sound_guest_mid_batch_calls',
+                       'dino_switch_sound_guest_mid_batch_releases'):
+            getattr(cls.lib,symbol).restype=ctypes.c_uint32
         cls.lib.dino_switch_sound_guest_mid_batch_poll.restype=None
         cls.lib.mock_audout_grant_releases.argtypes=[ctypes.c_uint32]
         cls.lib.mock_audout_inject_bad_release.argtypes=[ctypes.c_uint32]
@@ -463,6 +467,60 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
         self.step(releases=0)
         self.assertEqual(self.state().pending,1)
         self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+
+    def test_experimental_poll_counts_only_actual_optional_sweeps(self):
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_enabled(),1)
+        self.step()
+        self.step()
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_calls(),1)
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_releases(),0)
+        self.lib.mock_audout_grant_releases(1)
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_calls(),2)
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_releases(),1)
+        self.assertEqual(self.delta('released'),1)
+        self.assertEqual(self.delta('simulated_ticks'),2)
+        self.step()
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_calls(),2)
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_releases(),1)
+        self.assertEqual(self.lib.mock_audout_integrity_errors(),0)
+
+    def test_experiment_counters_reset_when_sound_backend_reopens(self):
+        self.step()
+        self.lib.dino_switch_sound_guest_mid_batch_poll()
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_calls(),1)
+        self.lib.dino_switch_sound_close()
+        self.lib.mock_audout_reset()
+        self.assertTrue(self.lib.dino_switch_sound_open())
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_calls(),0)
+        self.assertEqual(self.lib.dino_switch_sound_guest_mid_batch_releases(),0)
+        self.assertEqual(self.lib.mock_audout_pending(),0)
+
+    def test_default_guest_has_zero_extra_poll_functions_and_state(self):
+        # Compile without the experimental flag: this is a distinct
+        # native C binary, not a fake zero injected into a report.
+        with tempfile.TemporaryDirectory(prefix='dino-default-audout-') as tmp:
+            lib=Path(tmp)/'baseline.so'
+            sources=[
+                'source/dino_switch_sound.c','source/dino_audio_queue.c',
+                'source/dino_sfx.c','source/dino_pcm_witness.c',
+                'tests/mocks/mock_audout.c',
+            ]
+            cmd=['gcc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+                 '-DDINO_EMULATOR_SELFTEST','-fPIC','-shared',
+                 '-Itests/mocks','-Isource',*sources,'-o',str(lib)]
+            r=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True)
+            self.assertEqual(r.returncode,0,r.stderr)
+            baseline=ctypes.CDLL(str(lib))
+            for name in ('dino_switch_sound_guest_mid_batch_enabled',
+                         'dino_switch_sound_guest_mid_batch_calls',
+                         'dino_switch_sound_guest_mid_batch_releases'):
+                getattr(baseline,name).restype=ctypes.c_uint32
+                self.assertEqual(getattr(baseline,name)(),0)
+            with self.assertRaises(AttributeError):
+                baseline.dino_switch_sound_guest_mid_batch_poll
 
     def test_active_sound_adapter_open_is_idempotent(self):
         self.step(1<<3)
