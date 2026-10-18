@@ -534,6 +534,10 @@ int main(int argc, char **argv) {
     FILE *guest_controller_witness=NULL;
     bool guest_controller_active=false, guest_controller_done=false;
     uint32_t guest_controller_flags=0;
+    /* An independent, ordered game-tick trace of actual HID effects.
+     * Tick values are guest simulation time, NOT host input latency. */
+    FILE *guest_hid_timeline=NULL;
+    uint32_t guest_hid_phase=0;
     if (arena_active) {
         (void)fsdevMountSdmc();
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
@@ -605,6 +609,14 @@ int main(int argc, char **argv) {
                         fflush(guest_controller_witness);
                         guest_controller_flags=1u;
                         guest_controller_active=true;
+                        guest_hid_timeline=fopen(
+                            "sdmc:/cadillacs-hid-timeline.csv","w");
+                        if (guest_hid_timeline) {
+                            fputs("event,tick,player_x,sparring,event_mask\n"
+                                  "RESET,0,90,0,0\n",guest_hid_timeline);
+                            fflush(guest_hid_timeline);
+                            guest_hid_phase=1u;
+                        }
                     }
                 }
 #endif
@@ -639,6 +651,54 @@ int main(int argc, char **argv) {
                 dino_arena_step(&arena,step_held,step_pressed);
 #ifdef DINO_EMULATOR_SELFTEST
                 if (guest_controller_active && !demo_active) {
+                    /* A second witness records the ordered effect timeline.
+                     * A misordered key sequence never advances the phase.
+                     * It cannot be populated by the built-in C replay. */
+                    if (guest_hid_timeline && guest_hid_phase==1u &&
+                        (step_held&DINO_ARENA_RIGHT) && arena.x>90) {
+                        fprintf(guest_hid_timeline,"MOVE,%u,%d,%u,%u\n",
+                                (unsigned)arena.ticks,arena.x,
+                                (unsigned)arena.sparring,
+                                (unsigned)arena.events);
+                        fflush(guest_hid_timeline);
+                        guest_hid_phase=2u;
+                    } else if (guest_hid_timeline &&
+                               guest_hid_phase==2u &&
+                               (step_pressed&DINO_ARENA_ATTACK) &&
+                               (arena.events&DINO_EVT_PLAYER_SWING)) {
+                        fprintf(guest_hid_timeline,"ATTACK,%u,%d,%u,%u\n",
+                                (unsigned)arena.ticks,arena.x,
+                                (unsigned)arena.sparring,
+                                (unsigned)arena.events);
+                        fflush(guest_hid_timeline);
+                        guest_hid_phase=3u;
+                    } else if (guest_hid_timeline &&
+                               guest_hid_phase==3u &&
+                               (step_pressed&DINO_ARENA_JUMP) &&
+                               (arena.events&DINO_EVT_JUMP_START)) {
+                        fprintf(guest_hid_timeline,"JUMP,%u,%d,%u,%u\n",
+                                (unsigned)arena.ticks,arena.x,
+                                (unsigned)arena.sparring,
+                                (unsigned)arena.events);
+                        fflush(guest_hid_timeline);
+                        guest_hid_phase=4u;
+                    } else if (guest_hid_timeline &&
+                               guest_hid_phase==4u &&
+                               (step_pressed&DINO_ARENA_TOGGLE_SPAR) &&
+                               (arena.events&DINO_EVT_SPAR_TOGGLE) &&
+                               arena.sparring) {
+                        fprintf(guest_hid_timeline,
+                                "SPAR,%u,%d,%u,%u\n"
+                                "DONE,%u,%d,%u,%u\n",
+                                (unsigned)arena.ticks,arena.x,
+                                (unsigned)arena.sparring,
+                                (unsigned)arena.events,
+                                (unsigned)arena.ticks,arena.x,
+                                (unsigned)arena.sparring,
+                                (unsigned)arena.events);
+                        fflush(guest_hid_timeline);
+                        guest_hid_phase=5u;
+                    }
                     /* Check gameplay EFFECTS, not just raw button bits.
                      * The replay trace never contributes to this witness. */
                     if ((held & HidNpadButton_Right) && arena.x>90)
@@ -768,6 +828,7 @@ int main(int argc, char **argv) {
 #ifdef DINO_EMULATOR_SELFTEST
     if (guest_witness) fclose(guest_witness);
     if (guest_controller_witness) fclose(guest_controller_witness);
+    if (guest_hid_timeline) fclose(guest_hid_timeline);
 #endif
     dino_switch_sound_close();
     framebufferClose(&fb);
