@@ -521,6 +521,56 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertEqual(sum(w['later_batch_page_returns']
                              for w in profile),30)
 
+    def test_exposure_helper_reconciles_all_global_position_totals(self):
+        sample=complete(True,1)
+        output=ab.exposure_profile(sample)
+        for local,global_name in (
+                ('single_ticks','single_tick_render_steps'),
+                ('first_batch_ticks','batched_first_tick_steps'),
+                ('later_batch_ticks','batched_later_tick_steps'),
+                ('single_skips','skips_in_single_tick_render_frames'),
+                ('first_batch_skips','batched_first_tick_skips'),
+                ('later_batch_skips','batched_later_tick_skips')):
+            with self.subTest(local=local):
+                self.assertEqual(
+                    sum(window[local] for window in output),
+                    sample[global_name])
+
+    def test_global_audio_exposure_counters_cannot_disagree_with_windows(self):
+        fields=(
+            'single_tick_render_steps','batched_first_tick_steps',
+            'batched_later_tick_steps','skips_in_single_tick_render_frames',
+            'batched_first_tick_skips','batched_later_tick_skips',
+            'batched_render_steps','simulation_ticks',
+            'skips_in_batched_render_frames',
+        )
+        for field in fields:
+            with self.subTest(field=field):
+                report=complete(False)
+                report[field]+=1
+                with self.assertRaises(ValueError):
+                    ab.exposure_profile(report)
+
+    def test_local_frame_repartition_requires_global_position_agreement(self):
+        report=complete(False)
+        steps=report['checkpoint_batch_position_intervals'][0]
+        steps['first_tick_steps']+=1
+        steps['later_tick_steps']-=1
+        # Total 150-tick exposure is unchanged, as is its mode partition.
+        # Global first/later position totals must still catch the drift.
+        with self.assertRaises(ValueError):
+            ab.exposure_profile(report)
+
+    def test_reallocated_skips_must_match_global_first_later_counters(self):
+        report=complete(False)
+        skips=report['checkpoint_batch_position_intervals'][0]
+        skips['first_tick_skips']+=1
+        skips['later_tick_skips']-=1
+        # Total batched skips are unchanged; the position-specific
+        # global witnesses must not permit this partial report.
+        with self.assertRaises(ValueError):
+            ab.exposure_profile(report)
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
