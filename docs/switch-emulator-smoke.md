@@ -405,3 +405,30 @@ This optional test cannot measure input latency or confirm hardware
 Joy-Con/Pro Controller compatibility. Nor does it validate original
 commercial-game controls. The standard consumer NRO does not enable
 the CI-only witness or write controller diagnostic files.
+
+
+## Stage 133 — ordered guest HID effect witness in simulation ticks
+
+The real NeXium test now includes a **second, independently verified
+controller witness** emitted by the running diagnostic ARM64 NRO:
+`cadillacs-hid-timeline.csv`. It records RESET at guest tick zero,
+then actual MOVE, ATTACK, JUMP, SPAR and DONE checkpoints, including
+integer simulation ticks, actor X coordinate, sparring flag and in-game
+one-tick event mask. The CSV is created only after an actual guest HID
+Y reset following the original 180-tick ROM-free replay. Normal homebrew
+builds do not create this file.
+
+The new Python verifier refuses missing/extra/reordered rows,
+out-of-range values, absent in-game attack/jump/spar event bits,
+non-advancing action ticks, leftward coordinates in this rightward-only
+test, inconsistent sparring state, and any disagreement with the
+separate confirmed 31/31 controller-effects summary. There are twelve
+new synthetic rejection/contract tests. The workflow exports only the
+short guest-owned report plus a bounded JSON summary.
+
+The four tick intervals (reset-to-move, move-to-attack, attack-to-jump
+and jump-to-spar) are **guest simulation intervals**, not real-world
+milliseconds. They establish action ordering and internal progression
+only. Neither host-to-guest keyboard delay, screen/display latency,
+physical Joy-Con behavior nor audio output latency has been measured.
+Never convert a guest tick count into an external latency claim.
