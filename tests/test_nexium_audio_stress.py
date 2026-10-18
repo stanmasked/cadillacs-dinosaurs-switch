@@ -115,7 +115,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
             check.verify(self.path,self.timeline,self.controller)
 
     def test_service_inactive_or_reset_while_stressing_is_inconclusive(self):
-        for column,bad in ((5,'0'),(6,'0'),(12,'1')):
+        for column,bad in ((5,'0'),(6,'0'),(11,'1')):
             with self.subTest(column=column):
                 self.mutate(3,column,bad)
 
