@@ -622,6 +622,29 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
         self.assertEqual(self.state().simulated_ticks,
                          before.simulated_ticks+1)
 
+    def test_pcm_witness_restarts_but_lifetime_ticks_survive_reopen(self):
+        # A new audio session resets synthesis and its PCM hash while the
+        # diagnostic lifetime counter deliberately remains cumulative.
+        original_witness=self.lib.dino_switch_sound_pcm_witness()
+        self.assertEqual(self.lib.dino_switch_sound_pcm_ticks(),0)
+        self.step(1<<3)
+        self.step()
+        self.assertEqual(self.lib.dino_switch_sound_pcm_ticks(),2)
+        self.assertNotEqual(
+            self.lib.dino_switch_sound_pcm_witness(),original_witness)
+        lifetime=self.state().simulated_ticks
+        self.lib.dino_switch_sound_close()
+        self.lib.mock_audout_reset()
+        self.assertTrue(self.lib.dino_switch_sound_open())
+        self.assertEqual(self.lib.dino_switch_sound_pcm_ticks(),0)
+        self.assertEqual(
+            self.lib.dino_switch_sound_pcm_witness(),original_witness)
+        self.assertEqual(self.state().simulated_ticks,lifetime)
+        self.assertEqual(self.state().pending,0)
+        self.step(1<<3)
+        self.assertEqual(self.lib.dino_switch_sound_pcm_ticks(),1)
+        self.assertEqual(self.state().simulated_ticks,lifetime+1)
+
     def test_ordinary_release_binary_matches_guest_pcm_for_900_ticks(self):
         self.check_release_mode_matches_baseline_pcm([])
 
