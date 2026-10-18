@@ -108,6 +108,14 @@ def verify(path, guest_timeline, guest_controller):
                 row[19]>row[16] or row[20]>15 or
                 (row[16]>0 and (row[20]<2 or row[19]==0)) or
                 (row[16]==0 and row[19]!=0) or
+                # Only the START and current checkpoint can cut a
+                # scheduled >=2-tick render batch in half. Therefore
+                # at most two measured frames may contribute one
+                # batched tick each; all other frames contribute >=2.
+                (row[19]*2>row[16]+2) or
+                # Conversely no measured frame can contribute more
+                # ticks than the largest guest-scheduled render batch.
+                (row[16]>row[19]*row[20]) or
                 (elapsed>0 and row[20]==0) or
                 any(row[j]<prev[j] for j in range(15,21))):
             raise ValueError('render scheduling / skipped admission mismatch')

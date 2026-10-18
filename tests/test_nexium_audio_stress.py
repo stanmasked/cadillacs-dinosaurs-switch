@@ -228,6 +228,28 @@ class LongGuestAudioStressTests(unittest.TestCase):
             with self.subTest(column=col,value=bad):
                 self.mutate(2,col,bad)
 
+    def test_batched_render_frames_need_at_least_two_ticks_apart_from_edges(self):
+        # 50 measured batched ticks cannot arise from 27 distinct
+        # batched render frames: at most two frames may be clipped
+        # by the START/checkpoint observation boundaries.
+        self.mutate(1,21,'27')
+        self.mutate(1,21,'30')
+
+    def test_batched_render_frames_have_finite_tick_capacity(self):
+        # 20 frames scheduling at most two ticks each cannot account
+        # for 50 measured batched ticks, even if all are complete.
+        self.mutate(1,21,'20')
+        self.mutate(1,21,'1')
+
+    def test_first_and_last_batched_frames_may_be_partial(self):
+        # 24 complete 2-tick batches plus two one-tick fragments can
+        # legitimately span a checkpoint: 50 ticks in 26 frames.
+        self.rows[1][21]='26'
+        self.write()
+        result=check.verify(self.path,self.timeline,self.controller)
+        self.assertEqual(result['batched_render_steps'],300)
+        self.assertEqual(result['render_frames_with_batched_steps'],150)
+
     def test_fake_batched_only_schedule_with_no_batched_frames_rejected(self):
         for idx in range(len(self.rows)):
             self.rows[idx][17]='0'
