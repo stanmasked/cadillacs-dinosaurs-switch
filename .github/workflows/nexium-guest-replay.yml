@@ -73,6 +73,10 @@ permissions:
 
 jobs:
   build-guest-nro:
+    strategy:
+      fail-fast: false
+      matrix:
+        audio_mode: ${{ fromJSON(github.event_name == 'pull_request' && '["baseline","extra-poll"]' || github.event_name == 'workflow_dispatch' && inputs.audio_mode == 'extra-poll' && '["extra-poll"]' || '["baseline"]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -81,7 +85,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure devkitPro and compile selected ROM-free Switch guest mode
         env:
-          DINO_AUDIO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.audio_mode || 'baseline' }}
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
         run: |
           set -euo pipefail
           echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
@@ -117,7 +121,7 @@ jobs:
           sha256sum cadillacs-dinosaurs-switch.nro > dino-guest-nro.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: dino-nexium-selftest-nro
+          name: dino-nexium-selftest-nro-${{ matrix.audio_mode }}
           path: |
             cadillacs-dinosaurs-switch.nro
             dino-guest-audio-mode.txt
@@ -127,17 +131,21 @@ jobs:
 
   run-real-guest:
     needs: build-guest-nro
+    strategy:
+      fail-fast: false
+      matrix:
+        audio_mode: ${{ fromJSON(github.event_name == 'pull_request' && '["baseline","extra-poll"]' || github.event_name == 'workflow_dispatch' && inputs.audio_mode == 'extra-poll' && '["extra-poll"]' || '["baseline"]') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: dino-nexium-selftest-nro
+          name: dino-nexium-selftest-nro-${{ matrix.audio_mode }}
           path: emulator-input
       - name: Verify mode manifest and NRO integrity before execution
         env:
-          DINO_AUDIO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.audio_mode || 'baseline' }}
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
         run: |
           set -euo pipefail
           test "$(cat emulator-input/dino-guest-audio-mode.txt)" = "$DINO_AUDIO_MODE"
@@ -169,7 +177,7 @@ jobs:
             emulator-evidence
       - name: Attest selected mode from actual guest audio stress counters
         env:
-          DINO_AUDIO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.audio_mode || 'baseline' }}
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
         run: |
           python3 tools/verify_nexium_audio_mode_binding.py \
             --selected-mode "$DINO_AUDIO_MODE" \
@@ -179,7 +187,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dino-ne-xium-actual-nro-guest-evidence
+          name: dino-ne-xium-actual-nro-guest-evidence-${{ matrix.audio_mode }}
           path: |
             emulator-evidence/result.txt
             emulator-evidence/metadata.txt

@@ -162,6 +162,25 @@ class GuestAudioModeBindingTests(unittest.TestCase):
         self.assertEqual(self.report.read_bytes(),original)
         self.assertEqual(json.loads(captured.getvalue())['reason'],'FileExistsError')
 
+    def test_pr_workflow_runs_both_guest_audio_modes_without_manual_dispatch(self):
+        # The workflow exists on this PR branch, not yet on main.
+        # GitHub requires main presence for workflow_dispatch to work,
+        # so a PR matrix covers both variants without changing main.
+        workflow=(Path(__file__).resolve().parents[1]/
+                  '.github/workflows/nexium-guest-replay.yml').read_text(
+                      encoding='utf-8')
+        self.assertEqual(workflow.count('audio_mode: ${{ fromJSON('),2)
+        self.assertIn('github.event_name == \'pull_request\'',workflow)
+        self.assertIn('["baseline","extra-poll"]',workflow)
+        self.assertIn('github.event_name == \'workflow_dispatch\'',workflow)
+        self.assertIn("'[\"baseline\"]'",workflow)
+        self.assertEqual(workflow.count('DINO_AUDIO_MODE: ${{ matrix.audio_mode }}'),3)
+        self.assertIn('name: dino-nexium-selftest-nro-${{ matrix.audio_mode }}',workflow)
+        self.assertIn(
+            'name: dino-ne-xium-actual-nro-guest-evidence-${{ matrix.audio_mode }}',
+            workflow)
+        self.assertIn('      fail-fast: false',workflow)
+
     def test_cli_guest_mode_mismatch_fails_closed(self):
         self.write(False)
         captured=StringIO()
