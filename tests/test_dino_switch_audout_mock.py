@@ -559,6 +559,19 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
             normal.mock_audout_page_layout_ok.restype=ctypes.c_uint32
             normal.mock_audout_reset()
             self.assertTrue(normal.dino_switch_sound_open())
+            normal_baseline=Diagnostics()
+            normal.dino_switch_sound_diagnostics(
+                ctypes.byref(normal_baseline))
+            # The audio service keeps lifetime tick/error counters across
+            # close/reopen. The test fixture's shared library has already
+            # run other cases, while this release .so starts fresh. Compare
+            # per-open increments for these two fields, not raw lifetimes.
+            lifetime_fields={'simulated_ticks','audio_errors'}
+            def relative_diagnostics(snapshot,opened):
+                return tuple(
+                    getattr(snapshot,key)-getattr(opened,key)
+                    if key in lifetime_fields else getattr(snapshot,key)
+                    for key,_ in Diagnostics._fields_)
             try:
                 for tick in range(900):
                     event=1<<((tick*7)%10) if tick%3==0 else 0
@@ -572,10 +585,9 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
                         ctypes.byref(actual))
                     expected=self.state()
                     self.assertEqual(
-                        tuple(getattr(actual,key) for key,_ in
-                              Diagnostics._fields_),
-                        tuple(getattr(expected,key) for key,_ in
-                              Diagnostics._fields_))
+                        relative_diagnostics(actual,normal_baseline),
+                        relative_diagnostics(expected,self.baseline),
+                        'release/guest PCM admission drift at tick '+str(tick))
                     self.assertEqual(
                         normal.dino_switch_sound_pcm_ticks(),
                         self.lib.dino_switch_sound_pcm_ticks())
@@ -591,6 +603,24 @@ class ProductionAudioAdapterMockTests(unittest.TestCase):
                 self.assertEqual(normal.mock_audout_page_layout_ok(),1)
             finally:
                 normal.dino_switch_sound_close()
+
+    def test_lifetime_audio_counters_survive_close_and_reopen(self):
+        # The cumulative counters are intentionally not queue statistics.
+        self.step()
+        before=self.state()
+        self.lib.dino_switch_sound_close()
+        self.lib.mock_audout_reset()
+        self.assertTrue(self.lib.dino_switch_sound_open())
+        after=self.state()
+        self.assertEqual(after.simulated_ticks,before.simulated_ticks)
+        self.assertEqual(after.audio_errors,before.audio_errors)
+        self.assertEqual(after.submitted,0)
+        self.assertEqual(after.released,0)
+        self.assertEqual(after.skipped,0)
+        self.assertEqual(after.pending,0)
+        self.step()
+        self.assertEqual(self.state().simulated_ticks,
+                         before.simulated_ticks+1)
 
     def test_ordinary_release_binary_matches_guest_pcm_for_900_ticks(self):
         self.check_release_mode_matches_baseline_pcm([])
