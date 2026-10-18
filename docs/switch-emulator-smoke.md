@@ -652,4 +652,28 @@ host scheduling, emulator speed or audio release timing. No changes
 were made to the queue's two-page cap, admission logic, synthesizer,
 simulation cadence or normal player-facing NRO. Physical Switch
 timing, glitches and audible quality are not tested.
-\n## Stage 140 — conservative render-batch capacity bounds\n\nThe previous verifier checked that measured batched-frame counts were\nnonzero and never larger than the batched tick count, but those conditions\ncould still accept impossible synthetic traces: for example, 50 batched\nticks attributed to 27 two-tick render frames, or 50 batched ticks\nattributed to just 20 render frames when the largest scheduled batch\nwas two ticks. Both descriptions contradict their own frame accounting.\n\nThe v3 guest CSV verifier now enforces two **cumulative** conservative\ncapacity bounds at each checkpoint: for B measured batched ticks, F\nrender frames containing batched steps, and M largest scheduled batch,\n`2F <= B + 2` and `B <= F*M`. The +2 allows the first batched\nrender frame after START and the final frame at each checkpoint to be\npartially observed (one measured tick each); rejecting such real\nboundary fragments would be incorrect. Checks deliberately do **not**\napply these bounds independently to interval deltas, because a single\nrender frame can span a checkpoint boundary. Regression fixtures cover\nimpossible frame/tick ratios and a valid 26-frame/50-tick boundary case.\n\nThis is a ROM-free metadata-consistency improvement only. It neither\nmodifies audio admission or frame scheduling nor proves catch-up caused\naudio skips, wall-clock real-time performance, physical speaker output,\nCPS-1 pixel parity or execution of original licensed gameplay.\n
+
+## Stage 140 — conservative render-batch capacity bounds
+
+The previous verifier checked that measured batched-frame counts were
+nonzero and never larger than the batched tick count, but those conditions
+could still accept impossible synthetic traces: for example, 50 batched
+ticks attributed to 27 two-tick render frames, or 50 batched ticks
+attributed to just 20 render frames when the largest scheduled batch
+was two ticks. Both descriptions contradict their own frame accounting.
+
+The v3 guest CSV verifier now enforces two **cumulative** conservative
+capacity bounds at each checkpoint: for B measured batched ticks, F
+render frames containing batched steps, and M largest scheduled batch,
+`2F <= B + 2` and `B <= F*M`. The +2 allows the first batched
+render frame after START and the final frame at each checkpoint to be
+partially observed (one measured tick each); rejecting such real
+boundary fragments would be incorrect. Checks deliberately do **not**
+apply these bounds independently to interval deltas, because a single
+render frame can span a checkpoint boundary. Regression fixtures cover
+impossible frame/tick ratios and a valid 26-frame/50-tick boundary case.
+
+This is a ROM-free metadata-consistency improvement only. It neither
+modifies audio admission or frame scheduling nor proves catch-up caused
+audio skips, wall-clock real-time performance, physical speaker output,
+CPS-1 pixel parity or execution of original licensed gameplay.
