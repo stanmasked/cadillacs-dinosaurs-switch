@@ -529,11 +529,16 @@ int main(int argc, char **argv) {
      * commercial audio, emulator configuration or private file paths. */
     FILE *guest_witness=NULL;
     bool guest_first_frame=false, guest_done=false;
+    /* CI-only physical HID witness. Unlike the replay inputs below,
+     * these flags can only originate from padGetButtons*/ 
+    FILE *guest_controller_witness=NULL;
+    bool guest_controller_active=false, guest_controller_done=false;
+    uint32_t guest_controller_flags=0;
     if (arena_active) {
         (void)fsdevMountSdmc();
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
         if (guest_witness) {
-            fputs("event,ticks,player_x,player_hp,hits,state_fnv64,"
+            fputs("event,ticks,player_x,player_hp,hits,state_fnv64,
                   "pcm_fnv64,pcm_blocks,audio_ticks,audio_active,"
                   "audio_queue_valid,audio_pending,audio_submitted,"
                   "audio_released,audio_skipped,audio_errors\n",guest_witness);
@@ -585,6 +590,24 @@ int main(int argc, char **argv) {
                 dino_switch_sound_close();
                 (void)dino_switch_sound_open();
             } else if (down & HidNpadButton_Y) {
+#ifdef DINO_EMULATOR_SELFTEST
+                if (guest_done && !guest_controller_active &&
+                    !guest_controller_done) {
+                    /* Evidence exists only if NeXium delivers an ACTUAL
+                     * Y press. Never self-inject input or infer it from
+                     * the automated 180-tick replay. */
+                    guest_controller_witness=fopen(
+                        "sdmc:/cadillacs-controller-selftest.csv","w");
+                    if (guest_controller_witness) {
+                        fputs("event,flags,player_x,sparring\n",
+                              guest_controller_witness);
+                        fputs("RESET,1,90,0\n",guest_controller_witness);
+                        fflush(guest_controller_witness);
+                        guest_controller_flags=1u;
+                        guest_controller_active=true;
+                    }
+                }
+#endif
                 dino_arena_reset(&arena);
                 demo_ticks=0;
                 demo_witness=DINO_WITNESS_INIT;
@@ -614,6 +637,33 @@ int main(int argc, char **argv) {
                         break; /* invalid trace never runs unknown input */
                 }
                 dino_arena_step(&arena,step_held,step_pressed);
+#ifdef DINO_EMULATOR_SELFTEST
+                if (guest_controller_active && !demo_active) {
+                    /* Check gameplay EFFECTS, not just raw button bits.
+                     * The replay trace never contributes to this witness. */
+                    if ((held & HidNpadButton_Right) && arena.x>90)
+                        guest_controller_flags|=2u;
+                    if ((down & HidNpadButton_A) &&
+                        (arena.events&DINO_EVT_PLAYER_SWING))
+                        guest_controller_flags|=4u;
+                    if ((down & HidNpadButton_B) &&
+                        (arena.events&DINO_EVT_JUMP_START))
+                        guest_controller_flags|=8u;
+                    if ((down & HidNpadButton_X) &&
+                        (arena.events&DINO_EVT_SPAR_TOGGLE) && arena.sparring)
+                        guest_controller_flags|=16u;
+                    if (guest_controller_flags==31u &&
+                        guest_controller_witness) {
+                        fprintf(guest_controller_witness,
+                                "INPUT_DONE,%u,%d,%u\n",
+                                (unsigned)guest_controller_flags,arena.x,
+                                (unsigned)arena.sparring);
+                        fflush(guest_controller_witness);
+                        guest_controller_active=false;
+                        guest_controller_done=true;
+                    }
+                }
+#endif
                 if (demo_active)
                     demo_witness=dino_replay_witness_tick(demo_witness,&arena);
                 /* Consume precisely the event from this simulated tick. */
@@ -715,6 +765,7 @@ int main(int argc, char **argv) {
     }
 #ifdef DINO_EMULATOR_SELFTEST
     if (guest_witness) fclose(guest_witness);
+    if (guest_controller_witness) fclose(guest_controller_witness);
 #endif
     dino_switch_sound_close();
     framebufferClose(&fb);
