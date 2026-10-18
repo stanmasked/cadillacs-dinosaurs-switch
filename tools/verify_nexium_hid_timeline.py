@@ -38,7 +38,8 @@ def verify(path, summary_path=None):
         if None in row or any(value is None for value in row.values()):
             raise ValueError('ragged or unexpected HID columns')
         values = [row[field] for field in COLUMNS[1:]]
-        if any(not value.isascii() or not value.isdecimal() for value in values):
+        if any(not value.isascii() or not value.isdecimal() or
+               (len(value)>1 and value[0]=='0') for value in values):
             raise ValueError('non-canonical HID integer')
         parsed = [int(value) for value in values]
         tick, x, spar, mask = parsed
