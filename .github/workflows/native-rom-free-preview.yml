@@ -60,7 +60,7 @@ jobs:
           assert len(frame)==len(header)+384*224*3
           assert hashlib.sha256(frame[len(header):]).hexdigest()==report['frame_rgb_sha256']
           assert report['ticks']==180
-          assert len(report['gameplay_witness_fnv64'])==16
+          assert report['gameplay_witness_fnv64']=='5bca2ff01fb244f6'
           assert report['runtime']=='native_host_not_switch_emulator'
           assert not report['switch_emulator_verified']
           assert not report['switch_gpu_verified']
