@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools import nexium_host_spar_audio as pulse
 from tools import verify_nexium_spar_audio_bound as verifier
@@ -134,6 +135,18 @@ class SparAudioResponseTests(unittest.TestCase):
         self.host.symlink_to(p)
         with self.assertRaises(ValueError):
             verifier.verify(self.host, self.timeline, self.controller)
+
+    def test_monitor_missing_still_delivers_guest_spar_key(self):
+        # A broken PulseAudio recorder must not suppress the V key
+        # required by the separate ROM-free native-HID check.
+        with patch.object(pulse.subprocess, 'Popen',
+                          side_effect=OSError('no monitor')), \
+             patch.object(pulse, 'send_spar') as spar:
+            result = pulse.measure()
+        self.assertEqual(result['status'],
+                         'INCONCLUSIVE_AUDIO_MONITOR_UNAVAILABLE')
+        self.assertFalse(result['physical_speaker_latency_verified'])
+        spar.assert_called_once_with()
 
     def test_direct_cli_valid_and_inconclusive_paths(self):
         script = Path(__file__).resolve().parents[1] / \
