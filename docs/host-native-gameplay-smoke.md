@@ -148,3 +148,21 @@ NRO** finish this scripted scenario will be a meaningful first
 runtime test. Until then, any success statement here applies only
 to the compiled NRO and independently executed **host** C code,
 not to Switch emulator GPU, controller or audout behavior.
+
+## Stage 127 — independent cross-platform replay fingerprint
+
+`tools/dino_host_preview.py --headless --ticks 180` now includes a
+`gameplay_witness_fnv64` field: exactly 16 lowercase hexadecimal digits.
+This is the **same per-tick C witness algorithm** and input sequence
+compiled into the Switch NRO, so a later actual emulator test can
+compare it against the `STATE FNV64` line on the frozen on-device
+frame. The hash includes selected game state and event flags for all
+180 simulation ticks, but no host PCM bytes or renderer pixels.
+
+The portable C witness is independently checked against a Python
+reference that feeds each integer field as four explicit little-endian
+bytes to FNV-1a. Tests also ensure a missed move/attack/jump alters
+the final digest, repeated reset/replay produces the same result
+and null input does not modify the digest. This is intended to
+detect **real simulation divergence** across platforms, not to
+claim real emulator execution from a host-only result.
