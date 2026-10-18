@@ -154,7 +154,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
           # summary, never screenshots or raw keyboard events.
           sleep 10
           python3 tools/nexium_host_input_pixel.py \
-              --window "$window" --out "$5" || true
+              --window "$window" --out "$5" \
+              --audio-out "$6" || true
           # The JSON is deliberately sanitized: summary/status only,
           # no captured image, window title or host-clock timestamp.
           if [ -f "$5" ]; then cat "$5" >&2; fi
@@ -177,7 +178,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -186,6 +187,9 @@ echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
 # baseline pixel from an unavailable sampler without artifact download.
 if [ -s "$out/host-pixel-raw.json" ]; then
     cat "$out/host-pixel-raw.json"
+fi
+if [ -s "$out/host-spar-raw.json" ]; then
+    cat "$out/host-spar-raw.json"
 fi
 if [ -n "$recorder_pid" ]; then
     kill "$recorder_pid" 2>/dev/null || true
@@ -246,6 +250,15 @@ python3 tools/verify_nexium_host_input_bound.py \
     --timeline "$out/guest-hid-timeline.csv" \
     --controller "$out/guest-controller.csv" \
     --out "$out/host-input-bound-evidence.json"
+
+# A separate Pulse monitor receives the invented 530Hz spar tone.
+# Never accept its sampled audio-read response unless the actual NRO
+# independently witnessed the real HID spar toggle in sequence.
+python3 tools/verify_nexium_spar_audio_bound.py \
+    --host "$out/host-spar-raw.json" \
+    --timeline "$out/guest-hid-timeline.csv" \
+    --controller "$out/guest-controller.csv" \
+    --out "$out/host-spar-audio-evidence.json"
 
 # A guest-written CSV alone proves native execution, but not pixels.
 # Check that the actual 1280x720 NeXium window contains expected
