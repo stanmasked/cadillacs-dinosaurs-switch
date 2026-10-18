@@ -511,6 +511,12 @@ int main(int argc, char **argv) {
                 demo_complete=false;
                 pending_actions=0;
                 arena_clock_carry=0;
+                /* The desktop witness starts from a reset SFX timeline.
+                 * Make NRO replay audio equally reproducible, including
+                 * after manually played attacks. Silent fallback remains
+                 * harmless if audout cannot be initialized. */
+                dino_switch_sound_close();
+                (void)dino_switch_sound_open();
             } else if (down & HidNpadButton_Y) {
                 dino_arena_reset(&arena);
                 demo_ticks=0;
