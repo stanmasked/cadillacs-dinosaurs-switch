@@ -103,3 +103,44 @@ validation, process-availability and early-exit behavior using the
 system Python interpreter as a **mock executable**. They do not
 pretend to be a real Switch emulator. No original CPS-1 gameplay,
 sound parity or physical Switch hardware parity is implied.
+
+## Built-in 180-tick emulator controller self-test (stage 126)
+
+The same **ROM-free, 180-step C input trace** now lives in
+`source/dino_replay.c` and is compiled into both the actual
+Nintendo Switch NRO and the independently executable Linux desktop
+preview. The two consumers no longer maintain duplicate Python/ARM
+scripts that might drift. The trace moves the training actor towards
+the stationary dummy, delivers a three-hit finisher, turns on sparring,
+attacks again and attempts a jump. No original game ROM, CPU trace,
+asset, keys or external controller automation is required.
+
+When the training-room NRO is **actually running** in a Switch
+emulator, press the **Minus (-)** controller button once.
+The NRO resets the arena and advances one trace input on each
+60 Hz simulation tick. After 180 steps (3 seconds of *simulated*
+gameplay, not necessarily 3 seconds of wall-clock if the emulator
+runs slowly), its frame and HUD remain frozen until **Y** resets.
+The HUD prints:
+
+`C REPLAY 180/180  DONE - Y RESET  HP 4  HITS 3`
+
+The independent native-host run of the same C trace already
+verifies: player `x=230`, player HP `4`, three confirmed hits,
+and sparring mode enabled. The complete desktop raster and
+synthesized PCM stream have additional reproducible digests,
+but those digests are **not** claims about the Switch GPU or
+audio service. The pause-on-completion mode simplifies manual
+inspection and screenshots in an actual emulator.
+
+Controls: **Minus** to restart the trace at any moment;
+**Y** to return to normal control; **Plus** to exit.
+When user-owned `gfx.bin` is present, switch to the
+training room via ZL first. During automated replay, normal
+D-pad/attack inputs are intentionally ignored, so test results
+are independent of physical controller timing.
+
+This is a meaningful *precondition* for eventual genuine Switch
+emulation. A success claim requires actual emulator execution and
+observation of the final NRO frame, not a host simulation test or
+a unit test of the control trace.
