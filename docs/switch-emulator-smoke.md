@@ -618,3 +618,37 @@ remains mandatory.
 This instrumentation is not a fix for missing buffers. Real console
 performance, perceptual audio continuity and wall-clock real-time
 scheduling remain unverified. No ROMs or waveform assets are uploaded.
+
+
+## Stage 139 — associate audout admission skips with render catch-up batches
+
+Stage 138 established that all 118 skipped PCM blocks in one 900-tick
+NeXium trial occurred because the **two-page audout queue was full**.
+This stage investigates whether the missing admissions are concentrated
+when a single outer render-loop iteration schedules multiple fixed
+60 Hz arena/audio steps after an emulated frame delay.
+
+The diagnostic-only ARM64 NRO now attributes each of the next 900
+generated audio ticks to either an outer render iteration scheduling
+**exactly one** game tick or one scheduling **two or more**. It counts
+skipped admissions in each group, how many render iterations supplied
+batched steps, and the largest planned batch size. All six counters
+are appended to the seven existing guest-owned stress checkpoints.
+No original game ROM data, keyboard logs, screenshots, audio PCM or
+wall-clock timestamps are recorded or published.
+
+The v3 verifier independently checks that single + batched steps sum
+to the full 900 ticks; that the two skip groups sum to the actual
+audout skipped-counter delta; that neither can exceed its number of
+steps; that counts never regress; and that batched frame counts and
+largest batch size are internally possible. It still checks active
+audout, bounded queue, PCM checksum changes, exact checkpoint
+spacing, zero backend errors and the verified native HID event order.
+
+Any rates reported are **descriptive within one emulated run**.
+Differences between batched and single-tick skip rates do NOT prove
+that catch-up frames caused the queue to fill: both could depend on
+host scheduling, emulator speed or audio release timing. No changes
+were made to the queue's two-page cap, admission logic, synthesizer,
+simulation cadence or normal player-facing NRO. Physical Switch
+timing, glitches and audible quality are not tested.
