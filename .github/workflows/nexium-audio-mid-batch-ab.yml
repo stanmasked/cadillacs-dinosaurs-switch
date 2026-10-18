@@ -1,0 +1,161 @@
+name: NeXium audout mid-batch A/B (experimental)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/mame-capture-crossprobe-session-id
+    paths:
+      - '.github/workflows/nexium-audio-mid-batch-ab.yml'
+
+permissions:
+  contents: read
+
+# Both branches compile the exact same revision. Only the explicit
+# DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL guest-only flag differs.
+# They execute independently; host timing and audio latency are NOT matched.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, extra]
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile ROM-free guest with selected experimental macro
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          if [[ "${{ matrix.variant }}" == "extra" ]]; then
+            make -j2 DEFINES="-DDINO_EMULATOR_SELFTEST -DDINO_AUDIO_EXPERIMENT_MID_BATCH_POLL"
+          else
+            make -j2 DEFINES=-DDINO_EMULATOR_SELFTEST
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          data=Path('cadillacs-dinosaurs-switch.nro').read_bytes()
+          assert data[0x10:0x14]==b'NRO0'
+          n=struct.unpack_from('<I',data,0x18)[0]
+          assert 0x80<=n<=len(data)
+          assert b'cadillacs-audio-stress.csv' in data
+          print('Both guests use unchanged 60 Hz synthesis and max two pending pages')
+          PY
+          sha256sum cadillacs-dinosaurs-switch.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "dino-mid-batch-${{ matrix.variant }}-nro"
+          path: cadillacs-dinosaurs-switch.nro
+          retention-days: 7
+          if-no-files-found: error
+
+  guest:
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, extra]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: "dino-mid-batch-${{ matrix.variant }}-nro"
+          path: emulator-input
+      - name: Validate guest replay test harness and CSV parser
+        run: |
+          bash -n tools/nexium_guest_replay_probe.sh
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+      - name: Install ROM-free NeXium runtime prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0 \
+            pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Execute actual guest ARM64 NRO with external host timing
+        run: |
+          bash tools/nexium_guest_replay_probe.sh \
+            emulator-input/cadillacs-dinosaurs-switch.nro \
+            emulator-evidence
+      - name: Preserve guest-authored release-count observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "dino-mid-batch-${{ matrix.variant }}-witness"
+          path: |
+            emulator-evidence/result.txt
+            emulator-evidence/metadata.txt
+            emulator-evidence/guest-audio-stress-evidence.json
+            emulator-evidence/guest-audio-stress.csv
+            emulator-evidence/guest-hid-timeline.csv
+            emulator-evidence/guest-hid-timeline-evidence.json
+            emulator-evidence/guest-controller-evidence.json
+            emulator-evidence/frame-pixels.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  compare:
+    needs: guest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'dino-mid-batch-*-witness'
+          path: experiment
+      - name: Compare verified ROM-free metadata without causal claims
+        run: |
+          python3 tools/compare_nexium_audio_stress_runs.py \
+            --report experiment/dino-mid-batch-baseline-witness/guest-audio-stress-evidence.json \
+            --report experiment/dino-mid-batch-extra-witness/guest-audio-stress-evidence.json \
+            --out experiment/comparison.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('experiment')
+          reports=[]
+          for variant in ('baseline','extra'):
+              path=root/('dino-mid-batch-'+variant+'-witness')/'guest-audio-stress-evidence.json'
+              r=json.loads(path.read_text('ascii'))
+              assert r['status']=='GUEST_900TICK_AUDOUT_FRAME_BATCH_CORRELATION_WITNESSED'
+              reports.append({key:r[key] for key in (
+                  'audout_blocks_skipped','audout_blocks_released',
+                  'batched_later_released_pages','batched_later_tick_skips',
+                  'simulation_ticks','fixed_ack_max_recoverable_skips_upper_bound')})
+          output={
+              'schema':'dino-audout-opt-in-mid-batch-ab-descriptive-v1',
+              'status':'UNCONTROLLED_GUEST_RUN_DESCRIPTIVE_ONLY',
+              'baseline':reports[0],'extra':reports[1],
+              'extra_minus_baseline_skips':(
+                  reports[1]['audout_blocks_skipped']-
+                  reports[0]['audout_blocks_skipped']),
+              'runtime_and_host_conditions_held_constant':False,
+              'causal_audio_improvement_verified':False,
+              'physical_switch_audio_verified':False,
+              'audio_latency_verified':False,
+          }
+          (root/'ab-descriptive.json').write_text(
+              json.dumps(output,sort_keys=True)+'\n',encoding='ascii')
+          print(json.dumps(output,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dino-mid-batch-ab-descriptive-report
+          path: |
+            experiment/comparison.json
+            experiment/ab-descriptive.json
+          retention-days: 7
+          if-no-files-found: warn
