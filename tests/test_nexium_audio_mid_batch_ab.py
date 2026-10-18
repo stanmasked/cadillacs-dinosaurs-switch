@@ -685,6 +685,83 @@ class ExperimentalABTests(unittest.TestCase):
         self.assertTrue(result['matched_exposure_later_skip_directions_mixed'])
         self.assertFalse(result['exact_frame_pacing_matched'])
 
+    def test_matched_initial_queue_still_allows_descriptive_skip_delta(self):
+        report=ab.compare(self.a,self.b)
+        self.assertEqual(report['baseline_queue_pending_at_stress_start'],1)
+        self.assertEqual(report['experimental_queue_pending_at_stress_start'],1)
+        self.assertTrue(report['matched_exposure_initial_queue_occupancy_matched'])
+        self.assertTrue(report['matched_exposure_final_queue_occupancy_matched'])
+        self.assertFalse(
+            report['matched_exposure_initial_queue_shift_confounds_skip_comparison'])
+        self.assertEqual(
+            report['matched_exposure_and_returns_later_skip_count_delta'],-6)
+        self.assertFalse(report['causal_audio_improvement_verified'])
+
+    def test_different_initial_pending_pages_suppress_strict_skip_claim(self):
+        experimental=with_fixed_ack_headroom(complete(True,1),start=2)
+        self.write(self.b,experimental)
+        report=ab.compare(self.a,self.b)
+        self.assertTrue(report['per_150tick_batch_exposure_matched'])
+        self.assertTrue(
+            report['matched_exposure_all_position_return_counts_matched'])
+        self.assertTrue(report['matched_exposure_later_return_counts_matched'])
+        self.assertEqual(report['matched_exposure_later_skip_count_delta'],-6)
+        self.assertEqual(report['baseline_queue_pending_at_stress_start'],1)
+        self.assertEqual(report['experimental_queue_pending_at_stress_start'],2)
+        self.assertFalse(report['matched_exposure_initial_queue_occupancy_matched'])
+        self.assertTrue(
+            report['matched_exposure_initial_queue_shift_confounds_skip_comparison'])
+        self.assertIsNone(
+            report['matched_exposure_and_returns_later_skip_count_delta'])
+        self.assertIsNone(
+            report['matched_exposure_and_returns_later_skip_window_deltas'])
+        self.assertFalse(report['causal_audio_improvement_verified'])
+
+    def test_missing_initial_queue_witness_never_means_empty_queue(self):
+        baseline=complete(False)
+        experimental=complete(True,1)
+        for field in ab.cross.FIXED_ACK_FIELDS:
+            experimental.pop(field)
+        result=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(result['per_150tick_batch_exposure_matched'])
+        self.assertTrue(result['matched_exposure_all_position_return_counts_matched'])
+        self.assertIsNone(
+            result['matched_exposure_initial_queue_occupancy_matched'])
+        self.assertIsNone(
+            result['matched_exposure_initial_queue_shift_confounds_skip_comparison'])
+        self.assertIsNone(result['experimental_queue_pending_at_stress_start'])
+        self.assertIsNone(
+            result['matched_exposure_and_returns_later_skip_count_delta'])
+
+    def test_queue_witness_rejects_bad_initial_or_final_occupancy(self):
+        for field,bad in (
+                ('queue_pending_at_stress_start',True),
+                ('queue_pending_at_stress_start',3),
+                ('queue_pending_at_stress_end',-1),
+                ('queue_pending_at_stress_end',False),
+                ('queue_pending_at_stress_end',2),
+                ('fixed_ack_headroom_probe_present',1)):
+            with self.subTest(field=field,bad=bad):
+                broken=complete(True,1)
+                broken[field]=bad
+                with self.assertRaises(ValueError):
+                    ab.compare_batch_exposure(complete(False),broken)
+
+    def test_final_queue_is_an_outcome_not_a_matching_prerequisite(self):
+        # Helper-only arithmetic: a different submitted count changes
+        # ending occupancy but not initial occupancy or per-position ACKs.
+        # This intentionally does NOT represent a valid full guest ledger.
+        baseline=complete(False)
+        experimental=complete(True,1)
+        experimental['audout_blocks_submitted']+=1
+        experimental['queue_pending_at_stress_end']+=1
+        result=ab.compare_batch_exposure(baseline,experimental)
+        self.assertTrue(result['matched_exposure_initial_queue_occupancy_matched'])
+        self.assertFalse(result['matched_exposure_final_queue_occupancy_matched'])
+        self.assertEqual(
+            result['matched_exposure_and_returns_later_skip_count_delta'],-6)
+        self.assertFalse(result['exact_frame_pacing_matched'])
+
     def test_baseline_cannot_claim_unexplained_poll(self):
         s=complete(False,0)
         for field in ('guest_mid_batch_extra_poll_calls',
