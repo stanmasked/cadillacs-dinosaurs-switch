@@ -59,7 +59,7 @@ class LongGuestAudioStressTests(unittest.TestCase):
     def write(self,fields=None):
         with self.path.open('w',encoding='ascii',newline='') as stream:
             w=csv.writer(stream)
-            w.writerow(fields if fields is not None else check.COLUMNS)
+            w.writerow(fields if fields is not None else check.STAGE151_COLUMNS)
             w.writerows(self.rows)
 
     def mutate(self,index,column,bad):
@@ -387,6 +387,54 @@ class LongGuestAudioStressTests(unittest.TestCase):
     def test_missing_release_position_csv_field_fails_closed(self):
         self.rows[0].pop()
         self.write()
+        with self.assertRaises(ValueError):
+            check.verify(self.path,self.timeline,self.controller)
+
+
+    def attach_guest_mid_batch_counters(self,enabled):
+        for index,row in enumerate(self.rows):
+            row.extend([str(int(enabled)),
+                        str(index*25 if enabled else 0),
+                        str(index*5 if enabled else 0)])
+        self.write(fields=check.COLUMNS)
+
+    def test_stage157_baseline_attests_no_extra_poll_calls(self):
+        self.attach_guest_mid_batch_counters(False)
+        r=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(r['guest_mid_batch_extra_poll_probe_present'])
+        self.assertFalse(r['guest_mid_batch_extra_poll_enabled'])
+        self.assertEqual(r['guest_mid_batch_extra_poll_calls'],0)
+        self.assertEqual(r['guest_mid_batch_extra_poll_released_pages'],0)
+        self.assertEqual(len(r['checkpoint_guest_mid_batch_extra_poll_intervals']),6)
+
+    def test_stage157_extra_calls_match_later_ticks_and_real_ack_counts(self):
+        self.attach_guest_mid_batch_counters(True)
+        r=check.verify(self.path,self.timeline,self.controller)
+        self.assertTrue(r['guest_mid_batch_extra_poll_enabled'])
+        self.assertEqual(r['guest_mid_batch_extra_poll_calls'],150)
+        self.assertEqual(r['guest_mid_batch_extra_poll_released_pages'],30)
+        self.assertEqual(r['checkpoint_guest_mid_batch_extra_poll_intervals'][0],
+              {'tick_start':0,'tick_end':150,
+               'poll_calls':25,'poll_released_pages':5})
+        self.assertFalse(r['catchup_causality_verified'])
+
+    def test_stage151_csv_is_backward_compatible_with_null_extra_probe(self):
+        r=check.verify(self.path,self.timeline,self.controller)
+        self.assertFalse(r['guest_mid_batch_extra_poll_probe_present'])
+        self.assertIsNone(r['guest_mid_batch_extra_poll_enabled'])
+        self.assertIsNone(r['guest_mid_batch_extra_poll_calls'])
+
+    def test_stage157_rejects_forged_extra_poll_counters(self):
+        self.attach_guest_mid_batch_counters(True)
+        for index,col,bad in (
+                (0,36,'0'),(0,37,'1'),(0,38,'1'),
+                (1,36,'0'),(1,36,'2'),(1,37,'24'),
+                (1,37,'26'),(1,38,'26'),(2,38,'2'),
+                (2,37,'100'),(1,37,'true'),(1,38,'4294967296')):
+            with self.subTest(row=index,column=col,value=bad):
+                self.mutate(index,col,bad)
+        self.rows[0].pop()
+        self.write(fields=check.COLUMNS)
         with self.assertRaises(ValueError):
             check.verify(self.path,self.timeline,self.controller)
 

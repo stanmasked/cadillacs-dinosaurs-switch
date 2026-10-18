@@ -35,8 +35,12 @@ COLUMNS = [
     'single_frame_released_pages',
     'batched_first_released_pages',
     'batched_later_released_pages',
+    'guest_mid_batch_extra_poll_enabled',
+    'guest_mid_batch_extra_poll_calls',
+    'guest_mid_batch_extra_poll_released_pages',
 ]
-STAGE146_COLUMNS=COLUMNS[:-3]
+STAGE151_COLUMNS=COLUMNS[:-3]
+STAGE146_COLUMNS=STAGE151_COLUMNS[:-3]
 STAGE145_COLUMNS=STAGE146_COLUMNS[:-4]
 STAGE143_COLUMNS=STAGE145_COLUMNS[:-4]
 LEGACY_COLUMNS=STAGE143_COLUMNS[:-2]
@@ -54,16 +58,20 @@ def verify(path, guest_timeline, guest_controller):
     try:
         with path.open('r',encoding='ascii',newline='') as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames not in (COLUMNS,STAGE146_COLUMNS,
-                                            STAGE145_COLUMNS,STAGE143_COLUMNS,
+            if reader.fieldnames not in (COLUMNS,STAGE151_COLUMNS,
+                                            STAGE146_COLUMNS,STAGE145_COLUMNS,
+                                            STAGE143_COLUMNS,
                                             LEGACY_COLUMNS):
                 raise ValueError('guest stress field schema mismatch')
             has_pre_poll_probe=reader.fieldnames!=LEGACY_COLUMNS
             has_batch_position_probe=reader.fieldnames in (
-                COLUMNS,STAGE146_COLUMNS,STAGE145_COLUMNS)
+                COLUMNS,STAGE151_COLUMNS,STAGE146_COLUMNS,
+                STAGE145_COLUMNS)
             has_position_poll_probe=reader.fieldnames in (
-                COLUMNS,STAGE146_COLUMNS)
-            has_release_position_probe=reader.fieldnames==COLUMNS
+                COLUMNS,STAGE151_COLUMNS,STAGE146_COLUMNS)
+            has_release_position_probe=reader.fieldnames in (
+                COLUMNS,STAGE151_COLUMNS)
+            has_mid_batch_experiment_probe=reader.fieldnames==COLUMNS
             active_columns=reader.fieldnames
             rows=list(reader)
     except (UnicodeError,csv.Error) as exc:
@@ -108,8 +116,11 @@ def verify(path, guest_timeline, guest_controller):
         raise ValueError('batch position witness starts nonzero')
     if has_position_poll_probe and start[27:31]!=[0]*4:
         raise ValueError('batch position poll baseline must start at zero')
-    if has_release_position_probe and start[31:]!=[0]*3:
+    if has_release_position_probe and start[31:34]!=[0]*3:
         raise ValueError('release position accounting must start at zero')
+    if has_mid_batch_experiment_probe and (
+            start[34] not in (0,1) or start[35:37]!=[0,0]):
+        raise ValueError('experimental poll probe baseline inconsistent')
     if start[1]<1 or start[2]<1 or start[3]<1:
         raise ValueError('guest never advanced before stress started')
     prev=start
@@ -159,6 +170,12 @@ def verify(path, guest_timeline, guest_controller):
                 row[32]>2*row[23] or row[33]>2*row[24] or
                 row[32]<row[28] or row[33]<row[30]):
             raise ValueError('guest released page position mismatch')
+        if has_mid_batch_experiment_probe and (
+                row[34]!=start[34] or
+                row[35]<prev[35] or row[36]<prev[36] or
+                row[35]!=(row[24] if start[34] else 0) or
+                row[36]>row[33] or row[36]>2*row[35]):
+            raise ValueError('experimental extra poll occurrence mismatch')
         if idx>0 and row[14]<prev[14]:
             raise ValueError('maximum consecutive skip streak decreased')
         # Backend remained active at all checkpoints. A transient
@@ -199,6 +216,7 @@ def verify(path, guest_timeline, guest_controller):
     position_windows=[]
     position_poll_windows=[]
     release_position_windows=[]
+    extra_poll_windows=[]
     for idx in range(1,len(measurements)):
         before=measurements[idx-1]
         after=measurements[idx]
@@ -293,6 +311,21 @@ def verify(path, guest_timeline, guest_controller):
                 'single_frame_released_pages':single_release,
                 'batched_first_released_pages':first_release,
                 'batched_later_released_pages':later_release,
+            })
+        if has_mid_batch_experiment_probe:
+            new_calls=after[35]-before[35]
+            extra_acks=after[36]-before[36]
+            later_tick_delta=after[24]-before[24]
+            later_releases_delta=after[33]-before[33]
+            if (new_calls!=(later_tick_delta if start[34] else 0) or
+                    extra_acks>later_releases_delta or
+                    extra_acks>2*new_calls):
+                raise ValueError('extra poll window / release mismatch')
+            extra_poll_windows.append({
+                'tick_start':CHECKPOINTS[idx-1],
+                'tick_end':CHECKPOINTS[idx],
+                'poll_calls':new_calls,
+                'poll_released_pages':extra_acks,
             })
         intervals.append({
             'tick_start':CHECKPOINTS[idx-1],
@@ -409,6 +442,16 @@ def verify(path, guest_timeline, guest_controller):
             measurements[-1][30] if has_position_poll_probe else None),
         'checkpoint_batch_position_poll_intervals':(
             position_poll_windows if has_position_poll_probe else None),
+        'guest_mid_batch_extra_poll_probe_present':
+            has_mid_batch_experiment_probe,
+        'guest_mid_batch_extra_poll_enabled':(
+            bool(start[34]) if has_mid_batch_experiment_probe else None),
+        'guest_mid_batch_extra_poll_calls':(
+            measurements[-1][35] if has_mid_batch_experiment_probe else None),
+        'guest_mid_batch_extra_poll_released_pages':(
+            measurements[-1][36] if has_mid_batch_experiment_probe else None),
+        'checkpoint_guest_mid_batch_extra_poll_intervals':(
+            extra_poll_windows if has_mid_batch_experiment_probe else None),
         'release_tick_position_probe_present':has_release_position_probe,
         'single_frame_released_pages':(
             measurements[-1][31] if has_release_position_probe else None),

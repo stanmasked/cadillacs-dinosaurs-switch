@@ -1074,3 +1074,7 @@ hardware audio output or latency measurements.
 No original ROM, licensed PCM, private filenames or captured gameplay
 resources are added to GitHub. The two-pending-page limit and
 60 Hz game simulation remain unchanged.
+
+## Stage 157 — attest actual extra audout polling in guest stress
+
+Every new self-test CSV includes a compile-time opt-in marker, a count of extra bounded nonblocking mid-batch release polls actually executed and a count of pages genuinely acknowledged by those calls. Baseline builds must record zero extra calls/releases; explicitly opted-in builds must record one extra call per later scheduled guest simulation tick. The verifier checks all three values and reconciles actual releases by six disjoint 150-tick intervals. Earlier CSV versions remain accepted with *null* extra-poll evidence, never invented values. The normal retail-style ROM-free NRO excludes the functions and incurs no additional audout calls. No hardware audio latency, speaker playback or causal improvement is claimed.

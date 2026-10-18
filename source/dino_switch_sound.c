@@ -27,6 +27,9 @@ static uint32_t s_skip_full, s_skip_inactive, s_skip_unexpected;
 static uint32_t s_pre_poll_full, s_pre_poll_recovered;
 static uint32_t s_current_skip_streak, s_max_skip_streak;
 static uint64_t s_pcm_witness=DINO_PCM_WITNESS_INIT;
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
+static uint32_t s_mid_batch_poll_calls,s_mid_batch_poll_releases;
+#endif
 
 void dino_switch_sound_close(void) {
     if (s_started) {
@@ -69,6 +72,9 @@ bool dino_switch_sound_open(void) {
     s_skip_unexpected=0;
     s_current_skip_streak=0;
     s_max_skip_streak=0;
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
+    s_mid_batch_poll_calls=s_mid_batch_poll_releases=0;
+#endif
     for (unsigned i=0;i<AUDIO_SLOTS;++i) {
         s_buffers[i]=(AudioOutBuffer){
             .buffer=s_pcm[i],
@@ -116,7 +122,35 @@ static void dino_sound_drain_acknowledged_pages(void) {
  * scheduled multi-tick guest render frame, never from the release build.
  * No wait, no PCM synthesis, no queue admission and no change of clock. */
 void dino_switch_sound_guest_mid_batch_poll(void) {
-    if (s_started) dino_sound_drain_acknowledged_pages();
+    if (!s_started) return;
+    const uint32_t before=s_queue.released;
+    ++s_mid_batch_poll_calls;
+    dino_sound_drain_acknowledged_pages();
+    s_mid_batch_poll_releases+=(uint32_t)(s_queue.released-before);
+}
+#endif
+
+#ifdef DINO_EMULATOR_SELFTEST
+uint32_t dino_switch_sound_guest_mid_batch_enabled(void) {
+#ifdef DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL
+    return 1u;
+#else
+    return 0u;
+#endif
+}
+uint32_t dino_switch_sound_guest_mid_batch_calls(void) {
+#ifdef DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL
+    return s_mid_batch_poll_calls;
+#else
+    return 0u;
+#endif
+}
+uint32_t dino_switch_sound_guest_mid_batch_releases(void) {
+#ifdef DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL
+    return s_mid_batch_poll_releases;
+#else
+    return 0u;
+#endif
 }
 #endif
 

@@ -462,7 +462,7 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
     DinoSoundDiagnostics stats;
     dino_switch_sound_diagnostics(&stats);
     fprintf(stream,
-            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+            "%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%016llX,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
             event,(unsigned)elapsed,(unsigned)arena->ticks,
             (unsigned)stats.simulated_ticks,
             (unsigned)dino_switch_sound_pcm_ticks(),
@@ -493,7 +493,10 @@ static void guest_audio_stress_row(FILE *stream, const char *event,
             (unsigned)batch->later_recovered,
             (unsigned)batch->single_releases,
             (unsigned)batch->first_releases,
-            (unsigned)batch->later_releases);
+            (unsigned)batch->later_releases,
+            (unsigned)dino_switch_sound_guest_mid_batch_enabled(),
+            (unsigned)dino_switch_sound_guest_mid_batch_calls(),
+            (unsigned)dino_switch_sound_guest_mid_batch_releases());
     fflush(stream);
 }
 
@@ -884,7 +887,10 @@ int main(int argc, char **argv) {
                                   "batched_later_recovered_after_poll,"
                                   "single_frame_released_pages,"
                                   "batched_first_released_pages,"
-                                  "batched_later_released_pages\n",
+                                  "batched_later_released_pages,"
+                                  "guest_mid_batch_extra_poll_enabled,"
+                                  "guest_mid_batch_extra_poll_calls,"
+                                  "guest_mid_batch_extra_poll_released_pages\n",
                                   guest_audio_stress);
                             guest_audio_stress_start=arena.ticks;
                             /* The START row follows the first sound step.

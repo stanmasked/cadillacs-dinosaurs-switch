@@ -18,6 +18,11 @@ void dino_switch_sound_guest_mid_batch_poll(void);
  * It does NOT show that emulator/console speakers actually played it. */
 uint64_t dino_switch_sound_pcm_witness(void);
 uint32_t dino_switch_sound_pcm_ticks(void);
+#ifdef DINO_EMULATOR_SELFTEST
+uint32_t dino_switch_sound_guest_mid_batch_enabled(void);
+uint32_t dino_switch_sound_guest_mid_batch_calls(void);
+uint32_t dino_switch_sound_guest_mid_batch_releases(void);
+#endif
 
 /* Read-only on-device diagnostics, not a measurement of actual latency.
  * They intentionally contain no audio PCM, private file paths or ROM data. */
