@@ -250,6 +250,7 @@ class MultiRunAudioTests(unittest.TestCase):
             'single_skip_percent_rounded':0,
             'batched_skip_percent_rounded':0,
             'checkpoint_skipped_deltas':[0]*6,
+            'windows_with_higher_batched_skip_rate':0,
         })
         self.save(self.one,with_release_probe(sample,0))
         self.save(self.two,with_release_probe(sample,1))
