@@ -831,6 +831,77 @@ class ExperimentalABTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ab.compare(self.a,self.b)
 
+    def test_ab_cli_creates_fresh_result_without_modifying_guest_inputs(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        out=Path(self.temp.name)/'ab-analysis.json'
+        originals=(self.a.read_bytes(),self.b.read_bytes())
+        capture=StringIO()
+        with redirect_stdout(capture):
+            rc=ab.main(['--baseline',str(self.a),
+                        '--experimental',str(self.b),
+                        '--out',str(out)])
+        self.assertEqual(rc,0)
+        self.assertEqual((self.a.read_bytes(),self.b.read_bytes()),originals)
+        self.assertEqual(out.read_text(encoding='ascii'),capture.getvalue())
+        self.assertEqual(json.loads(capture.getvalue())['status'],
+                         'UNCONTROLLED_GUEST_RUN_DESCRIPTIVE_ONLY')
+
+    def test_ab_cli_refuses_to_overwrite_each_guest_json_input(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        for target in (self.a,self.b):
+            with self.subTest(target=target.name):
+                original=target.read_bytes()
+                capture=StringIO()
+                with redirect_stdout(capture):
+                    rc=ab.main(['--baseline',str(self.a),
+                                '--experimental',str(self.b),
+                                '--out',str(target)])
+                self.assertEqual(rc,1)
+                self.assertEqual(target.read_bytes(),original)
+                result=json.loads(capture.getvalue())
+                self.assertEqual(result['status'],
+                                 'INCONCLUSIVE_MISSING_OR_INCONSISTENT_AB_GUEST_PROOF')
+                self.assertEqual(result['reason'],'FileExistsError')
+                self.assertFalse(result['causal_audio_improvement_verified'])
+
+    def test_ab_cli_refuses_to_replace_prior_audio_comparison(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        prior=Path(self.temp.name)/'previous-analysis.json'
+        prior.write_text('ORIGINAL_PREVIOUS_ANALYSIS\n',encoding='ascii')
+        capture=StringIO()
+        with redirect_stdout(capture):
+            rc=ab.main(['--baseline',str(self.a),
+                        '--experimental',str(self.b),
+                        '--out',str(prior)])
+        self.assertEqual(rc,1)
+        self.assertEqual(prior.read_text(encoding='ascii'),
+                         'ORIGINAL_PREVIOUS_ANALYSIS\n')
+        self.assertEqual(json.loads(capture.getvalue())['reason'],
+                         'FileExistsError')
+
+    def test_ab_cli_refuses_output_symlink_to_original_guest_json(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import os
+        if not hasattr(os,'symlink'):
+            self.skipTest('symlink unavailable')
+        linked=Path(self.temp.name)/'alias.json'
+        linked.symlink_to(self.a)
+        original=self.a.read_bytes()
+        capture=StringIO()
+        with redirect_stdout(capture):
+            rc=ab.main(['--baseline',str(self.a),
+                        '--experimental',str(self.b),
+                        '--out',str(linked)])
+        self.assertEqual(rc,1)
+        self.assertTrue(linked.is_symlink())
+        self.assertEqual(self.a.read_bytes(),original)
+        self.assertEqual(json.loads(capture.getvalue())['reason'],
+                         'FileExistsError')
+
     def test_cli_fail_closed_with_status_and_nonzero_exit(self):
         self.write(self.b,complete(False,1))
         rc=ab.main(['--baseline',str(self.a),
