@@ -91,7 +91,9 @@ jobs:
         env:
           DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
         run: |
-          set -euo pipefail
+          # The devkitPro container's default shell is POSIX sh, not bash.
+          # No pipelines are used here; -eu supplies portable fail-fast.
+          set -eu
           echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
           echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
           case "$DINO_AUDIO_MODE" in

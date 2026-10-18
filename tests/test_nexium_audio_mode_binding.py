@@ -174,6 +174,20 @@ class GuestAudioModeBindingTests(unittest.TestCase):
         self.assertEqual(self.report.read_bytes(),original)
         self.assertEqual(json.loads(captured.getvalue())['reason'],'FileExistsError')
 
+    def test_devkitpro_container_build_uses_posix_sh_fail_fast(self):
+        # GitHub container jobs invoke /bin/sh -e by default. dash
+        # rejects `set -o pipefail` before make can build the NRO.
+        workflow=(Path(__file__).resolve().parents[1]/
+                  '.github/workflows/nexium-guest-replay.yml').read_text(
+                      encoding='utf-8')
+        build_step=workflow.split(
+            '      - name: Configure devkitPro and compile selected ROM-free Switch guest mode',1
+        )[1].split('      - uses: actions/upload-artifact@v4',1)[0]
+        self.assertIn('          set -eu\n',build_step)
+        self.assertNotIn('set -euo pipefail',build_step)
+        self.assertIn('make -j2 DEFINES="$defines"',build_step)
+        self.assertIn('case "$DINO_AUDIO_MODE" in',build_step)
+
     def test_pr_workflow_runs_both_guest_audio_modes_without_manual_dispatch(self):
         # The workflow exists on this PR branch, not yet on main.
         # GitHub requires main presence for workflow_dispatch to work,
