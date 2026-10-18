@@ -303,3 +303,41 @@ confirmed audible audio, actual speaker delivery or original game
 fidelity. This emulates the new ROM-free geometric training-room
 prototype, **not commercial Cadillacs and Dinosaurs**. Real original
 MAME captures/gameplay remain a separate unresolved task.
+
+
+## Stage 130 — actual guest audio-service accounting (not audible audio)
+
+The diagnostic DINO_EMULATOR_SELFTEST NRO now records **eight additional
+integer fields** in its own emulated-SD replay CSV at START,
+FRAME_SUBMITTED and REPLAY_DONE. They are obtained directly from the
+guest dino_switch_sound_diagnostics() function:
+
+- audio_ticks: 60 Hz audio adapter step count, required to match
+  the corresponding simulation tick count.
+- audio_active and audio_queue_valid: libnx audout service and
+  logical output buffer-accounting state.
+- audio_pending, audio_submitted, audio_released, audio_skipped:
+  outstanding pages, native buffer submissions/releases and drops.
+- audio_errors: failures in the guest's audio adapter.
+
+The verifier checks the maximum of two queued blocks, equality of
+submitted - released == pending, finite per-tick counters, valid 0/1
+flags, and matching guest simulation/audio tick counts. Malformed or
+contradictory reports are **INCONCLUSIVE**, not successful audio output.
+An unavailable emulator sound device remains a **valid silent fallback**:
+all 180 ticks of the deterministic replay and synthesized PCM hash
+must still advance.
+
+A positive submitted count means that some blocks were accepted by the
+libnx audout API. It does **not** establish that the host sound system,
+a speaker, headphones, or a human heard anything. The generated PCM
+FNV64 remains a pre-audout witness, not a recording of physical sound.
+The machine-readable device_audio_audible_verified flag remains false
+even if submitted/released counts increase.
+
+This extra telemetry exists **only** in the emulator-CI homebrew build;
+the ordinary NRO never writes this self-test report. No game ROM,
+commercial artwork/audio, user firmware, private keys or private
+controller recordings are collected. The validator schema is v2.
+The new ROM-free regression suite checks counter corruption, silent
+fallback, invalid flags, missing fields and tick mismatches.
