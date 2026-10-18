@@ -10,6 +10,9 @@ on:
       - 'source/**'
       - 'tools/verify_nexium_audio_stress.py'
       - 'tools/verify_nexium_audio_mid_batch_ab.py'
+      - 'tools/verify_nexium_audio_ab_build_symbols.py'
+      - 'tests/test_nexium_audio_ab_build_symbols.py'
+      - 'Makefile'
       - 'tests/test_nexium_audio_stress.py'
       - 'tests/test_nexium_audio_mid_batch_ab.py'
 
@@ -52,6 +55,14 @@ jobs:
           assert b'cadillacs-audio-stress.csv' in data
           print('Both guests use unchanged 60 Hz synthesis and max two pending pages')
           PY
+          # Verify the compiled ELF contains precisely the expected
+          # optional experimental function before running either guest.
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" \
+            -g --defined-only cadillacs-dinosaurs-switch.elf \
+            > audout-ab-defined-symbols.txt
+          python3 tools/verify_nexium_audio_ab_build_symbols.py \
+            --symbols audout-ab-defined-symbols.txt \
+            --variant "${{ matrix.variant }}"
           sha256sum cadillacs-dinosaurs-switch.nro
       - uses: actions/upload-artifact@v4
         with:
