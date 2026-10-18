@@ -272,3 +272,34 @@ gameplay-state and generated-PCM equivalence. Separately measured
 host-screen pixels and audible device sound are still unverified
 unless directly inspected and tested. Both the installation and
 result records are kept in short-lived GitHub Actions artifacts.
+
+### First confirmed real NeXium homebrew runtime — 18 October 2026
+
+Unlike all previous desktop-only tests, the independent
+[NeXium run #39116927210](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39116927210)
+**completed the actual ARM64 NRO's 180-tick replay in the emulator**.
+The guest-created `cadillacs-arena-selftest.csv` includes:
+
+```text
+START,0,90,5,0,CBF29CE484222325,CBF29CE484222325,0
+FRAME_SUBMITTED,3,96,5,0,4672EA392DD89A2A,1679C52CD5075125,3
+REPLAY_DONE,180,230,4,3,5BCA2FF01FB244F6,D82C3B7960857B22,180
+```
+
+The real Xvfb/NeXium emulator window was independently captured at
+**1280×720**. It visibly shows the self-authored teal actor, ochre
+opponent, HUD and arena. Pixel inspection confirmed training-room
+background `RGB(30,61,70)`, depth-lane `RGB(62,83,74)`, teal
+actor `RGB(62,180,208)`, ochre opponent `RGB(190,126,74)` and
+lower HUD `RGB(11,18,29)`. This is a **real displayed homebrew
+frame**, not a copied host preview. A subsequent CI refinement now
+requires those exact colors (at fixed unobstructed coordinates)
+before accepting a green emulator-rendering check.
+
+The experimental NeXium guest reported the expected training-room
+state and generated PCM hash. However, the CI host had **no ALSA
+default sound card**. It is therefore still incorrect to claim
+confirmed audible audio, actual speaker delivery or original game
+fidelity. This emulates the new ROM-free geometric training-room
+prototype, **not commercial Cadillacs and Dinosaurs**. Real original
+MAME captures/gameplay remain a separate unresolved task.
