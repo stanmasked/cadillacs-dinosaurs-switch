@@ -138,6 +138,36 @@ class ExperimentalABTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ab.compare(self.a,self.b)
 
+    def test_experimental_poll_boundaries_require_canonical_integers(self):
+        # Python's False == 0 and 150.0 == 150 must never let an
+        # unauthenticated JSON boundary through the A/B witness gate.
+        for field,bad in (
+                ('tick_start',False),
+                ('tick_start',0.0),
+                ('tick_start','0'),
+                ('tick_start',None),
+                ('tick_start',-1),
+                ('tick_end',150.0),
+                ('tick_end',True),
+                ('tick_end','150'),
+        ):
+            with self.subTest(field=field,bad=bad):
+                report=complete(True,1)
+                report['checkpoint_guest_mid_batch_extra_poll_intervals'][0][
+                    field]=bad
+                self.write(self.b,report)
+                with self.assertRaises(ValueError):
+                    ab.compare(self.a,self.b)
+
+    def test_direct_guest_mode_rejects_noncanonical_interval_boundary(self):
+        for enabled in (False,True):
+            with self.subTest(enabled=enabled):
+                report=complete(enabled)
+                report['checkpoint_guest_mid_batch_extra_poll_intervals'][0][
+                    'tick_start']=False
+                with self.assertRaises(ValueError):
+                    ab.verify_mode(report,enabled)
+
     def test_valid_reallocation_between_intervals_is_not_a_forgery(self):
         # No per-call timestamps are witnessed: shifting a single ACK
         # between two windows remains consistent with five confirmed
