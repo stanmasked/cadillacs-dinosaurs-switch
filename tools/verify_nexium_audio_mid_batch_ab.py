@@ -100,10 +100,12 @@ def exposure_profile(report):
     windows=report['checkpoint_batch_position_intervals']
     mode=report['checkpoint_mode_intervals']
     releases=report['checkpoint_release_position_intervals']
+    skipped=report['checkpoint_skipped_deltas']
     if (not isinstance(windows,list) or len(windows)!=6 or
             not isinstance(mode,list) or len(mode)!=6 or
-            not isinstance(releases,list) or len(releases)!=6):
-        raise ValueError('missing exposure or page-return windows')
+            not isinstance(releases,list) or len(releases)!=6 or
+            not isinstance(skipped,list) or len(skipped)!=6):
+        raise ValueError('missing exposure, skip or page-return windows')
     result=[]
     for i,(w,m,r) in enumerate(zip(windows,mode,releases)):
         # Do not trust side-by-side indices as proof that their time
@@ -125,6 +127,8 @@ def exposure_profile(report):
                             'render mode batch skips')
         single_skips=integer(m['skips_in_single_tick_render_frames'],
                              'render mode single skips')
+        full_skips=integer(m['full_queue_skips'],'render mode full queue skips')
+        checkpoint_skips=integer(skipped[i],'checkpoint skipped delta')
         first_skips=integer(w['first_tick_skips'],'first tick skips')
         later_skips=integer(w['later_tick_skips'],'later tick skips')
         later_returns=integer(r['batched_later_released_pages'],
@@ -137,8 +141,10 @@ def exposure_profile(report):
                 first+later!=batch_total or
                 first_skips+later_skips!=batch_skips or
                 first_skips>first or later_skips>later or
-                single_skips>single):
-            raise ValueError('inconsistent 150-tick exposure partition')
+                single_skips>single or
+                single_skips+batch_skips!=full_skips or
+                checkpoint_skips!=full_skips):
+            raise ValueError('inconsistent 150-tick exposure/skip partition')
         result.append({
             'tick_start':150*i,
             'tick_end':150*(i+1),
@@ -168,9 +174,15 @@ def exposure_profile(report):
         if (sum(w[position] for w in result)!=
                 integer(report[field],position+' total')):
             raise ValueError('inconsistent 150-tick summary ledger: '+position)
-    if (sum(w['first_batch_ticks']+w['later_batch_ticks']
-            for w in result)!=integer(report['batched_render_steps'],
-                                      'total batch exposure') or
+    all_window_skips=sum(w['single_skips']+w['first_batch_skips']+
+                         w['later_batch_skips'] for w in result)
+    if (all_window_skips!=integer(report['full_queue_skips'],
+                                 '900-tick full queue skips') or
+            all_window_skips!=integer(report['audout_blocks_skipped'],
+                                     '900-tick audio skips') or
+            sum(w['first_batch_ticks']+w['later_batch_ticks']
+                for w in result)!=integer(report['batched_render_steps'],
+                                          'total batch exposure') or
             sum(w['single_ticks']+w['first_batch_ticks']+
                 w['later_batch_ticks'] for w in result)!=
             integer(report['simulation_ticks'],'total simulation ticks') or
