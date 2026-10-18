@@ -34,6 +34,7 @@ emulator's executable with the NRO as its final argument:
 python3 tools/switch_emulator_launch_probe.py \
   --emulator /absolute/path/to/emulator \
   --nro /absolute/path/to/cadillacs-dinosaurs-switch.nro \
+  --sha256 YOUR_VERIFIED_NRO_SHA256 \
   --runtime 10
 ```
 
@@ -44,7 +45,16 @@ collect full emulator logs. It will terminate its direct child process
 after the bounded interval. Do not run it against an existing shared
 emulator session with unsaved work.
 
+The SHA-256 argument is optional but strongly recommended: use the
+64-character digest from the successful GitHub Actions NRO artifact.
+The probe does not copy that value into its JSON output. In addition
+to `NRO0` and total size, it independently validates the three
+bounded and nonoverlapping, 4 KiB-aligned text/rodata/data sections.
+A symlinked NRO is rejected. These static checks still cannot prove
+that instructions are compatible with a particular emulator.
+
 Possible machine results are `INVALID_NRO`,
+`INVALID_CHECKSUM_ARGUMENT`, `NRO_CHECKSUM_MISMATCH`,
 `EMULATOR_UNAVAILABLE`, `EMULATOR_EXEC_FAILED`,
 `EMULATOR_EARLY_EXIT`, or `PROCESS_ALIVE_RENDER_UNVERIFIED`.
 **No result means "gameplay verified".** A surviving process only
