@@ -116,6 +116,52 @@ game audio, hardware samples, private ROMs, firmware or console keys.
 default.** A mathematically nonworsening artificial sample-step
 criterion is not proof of improved speaker output.
 
+## Reproducible synthetic WAV listening preview (stage 224)
+
+The opt-in CI can publish three short 48-kHz stereo WAV tracks, computed
+from **newly synthesized 440-Hz cosine PCM** by the **actual same
+portable native C functions** used by the ramp and the offline guarded
+proxy:
+
+| Track | Contents |
+| --- | --- |
+| `raw.wav` | Synthesized waveform with no restart processing |
+| `fixed_ramp.wav` | The fixed 96-frame (2ms) ramp at BOTH test boundaries |
+| `guarded_proxy.wav` | The ramp at the invented silence-to-tone restart only; the guarded proxy declines it for an already-continuous tone |
+
+Each track has exactly the same sample count, stereo format, tone
+frequency and playback duration. The invented signal contains two
+deliberately distinct transitions: a 50-ms artificial silence before
+a 440-Hz tone resumes, and a boundary between perfectly continuous
+tone blocks. The second is a **negative control**: the fixed attack
+creates a new discontinuity; the mathematical gate leaves it untouched.
+
+Run locally (host Python 3 and native GCC):
+
+```sh
+mkdir -p /tmp/dino-listen
+python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_listening_preview.py' -v
+python3 tools/dino_pcm_resume_listening_preview.py --out-dir /tmp/dino-listen
+```
+
+The output folder must exist. The generator never overwrites existing
+WAVs or evidence. `listening-preview-manifest.json` records exactly
+where each transition occurs, the raw/fixed/gated first-sample jump
+for both channels, original WAV PCM hashes, the deterministic duration,
+and explicit **non-claims** about hardware and actual game sound.
+
+The files are **invented testing audio**, not recordings of Cadillacs
+and Dinosaurs, not samples from a ROM and not captures of the physical
+Switch. Human listening can reveal that two variants sound different,
+but cannot validate libnx output timing, real speaker latency,
+perceptual improvement on the actual game, or missing page behavior.
+Neither the fixed nor guarded algorithm is enabled in the normal
+Nintendo Switch binary by this tool.
+
+The separate opt-in NeXium workflow publishes the three WAVs as a
+**different** GitHub Actions artifact; it does not copy audio examples
+into the ROM-free NRO or ship them with the homebrew executable.
+
 ## Verification and decisions
 
 `tests/test_dino_pcm_resume_ramp.py` builds the pure C module with
