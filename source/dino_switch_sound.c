@@ -167,6 +167,15 @@ uint32_t dino_switch_sound_guest_mid_batch_releases(void) {
 }
 #endif
 
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+uint32_t dino_switch_sound_guest_resume_ramp_applications(void) {
+    return s_resume_ramp.applied;
+}
+uint32_t dino_switch_sound_guest_resume_ramp_pending(void) {
+    return s_resume_ramp.pending ? 1u : 0u;
+}
+#endif
+
 void dino_switch_sound_step(uint32_t events) {
     /* Envelopes progress once per 60Hz game tick, even if a stalled
      * console is unable to accept another PCM buffer this frame. */
