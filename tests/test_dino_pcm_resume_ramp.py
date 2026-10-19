@@ -15,6 +15,11 @@ ATTACK = 96
 FRAMES = 800
 
 
+class RampState(ctypes.Structure):
+    _fields_ = [('pending', ctypes.c_bool),
+                ('applied', ctypes.c_uint32)]
+
+
 def integer_ramp(sample, i, total):
     magnitude = abs(sample) * (i + 1) // total
     return -magnitude if sample < 0 else magnitude
@@ -38,6 +43,17 @@ class OptionalPCMResumeRampTests(unittest.TestCase):
         cls.apply.argtypes = [ctypes.POINTER(ctypes.c_int16),
                              ctypes.c_size_t, ctypes.c_size_t]
         cls.apply.restype = ctypes.c_bool
+        cls.reset = cls.lib.dino_pcm_resume_ramp_reset
+        cls.reset.argtypes = [ctypes.POINTER(RampState)]
+        cls.reset.restype = None
+        cls.note = cls.lib.dino_pcm_resume_ramp_note_full_skip
+        cls.note.argtypes = [ctypes.POINTER(RampState)]
+        cls.note.restype = None
+        cls.admit = cls.lib.dino_pcm_resume_ramp_before_submit
+        cls.admit.argtypes = [ctypes.POINTER(RampState),
+                             ctypes.POINTER(ctypes.c_int16),
+                             ctypes.c_size_t, ctypes.c_size_t]
+        cls.admit.restype = ctypes.c_bool
 
     @classmethod
     def tearDownClass(cls):
@@ -119,9 +135,9 @@ class OptionalPCMResumeRampTests(unittest.TestCase):
         guard='#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)'
         self.assertGreaterEqual(sound.count(guard),4)
         self.assertIn('#define DINO_PCM_RESUME_RAMP_FRAMES 96u',header)
-        self.assertIn('s_resume_ramp_after_full_skip=true;',sound)
-        self.assertIn('s_resume_ramp_after_full_skip=false;',sound)
-        self.assertIn('dino_pcm_resume_ramp_apply(output,DINO_SFX_TICK_FRAMES,',sound)
+        self.assertIn('dino_pcm_resume_ramp_note_full_skip(&s_resume_ramp);',sound)
+        self.assertIn('dino_pcm_resume_ramp_reset(&s_resume_ramp);',sound)
+        self.assertIn('dino_pcm_resume_ramp_before_submit(',sound)
         self.assertNotIn('DINO_AUDIO_EXPERIMENT_RESUME_RAMP',make)
         self.assertNotIn('audout',module)
         self.assertNotIn('sdmc:',module)
@@ -129,4 +145,61 @@ class OptionalPCMResumeRampTests(unittest.TestCase):
         # The PCM synthesis checksum is always computed on the original,
         # unmodified samples; optional output-only shaping happens after.
         self.assertLess(sound.index('s_pcm_witness=dino_pcm_witness_feed('),
-                        sound.index('dino_pcm_resume_ramp_apply(output,'))
+                        sound.index('dino_pcm_resume_ramp_before_submit('))
+
+    def test_one_shot_ramp_only_after_full_queue_drop(self):
+        state = RampState()
+        self.reset(ctypes.byref(state))
+        samples = [32000] * (FRAMES * 2)
+        without = (ctypes.c_int16 * (FRAMES * 2))(*samples)
+        self.assertFalse(self.admit(ctypes.byref(state), without,
+                                    FRAMES, ATTACK))
+        self.assertEqual(list(without), samples)
+        self.note(ctypes.byref(state))
+        self.assertTrue(state.pending)
+        self.assertEqual(state.applied, 0)
+        admitted = (ctypes.c_int16 * (FRAMES * 2))(*samples)
+        self.assertTrue(self.admit(ctypes.byref(state), admitted, FRAMES, ATTACK))
+        self.assertEqual(admitted[0], 32000 // ATTACK)
+        self.assertEqual(admitted[2 * (ATTACK - 1)], 32000)
+        self.assertEqual(admitted[2 * ATTACK], 32000)
+        self.assertFalse(state.pending)
+        self.assertEqual(state.applied, 1)
+        next_pcm = (ctypes.c_int16 * (FRAMES * 2))(*samples)
+        self.assertFalse(self.admit(ctypes.byref(state), next_pcm,
+                                    FRAMES, ATTACK))
+        self.assertEqual(list(next_pcm), samples)
+        self.assertEqual(state.applied, 1)
+
+    def test_repeated_skips_merge_and_bad_admission_retains_pending_ramp(self):
+        state = RampState()
+        self.reset(ctypes.byref(state))
+        for _ in range(50):
+            self.note(ctypes.byref(state))
+        self.assertTrue(state.pending)
+        untouched = (ctypes.c_int16 * (FRAMES * 2))(
+            *([19000] * (FRAMES * 2)))
+        before = bytes(untouched)
+        self.assertFalse(self.admit(ctypes.byref(state), untouched,
+                                    FRAMES, FRAMES + 1))
+        self.assertEqual(bytes(untouched), before)
+        self.assertTrue(state.pending)
+        self.assertTrue(self.admit(ctypes.byref(state), untouched, FRAMES, ATTACK))
+        self.assertFalse(state.pending)
+        self.assertEqual(state.applied, 1)
+        self.note(ctypes.byref(state))
+        self.assertTrue(state.pending)
+        self.reset(ctypes.byref(state))
+        self.assertFalse(state.pending)
+        self.assertEqual(state.applied, 0)
+
+    def test_diagnostic_counter_saturates_instead_of_wrapping(self):
+        state = RampState()
+        self.reset(ctypes.byref(state))
+        state.applied = (2**32) - 1
+        self.note(ctypes.byref(state))
+        pcm = (ctypes.c_int16 * (FRAMES * 2))(
+            *([-30000] * (FRAMES * 2)))
+        self.assertTrue(self.admit(ctypes.byref(state), pcm, FRAMES, ATTACK))
+        self.assertEqual(state.applied, (2**32) - 1)
+        self.assertFalse(state.pending)
