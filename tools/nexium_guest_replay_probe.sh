@@ -316,7 +316,7 @@ PY
 # Explicit opt-in only: re-verify actual guest-ramp state *after* its
 # recorded 900 simulation ticks. This must never run for normal baseline
 # or extra-poll NRO jobs. No return file => no success, not a fake zero.
-if [ "$DINO_GUEST_RESUME_RAMP_REQUIRE" = 1 ]; then
+if [ "${DINO_GUEST_RESUME_RAMP_REQUIRE:-0}" = 1 ]; then
     if [ "$DINO_AUDIO_MODE" != baseline ]; then
         echo "opt-in ramp evidence requires baseline audio poll mode" >&2
         exit 1
