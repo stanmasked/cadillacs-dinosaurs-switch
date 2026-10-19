@@ -24,3 +24,26 @@ bool dino_pcm_resume_ramp_apply(int16_t *stereo, size_t frames,
     }
     return true;
 }
+
+/* A single pending edge survives any number of successive full-queue
+ * misses, and is consumed only after the next VALID PCM admission.
+ * Saturate a diagnostic counter rather than silently wrapping it. */
+void dino_pcm_resume_ramp_reset(DinoPcmResumeRampState *state) {
+    if (!state) return;
+    state->pending=false;
+    state->applied=0;
+}
+
+void dino_pcm_resume_ramp_note_full_skip(DinoPcmResumeRampState *state) {
+    if (state) state->pending=true;
+}
+
+bool dino_pcm_resume_ramp_before_submit(DinoPcmResumeRampState *state,
+                                        int16_t *stereo, size_t frames,
+                                        size_t attack_frames) {
+    if (!state || !state->pending) return false;
+    if (!dino_pcm_resume_ramp_apply(stereo,frames,attack_frames)) return false;
+    state->pending=false;
+    if (state->applied<UINT32_MAX) ++state->applied;
+    return true;
+}
