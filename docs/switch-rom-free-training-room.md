@@ -434,3 +434,22 @@ explicitly tested as input edges.
 
 No original ROM or sound assets are required and no claim is made
 that this synthetic training counter resembles the arcade original.
+
+## Stage 226 — strict counter input timing at 60 Hz boundaries
+
+The original Stage 225 ZR/H counter is now gated using the **player state
+at the beginning of the simulation tick**, before animation/hit-stun
+countdowns or gravity are advanced. A counter press on the final tick
+of player hit-stun, the final frame of an existing attack animation,
+or the tick on which the player lands cannot produce a counter.
+Pressing again on the **following eligible tick** can succeed, provided
+the opponent is still telegraphing, the distance/lane/facing conditions
+still hold and sparring is active. This is deliberately stricter than
+treating an expired timer mid-tick as retroactive input eligibility.
+
+The update adds three native C boundary regression tests (17 total
+counter tests), without adding any new `DinoArena` fields, changing the
+default 180-tick demonstration, switching controller mappings, adding
+invulnerability, or introducing an arcade ROM dependency. Native NRO
+compilation is not proof of on-device counter timing; the CI guest
+replay and actual physical input still require separate verification.
