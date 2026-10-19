@@ -394,3 +394,43 @@ on an authorized Switch homebrew device, listen to the synthetic
 effects and inspect the on-device audio line for dropped buffers
 or audio-service errors. No physical device execution or real
 headphone output has been verified by these host tests.
+
+## Stage 225 — timed defensive counter during invented sparring
+
+The optional **SPAR ON** mode gains an original defensive counter move,
+implemented directly in the existing ROM-free 60-Hz C arena
+(`source/dino_arena.[ch]`). This is **not** an arcade-game mechanic
+reconstructed from Capcom's original code or assets.
+
+Press **ZR** once in the Switch training room, or **H** in the native
+desktop host preview, **during the opponent's visible 12-tick attack
+windup**. The counter succeeds only if the player is alive, on the
+ground, not currently hit-stunned or attacking, in the enemy's depth
+lane, within 44 world pixels, and facing the enemy. It cannot be
+combined with jump or attack in the same simulation tick.
+
+A successful counter interrupts the opponent's winding attack,
+applies nine ticks of opponent hit-stun and its existing 48-tick
+attack cooldown, and briefly displays **COUNTER!** in the Switch
+frame. It does **not** damage the opponent, give the player immunity,
+add health, advance combos, or move characters through colliders.
+A missed or incorrectly faced counter gives no defense; the ordinary
+telegraphed hit and dodge rules still apply.
+
+The counter uses a single press edge (`DINO_ARENA_COUNTER`) and emits
+a new one-tick event (`DINO_EVT_COUNTER`). It does not allocate a
+timer, introduce a gameplay-state field or change `DinoArena` layout.
+The input is never present in the existing automatic 180-tick demo;
+all existing replay input sequences, hashes, default camera/game
+visuals, source assets and music are unchanged.
+
+The host compiler-based regression suite
+`tests/test_dino_arena_counter.py` tests the actual game C module:
+successful interrupt, cooldown, attack timing, facing, lane and range,
+groundedness, player/enemy KO, simultaneous inputs, controller
+toggle path, determinism under legacy replay and a 2,800-tick
+bounded random-input challenge. Switch ZR and desktop H routes are
+explicitly tested as input edges.
+
+No original ROM or sound assets are required and no claim is made
+that this synthetic training counter resembles the arcade original.
