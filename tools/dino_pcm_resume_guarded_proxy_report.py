@@ -47,7 +47,10 @@ def channel_peak(previous, samples, channel):
 def profile(name, previous, original, shaped, selected):
     before=[channel_peak(previous,original,ch) for ch in (0,1)]
     attacked=[channel_peak(previous,shaped,ch) for ch in (0,1)]
-    expected=(all(y<=x for x,y in zip(before,attacked)) and
+    raw_edge=[abs(original[ch]-previous[ch]) for ch in (0,1)]
+    ramp_edge=[abs(shaped[ch]-previous[ch]) for ch in (0,1)]
+    expected=(all(y<=x for x,y in zip(raw_edge,ramp_edge)) and
+              all(y<=x for x,y in zip(before,attacked)) and
               max(attacked)<max(before))
     if type(selected) is not bool or selected!=expected:
         raise ValueError("native C gate contradicts independent peak oracle")
@@ -61,6 +64,10 @@ def profile(name, previous, original, shaped, selected):
         "scenario":name,
         "fixed_96frame_attack_would_run":True,
         "guarded_proxy_would_run":selected,
+        "raw_first_boundary_by_stereo_channel":raw_edge,
+        "fixed_ramp_first_boundary_by_stereo_channel":ramp_edge,
+        "guard_selected_first_boundary_by_stereo_channel":
+            (ramp_edge if selected else raw_edge),
         "raw_window_peak_by_stereo_channel":before,
         "fixed_ramp_window_peak_by_stereo_channel":attacked,
         "guard_selected_window_peak_by_stereo_channel":measured,
@@ -78,6 +85,13 @@ def benchmark():
     cases=edge.make_cases()
     cases["one_channel_worsens"]=(
         (0,10000),[30000,10000]*edge.FRAMES)
+    # Improvement of worst ATTACK-window peak can still introduce a
+    # brand-new first-sample boundary jump at an originally smooth edge.
+    counter=[]
+    for i in range(edge.FRAMES):
+        level=20000 if i<20 else -30000
+        counter.extend((level,level))
+    cases["peak_better_boundary_worse"]=((20000,20000),counter)
     with tempfile.TemporaryDirectory(prefix="dino-guarded-c-") as temp:
         filename=Path(temp)/"guarded.so"
         cmd=["gcc","-std=c11","-O2","-Wall","-Wextra","-Werror",
@@ -106,7 +120,8 @@ def benchmark():
     if (not mapping["silence_to_loud"]["guarded_proxy_would_run"] or
         mapping["already_continuous"]["guarded_proxy_would_run"] or
         mapping["zero_signal"]["guarded_proxy_would_run"] or
-        mapping["one_channel_worsens"]["guarded_proxy_would_run"]):
+        mapping["one_channel_worsens"]["guarded_proxy_would_run"] or
+        mapping["peak_better_boundary_worse"]["guarded_proxy_would_run"]):
         raise ValueError("missing positive/negative guarded controls")
     return {
         "schema":SCHEMA,
@@ -115,7 +130,7 @@ def benchmark():
         "ramp_frames":edge.ATTACK,
         "sample_rate_hz":edge.RATE,
         "source":"two_actual_native_C_functions_and_independent_Python_oracle",
-        "input_audio":"six_deterministic_rom_free_synthetic_cases",
+        "input_audio":"seven_deterministic_rom_free_synthetic_cases",
         "profiles":records,
         "guard_off_by_default":True,
         "production_enabled":False,
