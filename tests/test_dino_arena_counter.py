@@ -248,6 +248,33 @@ class ArenaCounterGameplayTests(unittest.TestCase):
         finally:
             game.close()
 
+    def test_real_host_bridge_counter_event_reaches_pcm_synth(self):
+        # Exercise real arena -> event -> SFX -> 48 kHz PCM hash.
+        # Compare the very same deterministic setup with/without ZR/H.
+        from tools import dino_host_preview as host
+        game=host.HostArena()
+        try:
+            def prepare():
+                game.reset()
+                for _ in range(65):
+                    game.step(host.RIGHT)
+                game.step(0,host.SPAR)
+                self.assertEqual(game.status().x,220)
+            prepare()
+            game.step(0,host.COUNTER)
+            triggered=game.status()
+            self.assertEqual(triggered.events,COUNTER_EVENT)
+            self.assertEqual((triggered.player_hp,triggered.enemy_hp),(5,3))
+            counter_pcm=triggered.pcm_digest
+            prepare()
+            game.step()
+            baseline=game.status()
+            self.assertEqual(baseline.events,0)
+            self.assertEqual((baseline.player_hp,baseline.enemy_hp),(5,3))
+            self.assertNotEqual(counter_pcm,baseline.pcm_digest)
+        finally:
+            game.close()
+
     def test_switch_button_and_event_feedback_are_wired_only_on_counter(self):
         source=(ROOT/'source/main.c').read_text(encoding='utf-8')
         self.assertIn(
