@@ -484,3 +484,29 @@ Tests cover new cue identity and reproducible envelope expiry, legacy
 WAV prefix identity, opt-in 12-cue WAV metadata, and real native gameplay
 counter-event-to-PCM bridge behavior. These are host-native audio tests,
 not proof of audible Switch console output or emulator counter controls.
+
+## Stage 228 — reliable six-tick visual counter confirmation
+
+The same on-screen `COUNTER!` message now persists for **six 60-Hz
+simulation ticks** (100 ms) after a successful counter, rather than
+only for the exact one-tick event flag. When a frame contains more
+than one game tick, the visible caption survives the normal short
+catch-up interval. This is **not** a promise of visibility during
+arbitrarily long rendering stalls: after more than six simulated ticks
+without a redraw, the feedback correctly expires.
+
+The timer belongs solely to the Switch presentation loop and the
+desktop host preview, **not to DinoArena**. A new portable C
+`dino_arena_counter_feedback_tick(remaining, events)` helper consumes
+the original one-shot `DINO_EVT_COUNTER`, returns six on success,
+decrements once for each following simulated tick, and saturates at
+zero. Replay gameplay state, ABI layout, collision, hit-stun, damage,
+PCM and 180-tick demonstration inputs are unchanged. Reset, starting
+the built-in demo, and switching to the viewer clear the caption.
+
+The native desktop preview shows the same brief `COUNTER!` message
+in its status line. Two new C-backed counter tests verify six-tick
+duration, deterministic reset, non-counter event rejection, unchanged
+arena state and desktop integration. Switch build and emulator guest
+confirmation remain distinct checks; these host tests do not prove
+physical controller latency.
