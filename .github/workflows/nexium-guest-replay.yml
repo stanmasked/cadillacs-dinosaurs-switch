@@ -71,6 +71,8 @@ on:
       - 'tests/test_nexium_guest_frame_phase_skip_decomposition.py'
       - 'tools/nexium_guest_frame_topology.py'
       - 'tests/test_nexium_guest_frame_topology.py'
+      - 'tools/nexium_guest_frame_gap_burst_audit.py'
+      - 'tests/test_nexium_guest_frame_gap_burst_audit.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -130,6 +132,8 @@ on:
       - 'tests/test_nexium_guest_frame_phase_skip_decomposition.py'
       - 'tools/nexium_guest_frame_topology.py'
       - 'tests/test_nexium_guest_frame_topology.py'
+      - 'tools/nexium_guest_frame_gap_burst_audit.py'
+      - 'tests/test_nexium_guest_frame_gap_burst_audit.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -459,6 +463,17 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-guest-frame-topology.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_gap_burst_audit.py' -v
+          python3 tools/nexium_guest_frame_gap_burst_audit.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-gap-bursts.json
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
@@ -503,5 +518,6 @@ jobs:
             paired-guest-frozen-ack-fifo-residence.json
             paired-guest-frame-phase-skip-decomposition.json
             paired-guest-frame-topology.json
+            paired-guest-frame-gap-bursts.json
           if-no-files-found: warn
           retention-days: 7
