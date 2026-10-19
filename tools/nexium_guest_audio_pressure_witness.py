@@ -104,8 +104,7 @@ def summarize(rows, mode):
     if (combined["ticks"] != 900 or
         combined["unrecovered_full"] != combined["skipped"] or
         combined["recovered_when_full"] +
-            combined["unrecovered_full"] != combined["full_before_poll"] or
-        combined["submitted"] if False else False):
+            combined["unrecovered_full"] != combined["full_before_poll"]):
         raise ValueError("unexpected guest pressure accounting")
     if combined["admitted"] + combined["skipped"] != 900:
         raise ValueError("PCM attempts lost in pressure ledger")
