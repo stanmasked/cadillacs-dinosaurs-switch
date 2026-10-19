@@ -30,6 +30,8 @@ def reference(previous, samples, attack=ATTACK):
         for i in range(attack):
             value=samples[2*i+channel]
             shaped=(1 if value>=0 else -1)*(abs(value)*(i+1)//attack)
+            if i==0 and abs(shaped-prior_b)>abs(value-prior_a):
+                return False
             before=max(before,abs(value-prior_a))
             after=max(after,abs(shaped-prior_b))
             prior_a=value
@@ -91,6 +93,21 @@ class PurePCMResumeGuardTests(unittest.TestCase):
     def test_zero_signal_and_identical_previous_are_not_pointlessly_shaped(self):
         self.assertFalse(self.actual_gate((0,0),[0,0]*FRAMES))
         self.assertFalse(self.actual_gate((100,100),[100,100]*FRAMES))
+
+    def test_peak_improvement_cannot_hide_new_boundary_pop(self):
+        # Previously submitted tail=+20000. Next original 20 frames
+        # continue smoothly at +20000, then abruptly flip to -30000.
+        # A blind ramp decreases MAX local sample jump from 50000 to
+        # 19792 but creates a 19792 pop at the formerly seamless edge.
+        previous=(20000,20000)
+        pcm=[]
+        for i in range(FRAMES):
+            level=20000 if i<20 else -30000
+            pcm.extend((level,level))
+        self.assertFalse(self.actual_gate(previous,pcm))
+        self.assertFalse(reference(previous,pcm))
+        self.assertEqual(abs(pcm[0]-previous[0]),0)
+        self.assertEqual(abs((pcm[0]//ATTACK)-previous[0]),19792)
 
     def test_unknown_previous_frame_fails_closed(self):
         self.assertFalse(self.actual_gate(None,[30000,-24000]*FRAMES))
