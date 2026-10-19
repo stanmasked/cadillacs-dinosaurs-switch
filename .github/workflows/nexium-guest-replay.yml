@@ -79,6 +79,8 @@ on:
       - 'tests/test_nexium_guest_frame_clock.py'
       - 'tools/nexium_guest_clock_phase_invariant.py'
       - 'tests/test_nexium_guest_clock_phase_invariant.py'
+      - 'tools/nexium_guest_frame_interval_pcm_bins.py'
+      - 'tests/test_nexium_guest_frame_interval_pcm_bins.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -146,6 +148,8 @@ on:
       - 'tests/test_nexium_guest_frame_clock.py'
       - 'tools/nexium_guest_clock_phase_invariant.py'
       - 'tests/test_nexium_guest_clock_phase_invariant.py'
+      - 'tools/nexium_guest_frame_interval_pcm_bins.py'
+      - 'tests/test_nexium_guest_frame_interval_pcm_bins.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -527,6 +531,19 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-guest-60hz-clock-phase-invariant.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_interval_pcm_bins.py' -v
+          python3 tools/nexium_guest_frame_interval_pcm_bins.py \
+            --baseline-clock paired/baseline/guest-frame-clock.csv \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-clock paired/extra-poll/guest-frame-clock.csv \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-interval-pcm-bins.json
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
@@ -574,5 +591,6 @@ jobs:
             paired-guest-frame-gap-bursts.json
             paired-guest-frame-clock.json
             paired-guest-60hz-clock-phase-invariant.json
+            paired-guest-frame-interval-pcm-bins.json
           if-no-files-found: warn
           retention-days: 7
