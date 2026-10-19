@@ -745,3 +745,32 @@ and must be confirmed on the new commit.
 Only diagnostic validation and tests are affected. Core gameplay,
 Switch ROM-free audio synth, 180-tick replay and original game data
 are unchanged.
+
+## Stage 237 — fail-closed preflight before optional NeXium ZR injection
+
+The **external** host T/ZR injector previously treated any text line
+beginning `STRESS_DONE,900,` in a bounded guest file as sufficient
+evidence to send the key. This could include a malformed, duplicated,
+truncated or otherwise partial guest audio-stress report.
+
+It now accepts the file **only after** it contains all seven ordered
+`START` / five `CHECKPOINT` / `STRESS_DONE` rows, the exact
+full current CSV column schema, canonical unsigned counters and
+16-character uppercase PCM checksums, the exact 0/150/.../900
+simulated-tick checkpoints, aligned arena/audio/PCM clocks,
+and active/valid two-page audio queue accounting. A symlink, missing
+file, duplicate row, incomplete report, false terminal marker, or
+bad checkpoint keeps the host X11 key **unsent**.
+
+This light, file-completion **preflight is not a substitute** for the
+separately executed full guest audout stress and real HID timeline
+verifiers. Its only job is to avoid disrupting unfinished audio
+measurements or claiming that a host key was delivered prematurely.
+Additional tests construct a complete synthetic seven-row fixture
+and verify that truncated, forged, noncanonical and clock-corrupted
+versions never arm the injection. Synthetic fixtures are never
+interpreted as NeXium execution evidence.
+
+No original ROM, main gameplay timing, counter rules, source audio,
+Switch framebuffer or guest PCM synthesis has changed; only the
+optional CI-side host input gate and its tests have been strengthened.
