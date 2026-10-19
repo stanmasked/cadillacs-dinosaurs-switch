@@ -19,6 +19,7 @@
 #include "dino_switch_sound.h"
 #ifdef DINO_EMULATOR_SELFTEST
 #include "dino_guest_ack_trace.h"
+#include "dino_guest_frame_clock.h"
 #endif
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
@@ -464,6 +465,8 @@ typedef struct {
 /* Fixed 900x13 counters (46.8 KiB), allocated only in a selftest NRO.
  * No filesystem I/O while collecting measurements inside game ticks. */
 static DinoGuestAckTrace s_guest_ack_tick_trace;
+/* Selftest-only 4096 x 16-byte capped interval ledger. */
+static DinoGuestFrameClock s_guest_frame_clock;
 static void guest_audio_stress_row(FILE *stream, const char *event,
                                    uint32_t elapsed, const DinoArena *arena,
                                    const DinoGuestBatchStats *batch) {
@@ -610,6 +613,9 @@ int main(int argc, char **argv) {
     /* ROM-free selftest only. Never write a CSV in the measured tick loop. */
     bool guest_ack_tick_collecting=false;
     uint32_t guest_ack_tick_count=0;
+    bool guest_frame_clock_started=false;
+    bool guest_frame_clock_done=false;
+    bool guest_frame_clock_flushed=false;
     uint32_t guest_audio_stress_start=0;
     uint32_t guest_audio_stress_next=DINO_GUEST_AUDIO_STRESS_PERIOD;
     bool guest_audio_stress_done=false;
@@ -642,6 +648,10 @@ int main(int argc, char **argv) {
         u64 elapsed_ns=armTicksToNs(now-last_tick);
         last_tick=now;
         if (elapsed_ns>250000000ULL) elapsed_ns=250000000ULL;
+#ifdef DINO_EMULATOR_SELFTEST
+        const uint32_t guest_ack_before_this_frame=guest_ack_tick_count;
+        uint32_t guest_frame_full_game_ticks=0;
+#endif
         if (down & HidNpadButton_Plus) break;
         if ((down & HidNpadButton_ZL) && gfx) {
             arena_active=!arena_active;
@@ -718,6 +728,9 @@ int main(int argc, char **argv) {
             if (down & HidNpadButton_X) pending_actions|=DINO_ARENA_TOGGLE_SPAR;
             arena_clock_carry+=elapsed_ns*60u;
             uint32_t arena_ticks=(uint32_t)(arena_clock_carry/1000000000ULL);
+#ifdef DINO_EMULATOR_SELFTEST
+            guest_frame_full_game_ticks=arena_ticks;
+#endif
             arena_clock_carry%=1000000000ULL;
             for (uint32_t i=0;i<arena_ticks;++i) {
                 uint32_t step_held=held_arena;
@@ -955,6 +968,10 @@ int main(int argc, char **argv) {
                             guest_ack_tick_count=0;
                             dino_guest_ack_trace_reset(&s_guest_ack_tick_trace);
                             guest_ack_tick_collecting=true;
+                            dino_guest_frame_clock_reset(&s_guest_frame_clock);
+                            guest_frame_clock_started=true;
+                            guest_frame_clock_done=false;
+                            guest_frame_clock_flushed=false;
                         }
                     } else {
                         uint32_t elapsed=arena.ticks-guest_audio_stress_start;
@@ -969,6 +986,7 @@ int main(int argc, char **argv) {
                                 fclose(guest_audio_stress);
                                 guest_audio_stress=NULL;
                                 guest_ack_tick_collecting=false;
+                                guest_frame_clock_done=true;
                                 /* Delayed SD write occurs AFTER the last
                                  * measured tick, not during 60Hz simulation. */
                                 const char *const ack_path=
@@ -1069,6 +1087,31 @@ int main(int argc, char **argv) {
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
 #ifdef DINO_EMULATOR_SELFTEST
+        if (guest_frame_clock_started && !guest_frame_clock_flushed) {
+            /* Use existing clamped game-loop interval, not a new clock read.
+             * Includes zero-game-tick iterations; no disk I/O during the
+             * 900-tick audio observation. The first and last render frames
+             * may contain unobserved simulation ticks. */
+            const DinoGuestFrameClockRow clock_row={
+                guest_frame_id,(uint32_t)elapsed_ns,
+                guest_frame_full_game_ticks,
+                guest_ack_tick_count-guest_ack_before_this_frame
+            };
+            if (!dino_guest_frame_clock_append(&s_guest_frame_clock,clock_row)) {
+                guest_frame_clock_started=false; /* no false complete report */
+            } else if (guest_frame_clock_done) {
+                const char *const path="sdmc:/cadillacs-guest-frame-clock.csv";
+                FILE *out=fopen(path,"w");
+                if (out) {
+                    const bool complete=dino_guest_frame_clock_write_csv(
+                        out,&s_guest_frame_clock);
+                    const int closed=fclose(out);
+                    if (!complete || closed!=0) (void)remove(path);
+                }
+                guest_frame_clock_flushed=true;
+                guest_frame_clock_started=false;
+            }
+        }
         if (guest_witness && arena_active) {
             if (!guest_first_frame && arena.ticks>0) {
                 /* This proves guest code reached framebufferEnd, not
