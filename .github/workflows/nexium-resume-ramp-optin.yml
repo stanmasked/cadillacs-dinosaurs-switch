@@ -71,6 +71,10 @@ jobs:
           assert cases['silence_to_loud']['guarded_proxy_would_run']
           assert not cases['already_continuous']['guarded_proxy_would_run']
           assert not cases['one_channel_worsens']['guarded_proxy_would_run']
+          new_edge=cases['peak_better_boundary_worse']
+          assert not new_edge['guarded_proxy_would_run']
+          assert new_edge['raw_first_boundary_by_stereo_channel']==[0,0]
+          assert new_edge['fixed_ramp_first_boundary_by_stereo_channel']==[19792,19792]
           assert not r['production_enablement_recommended']
           assert not r['physical_switch_speaker_audio_verified']
           print('Guards reject channel-worsening PCM proxy cases')
