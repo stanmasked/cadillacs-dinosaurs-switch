@@ -631,3 +631,30 @@ All changes are test/workflow-only: the interactive arena, counter rules,
 guest witness schema, ABI, and historical 180-tick replay/PCM fingerprints
 remain unchanged. The NeXium guest job must separately confirm that the
 ARM64 build reproduces the golden 10-row report.
+
+## Stage 233 — second-counter round-trip after the complete 48-tick recovery
+
+The scripted, ROM-free guest counter diagnostic now continues after its
+first successful interrupt and recovery frame to establish a full
+**time-bounded combat loop**. An `EARLY_REPEAT` input at tick 4 must
+produce no counter while the opponent is stunned (7 ticks) and cooling
+down (46 ticks). After exactly 46 additional idle updates (48 elapsed
+game ticks since the first successful counter), `REARMED` must be
+recorded at tick 50 with no damage to either character, zero cooldown,
+zero stun and a new 12-tick enemy attack telegraph. A fresh counter
+edge on tick 51 must interrupt that telegraph and reset the opponent's
+stun/cooldown to exactly 9/48 ticks.
+
+The newly allowed `SECOND_COUNTER` is independently synthesized
+again as an isolated ROM-free cue and its 800-frame 48-kHz PCM must
+produce the same nonzero audio and canonical FNV64 digest
+`1169E164EDF5FD7D` as the first legal counter. The diagnostic has
+grown from 10 to **13 guest state rows** (plus a CSV header); the five
+Stage 231 last-impact negative cases remain unchanged. The strict
+verifier refuses early repeats, wrong cooldown expiry, missing new
+windup, or altered second-counter PCM. Two new native tests cover the
+normal roundtrip and tamper cases.
+
+The 180-tick historical replay and interactive gameplay use entirely
+separate state; this is a scripted NRO selftest, not a real NeXium
+HID/ZR button-press attestation or physical speaker measurement.
