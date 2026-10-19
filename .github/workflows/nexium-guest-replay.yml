@@ -63,6 +63,8 @@ on:
       - 'tools/compare_nexium_guest_ack_discovery.py'
       - 'tests/test_nexium_guest_ack_discovery_profile.py'
       - 'tests/test_dino_guest_ack_trace_buffer.py'
+      - 'tools/nexium_guest_fixed_ack_capacity_replay.py'
+      - 'tests/test_nexium_guest_fixed_ack_capacity_replay.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -114,6 +116,8 @@ on:
       - 'tools/compare_nexium_guest_ack_discovery.py'
       - 'tests/test_nexium_guest_ack_discovery_profile.py'
       - 'tests/test_dino_guest_ack_trace_buffer.py'
+      - 'tools/nexium_guest_fixed_ack_capacity_replay.py'
+      - 'tests/test_nexium_guest_fixed_ack_capacity_replay.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -399,6 +403,17 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-guest-ack-discovery-profile.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_fixed_ack_capacity_replay.py' -v
+          python3 tools/nexium_guest_fixed_ack_capacity_replay.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frozen-ack-capacity.json
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
@@ -439,5 +454,6 @@ jobs:
             paired-baseline-ack-tick-evidence.json
             paired-extra-ack-tick-evidence.json
             paired-guest-ack-discovery-profile.json
+            paired-guest-frozen-ack-capacity.json
           if-no-files-found: warn
           retention-days: 7
