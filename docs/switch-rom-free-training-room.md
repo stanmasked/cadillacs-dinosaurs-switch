@@ -658,3 +658,40 @@ normal roundtrip and tamper cases.
 The 180-tick historical replay and interactive gameplay use entirely
 separate state; this is a scripted NRO selftest, not a real NeXium
 HID/ZR button-press attestation or physical speaker measurement.
+
+## Stage 234 — optional real NeXium keyboard T → guest libnx ZR witness
+
+NeXium's public default keyboard binding maps `T` to Switch `ZR`
+(`nexium-gui/src/controller_config.rs`). The existing NeXium guest
+workflow now *optionally* attempts this external X11 key **only after**
+the original, separate 900-tick guest audio-stress CSV has recorded
+`STRESS_DONE`. If the guest is late or the emulator doesn't accept the
+key, the new diagnostic honestly reports `INCONCLUSIVE` without
+invalidating the independent 180-tick gameplay replay.
+
+The CI-only NRO records a valid `padGetButtonsDown(HidNpadButton_ZR)`
+edge, latches it across a possible render frame containing **zero**
+simulation ticks, and waits for the real
+`step_pressed & DINO_ARENA_COUNTER` in a normal 60-Hz update. Only
+then it creates an independent, tightly controlled original-training
+counter-ready `DinoArena`, executes the **actual consumed input**,
+and writes two bounded rows (`READY`, `HID_COUNTER`) to the
+emulated SD filesystem. A separate strict verifier validates its
+event bit, one-shot edge, no damage, 9-tick enemy stun and 48-tick
+cooldown. Host-key injection alone never qualifies as a pass.
+
+The `guest-counter-hid-evidence.json` may become
+`GUEST_LIBNX_ZR_EDGE_AND_COUNTER_EFFECT_WITNESSED` only when those
+guest-written rows have been collected from an actual NeXium NRO;
+otherwise it says `INCONCLUSIVE_NO_VALID_GUEST_ZR_COUNTER_EVIDENCE`.
+This is a **prepared training arena** and establishes neither natural
+combat timing under physical play, Joy-Con hardware latency nor
+speaker output. The scripted Stage 229–233 guest counter scenarios
+remain separately validated and are never substituted for the HID
+witness.
+
+The new validation executes only in `DINO_EMULATOR_SELFTEST` builds.
+Normal NRO behavior, original training graphics and art, classic
+replay hashes, and the 900-tick audio-stress collection are unchanged.
+Two independent new test paths check strict guest CSV acceptance and
+delayed X11 T-key dispatch, including rejection of fake/missing events.
