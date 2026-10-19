@@ -80,6 +80,12 @@ DinoArenaPose dino_arena_player_pose(const DinoArena *arena);
 DinoArenaPose dino_arena_dummy_pose(const DinoArena *arena);
 uint8_t dino_arena_pose_phase(const DinoArena *arena);
 
+/* Presentation-only counter caption TTL: six simulation ticks after a
+ * successful counter. Pass the prior TTL and this tick's event flags.
+ * The helper never modifies DinoArena, combat, PCM or replay state. */
+uint8_t dino_arena_counter_feedback_tick(uint8_t remaining,
+                                         uint32_t events);
+
 /* Core simulation uses no heap, I/O, ROM or platform-specific types. */
 void dino_arena_reset(DinoArena *arena);
 void dino_arena_step(DinoArena *arena, uint32_t held, uint32_t pressed);
