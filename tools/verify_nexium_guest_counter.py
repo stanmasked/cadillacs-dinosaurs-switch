@@ -18,6 +18,9 @@ EXPECTED=[
     ['ARMED',1,5,3,12,0,0,1,0,'CBF29CE484222325'],
     ['COUNTER',2,5,3,0,9,48,2048,1,'1169E164EDF5FD7D'],
     ['RECOVERY',3,5,3,0,8,47,0,0,'CBF29CE484222325'],
+    ['EARLY_REPEAT',4,5,3,0,7,46,0,0,'CBF29CE484222325'],
+    ['REARMED',50,5,3,12,0,0,0,0,'CBF29CE484222325'],
+    ['SECOND_COUNTER',51,5,3,0,9,48,2048,1,'1169E164EDF5FD7D'],
     ['WRONG_FACING',2,4,3,0,0,48,384,0,'CBF29CE484222325'],
     # Every forbidden counter is attempted on a true 12->0 impact tick.
     # It must NOT suppress the enemy swing or normal damage.
@@ -69,6 +72,8 @@ def verify(path):
         'counter_event_bit':2048,
         'counter_pcm_nonzero':True,
         'counter_pcm_fnv64':'1169E164EDF5FD7D',
+        'counter_cooldown_rearmed_after_ticks':48,
+        'second_counter_pcm_matches_first':True,
         'wrong_facing_counter_rejected':True,
         'invalid_impact_tick_counters_rejected':5,
         'requires_trusted_guest_file_extraction':True,
