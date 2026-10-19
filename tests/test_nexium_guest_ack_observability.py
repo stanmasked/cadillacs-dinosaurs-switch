@@ -17,7 +17,13 @@ from test_nexium_audio_paired_artifacts import PairedGuestAudioTests
 from test_nexium_audio_mid_batch_ab import complete
 
 
-class GuestACKResolutionTests(PairedGuestAudioTests):
+class GuestACKResolutionTests(unittest.TestCase):
+    # Reuse fixture construction without inheriting/rerunning the 17 paired
+    # verifier tests as a second copy of the same TestCase.
+    setUp=PairedGuestAudioTests.setUp
+    tearDown=PairedGuestAudioTests.tearDown
+    write=PairedGuestAudioTests.write
+
     def profile(self,enabled=False,variation=0):
         return audit.guest_ack_profile(complete(enabled,variation),
                                        'extra-poll' if enabled else 'baseline')
