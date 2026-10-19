@@ -695,3 +695,33 @@ Normal NRO behavior, original training graphics and art, classic
 replay hashes, and the 900-tick audio-stress collection are unchanged.
 Two independent new test paths check strict guest CSV acceptance and
 delayed X11 T-key dispatch, including rejection of fake/missing events.
+
+## Stage 235 — exact PCM proof bound to a guest-origin ZR counter
+
+The optional genuine NeXium keyboard T → libnx ZR test from Stage 234
+now also tests the counter's **actual synthesized first PCM block**,
+rather than relying on the counter event bit alone. Only when the NRO
+has witnessed `padGetButtonsDown(ZR)`, carried that edge into a
+normal 60-Hz `step_pressed & DINO_ARENA_COUNTER`, and executed a
+counter in a controlled independent training arena does it reset
+`DinoSfx`, consume the resulting C event, render 800 stereo frames,
+and hash every 16-bit sample with the portable
+`dino_pcm_witness_feed()`.
+
+The strict optional guest report contains two rows:
+`READY` must contain the untouched PCM FNV64 seed
+`CBF29CE484222325` and `pcm_nonzero=0`; `HID_COUNTER` must
+contain an actual generated nonzero cue and the exact golden PCM
+digest `1169E164EDF5FD7D` from the original ROM-free counter synth.
+The C code writes computed, rather than prescribed, state and PCM
+values. The verifier rejects silent output, incorrect samples,
+noncanonical/lowercase checksums, incorrect gameplay events and
+missing/reordered rows. Local tests validate the grammar and host
+conditions only — they are never considered actual NeXium evidence.
+
+This **software synthesized PCM** proof does not establish speaker
+playback, real Switch Joy-Con hardware, physical input latency,
+or a naturally encountered counter opportunity. The complete
+180-tick replay and the existing 900-tick guest audout health
+window are unchanged; the extra synth buffer is local to the
+optional post-stress guest diagnostic and never submitted to audout.
