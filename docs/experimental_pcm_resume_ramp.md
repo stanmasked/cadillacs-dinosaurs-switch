@@ -34,6 +34,39 @@ libnx `audout` polling cadence, game timer, catch-up steps, input, ROM
 assets, latency compensation, or the synthesis state. It adds no frames
 of output. Cache flush remains after the optional sample transformation.
 
+## Sample-level tradeoff: no guaranteed click improvement
+
+A new ROM-free benchmark at
+`tools/dino_pcm_resume_edge_benchmark.py` compiles the **actual C**
+ramp as a native shared library, creates only invented 800-frame
+signed-int16 stereo signals, and compares the immediately previous
+sample with the first admitted sample before and after shaping.
+
+For a two-channel constant `(30000,-24000)` admitted block:
+
+- If the preceding stereo frame is **silence** `(0,0)`, the maximum
+  immediate signed-sample jump falls from **30000** to **312**.
+- If the preceding frame already equals the admitted block's first
+  sample `(30000,-24000)`, the unmodified boundary is already
+  **continuous (jump 0)**. The ramp creates a jump of **29688**.
+- If the preceding frame is `(-30000,24000)`, the original jump
+  is **60000**, versus **30312** after shaping.
+- True digital silence stays exactly zero. Both channels' samples
+  after the first 96 frames are *identical* to the original.
+
+The benchmark also computes maximum within-ramp differences,
+per-sample squared distortion, exact integer reference agreement and
+output frame conservation, storing the outcomes in a machine-readable
+JSON report. **Sample jump magnitude is only a mathematical proxy.**
+It is not a psychoacoustic click score, an output waveform captured
+from the guest, physical Switch audio, or a speaker latency measure.
+
+**Decision: keep the existing ramp experimental and OFF by default.**
+The negative control demonstrates that a blindly applied restart ramp
+can damage an already continuous edge. Before any production opt-in,
+a separate actual-output comparison and safety evaluation would be
+required. This synthetic analysis does not justify activating it.
+
 ## Verification and decisions
 
 `tests/test_dino_pcm_resume_ramp.py` builds the pure C module with
