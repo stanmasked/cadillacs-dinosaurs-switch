@@ -67,6 +67,49 @@ can damage an already continuous edge. Before any production opt-in,
 a separate actual-output comparison and safety evaluation would be
 required. This synthetic analysis does not justify activating it.
 
+## Proposed fail-closed sample-step gate (stage 223)
+
+The **guarded proxy remains an offline diagnostic**, not a game feature.
+The portable code and header reside in
+`tools/native/dino_pcm_resume_guarded_proxy.[ch]`, explicitly **outside**
+the Makefile's automatic `source/*.c` compilation. Nothing in
+`source/dino_switch_sound.c` calls this gate, so neither the standard
+Switch NRO nor the original opt-in ramp NRO acquires it.
+
+Given a supplied two-channel final PCM sample from the **previously
+submitted** block and the next generated 800-frame block, the pure
+integer C routine compares two candidate trajectories over the
+boundary and the first 96 frames:
+
+- Original (unmodified) 16-bit stereo PCM.
+- The existing 96-frame fixed-point ramp on the same block.
+
+It recommends the ramp **only** if its greatest absolute adjacent
+sample difference does not worsen in **either** channel and improves
+strictly in the combined worst channel. It rejects NULL previous
+samples, invalid input, silent/no-benefit cases, an already continuous
+signal and any case where just one stereo channel becomes worse.
+
+There is a fundamental observability limitation: the last sample of a
+*submitted* block is **not** necessarily the last sample actually
+*played* by libnx audout. Pending audio pages and host output latency
+are not controlled by this analysis. The gate is a mathematical
+sample-difference proxy, not a validated way to avoid audible clicks.
+Even when the maximum difference decreases, some smaller local
+differences could still increase and listeners may perceive audio
+differently. The gate must stay disconnected from the actual guest
+adapter until separate timestamp/played-waveform evidence exists.
+
+`tools/dino_pcm_resume_guarded_proxy_report.py` exercises the
+**actual GCC-compiled C gate and ramp**, checks a separate Python
+oracle and reports positive and negative cases, including a mixed
+stereo case where only one channel would worsen. It does not access
+game audio, hardware samples, private ROMs, firmware or console keys.
+
+**Decision: fixed and guarded restart ramps both stay disabled by
+default.** A mathematically nonworsening artificial sample-step
+criterion is not proof of improved speaker output.
+
 ## Verification and decisions
 
 `tests/test_dino_pcm_resume_ramp.py` builds the pure C module with
