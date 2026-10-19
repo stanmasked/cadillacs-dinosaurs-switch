@@ -453,3 +453,34 @@ default 180-tick demonstration, switching controller mappings, adding
 invulnerability, or introducing an arcade ROM dependency. Native NRO
 compilation is not proof of on-device counter timing; the CI guest
 replay and actual physical input still require separate verification.
+
+## Stage 227 — original counter audio, opt-in preview
+
+A successful Stage 225/226 counter event now triggers a freshly synthesized
+820 Hz, six-tick, centered triangle cue (priority 4) inside the existing
+integer-only 48-kHz, stereo C sound engine. A failed counter has no event
+and no new cue. No extra voice slot, prerecorded asset, ROM data, or
+platform-specific audio API was introduced. Priority remains below actual
+damage and KO cues. The event travels through the same native arena → SFX
+→ 800-PCM-frame-per-tick path used in Nintendo Switch and the desktop
+bridge.
+
+Existing eleven cue identities, their C PCM definitions and the default
+eleven-cue WAV preview are left unchanged. The extra counter sound is
+**optional** when generating a local demonstration:
+
+```sh
+python3 tools/dino_sfx_preview.py --include-counter --out /your/private/folder/counter-12-cues.wav
+```
+
+The default command, without `--include-counter`, still emits the original
+eleven-cue, 30-tick-per-cue WAV sequence. The opt-in WAV appends the twelfth
+counter cue after the unchanged original bytes. Both output modes refuse
+to overwrite existing files. The automatic 180-tick original training
+demo never emits DINO_EVT_COUNTER and must retain its earlier image and
+PCM checksums; verification remains a separate CI gate.
+
+Tests cover new cue identity and reproducible envelope expiry, legacy
+WAV prefix identity, opt-in 12-cue WAV metadata, and real native gameplay
+counter-event-to-PCM bridge behavior. These are host-native audio tests,
+not proof of audible Switch console output or emulator counter controls.
