@@ -80,6 +80,14 @@ jobs:
           set -eu
           echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
           make -j2
+          # The new tool-only decision must be ABSENT from ordinary
+          # and explicit opt-in ARM64 NROs (not merely never called).
+          if "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" \
+              cadillacs-dinosaurs-switch.elf | \
+              grep -q 'dino_pcm_resume_guarded_proxy_would_help'; then
+            echo 'ERROR: diagnostic proxy leaked into ordinary NRO' >&2
+            exit 1
+          fi
           mkdir -p ordinary
           cp cadillacs-dinosaurs-switch.nro ordinary/normal.nro
           make clean
@@ -102,6 +110,10 @@ jobs:
           print('Ordinary NRO lacks opt-in marker; explicit guest build includes it')
           PY
           "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" cadillacs-dinosaurs-switch.elf > optin-symbols.txt
+          if grep -q 'dino_pcm_resume_guarded_proxy_would_help' optin-symbols.txt; then
+            echo 'ERROR: diagnostic proxy leaked into opt-in guest NRO' >&2
+            exit 1
+          fi
           grep -q 'dino_pcm_resume_ramp_before_submit' optin-symbols.txt
           grep -q 'dino_switch_sound_guest_resume_ramp_applications' optin-symbols.txt
           sha256sum cadillacs-dinosaurs-switch.nro > optin-nro.sha256
