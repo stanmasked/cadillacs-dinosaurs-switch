@@ -19,6 +19,13 @@ EXPECTED=[
     ['COUNTER',2,5,3,0,9,48,2048,1,'1169E164EDF5FD7D'],
     ['RECOVERY',3,5,3,0,8,47,0,0,'CBF29CE484222325'],
     ['WRONG_FACING',2,4,3,0,0,48,384,0,'CBF29CE484222325'],
+    # Every forbidden counter is attempted on a true 12->0 impact tick.
+    # It must NOT suppress the enemy swing or normal damage.
+    ['LAST_HITSTUN',2,4,3,0,0,48,384,0,'CBF29CE484222325'],
+    ['LAST_ATTACK',2,4,3,0,0,48,384,0,'CBF29CE484222325'],
+    ['LANDING',2,4,3,0,0,48,388,0,'CBF29CE484222325'],
+    ['ATTACK_CHORD',2,4,3,0,0,48,384,0,'CBF29CE484222325'],
+    ['JUMP_CHORD',2,4,3,0,0,48,386,0,'CBF29CE484222325'],
 ]
 
 
@@ -63,6 +70,7 @@ def verify(path):
         'counter_pcm_nonzero':True,
         'counter_pcm_fnv64':'1169E164EDF5FD7D',
         'wrong_facing_counter_rejected':True,
+        'invalid_impact_tick_counters_rejected':5,
         'requires_trusted_guest_file_extraction':True,
         'guest_hid_zr_verified':False,
         'physical_controller_verified':False,
