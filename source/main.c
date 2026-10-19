@@ -455,6 +455,8 @@ typedef struct {
     uint32_t previous_released;
     uint32_t previous_full, previous_recovered;
     uint32_t previous_skips, previous_frame_id;
+    uint32_t previous_submitted, previous_mid_calls;
+    uint32_t previous_mid_releases;
 } DinoGuestBatchStats;
 static void guest_audio_stress_row(FILE *stream, const char *event,
                                    uint32_t elapsed, const DinoArena *arena,
@@ -599,6 +601,11 @@ int main(int argc, char **argv) {
     FILE *guest_hid_timeline=NULL;
     uint32_t guest_hid_phase=0;
     FILE *guest_audio_stress=NULL;
+    /* This extra file exists only in ROM-free DINO_EMULATOR_SELFTEST.
+     * The trace contains no PCM or host timestamps: only the game tick
+     * at which nonblocking libnx calls returned owned page pointers. */
+    FILE *guest_ack_tick_trace=NULL;
+    uint32_t guest_ack_tick_count=0;
     uint32_t guest_audio_stress_start=0;
     uint32_t guest_audio_stress_next=DINO_GUEST_AUDIO_STRESS_PERIOD;
     bool guest_audio_stress_done=false;
@@ -830,6 +837,40 @@ int main(int argc, char **argv) {
                     guest_batch.previous_full=audio_now.pre_poll_full_steps;
                     guest_batch.previous_recovered=
                         audio_now.pre_poll_recovered_steps;
+                    const uint32_t submitted_now=
+                        audio_now.submitted-guest_batch.previous_submitted;
+                    guest_batch.previous_submitted=audio_now.submitted;
+                    const uint32_t mid_calls_total=
+                        dino_switch_sound_guest_mid_batch_calls();
+                    const uint32_t mid_releases_total=
+                        dino_switch_sound_guest_mid_batch_releases();
+                    const uint32_t mid_calls_now=
+                        mid_calls_total-guest_batch.previous_mid_calls;
+                    const uint32_t mid_releases_now=
+                        mid_releases_total-guest_batch.previous_mid_releases;
+                    guest_batch.previous_mid_calls=mid_calls_total;
+                    guest_batch.previous_mid_releases=mid_releases_total;
+                    if (guest_ack_tick_trace &&
+                        guest_ack_tick_count<DINO_GUEST_AUDIO_STRESS_TICKS) {
+                        /* Exact simulated tick of discovery, not when the
+                         * audio service actually freed or played a page.
+                         * No sleeps, allocation or replay of queued PCM. */
+                        ++guest_ack_tick_count;
+                        fprintf(guest_ack_tick_trace,
+                                "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+                                (unsigned)guest_ack_tick_count,
+                                (unsigned)guest_frame_id,
+                                (unsigned)arena_ticks,(unsigned)i,
+                                (unsigned)released_now,
+                                (unsigned)mid_releases_now,
+                                (unsigned)mid_calls_now,
+                                (unsigned)submitted_now,
+                                (unsigned)skipped_now,
+                                (unsigned)full_now,
+                                (unsigned)recovered_now,
+                                (unsigned)audio_now.pending,
+                                (unsigned)audio_now.audio_errors);
+                    }
                     if (arena_ticks>=2u) {
                         ++guest_batch.batched_ticks;
                         guest_batch.batched_skips+=skipped_now;
@@ -899,6 +940,11 @@ int main(int argc, char **argv) {
                             dino_switch_sound_diagnostics(&at_start);
                             guest_batch=(DinoGuestBatchStats){0};
                             guest_batch.previous_skips=at_start.skipped;
+                            guest_batch.previous_submitted=at_start.submitted;
+                            guest_batch.previous_mid_calls=
+                                dino_switch_sound_guest_mid_batch_calls();
+                            guest_batch.previous_mid_releases=
+                                dino_switch_sound_guest_mid_batch_releases();
                             guest_batch.previous_released=at_start.released;
                             guest_batch.previous_full=
                                 at_start.pre_poll_full_steps;
@@ -907,6 +953,16 @@ int main(int argc, char **argv) {
                             guest_audio_stress_row(guest_audio_stress,
                                                    "START",0u,&arena,
                                                    &guest_batch);
+                            guest_ack_tick_count=0;
+                            guest_ack_tick_trace=fopen(
+                                "sdmc:/cadillacs-audio-ack-ticks.csv","w");
+                            if (guest_ack_tick_trace) {
+                                fputs("tick,frame_id,batch_size,batch_position,"
+                                      "released,mid_released,mid_calls,"
+                                      "submitted,skipped,pre_poll_full,"
+                                      "pre_poll_recovered,pending,audio_errors\n",
+                                      guest_ack_tick_trace);
+                            }
                         }
                     } else {
                         uint32_t elapsed=arena.ticks-guest_audio_stress_start;
@@ -920,6 +976,10 @@ int main(int argc, char **argv) {
                                 guest_audio_stress_done=true;
                                 fclose(guest_audio_stress);
                                 guest_audio_stress=NULL;
+                                if (guest_ack_tick_trace) {
+                                    fclose(guest_ack_tick_trace);
+                                    guest_ack_tick_trace=NULL;
+                                }
                             } else {
                                 guest_audio_stress_next+=
                                     DINO_GUEST_AUDIO_STRESS_PERIOD;
@@ -1028,6 +1088,7 @@ int main(int argc, char **argv) {
     if (guest_controller_witness) fclose(guest_controller_witness);
     if (guest_hid_timeline) fclose(guest_hid_timeline);
     if (guest_audio_stress) fclose(guest_audio_stress);
+    if (guest_ack_tick_trace) fclose(guest_ack_tick_trace);
 #endif
     dino_switch_sound_close();
     framebufferClose(&fb);
