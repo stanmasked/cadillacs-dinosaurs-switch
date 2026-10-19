@@ -75,6 +75,32 @@ int dino_guest_counter_probe(FILE *out) {
     dino_arena_step(&a,0u,0u);
     if (!record(out,"RECOVERY",&a,0u,DINO_PCM_WITNESS_INIT)) return 0;
 
+    /* A repeated counter edge while the opponent is stunned and its
+     * recovery timer is nonzero must do nothing, without invulnerability.
+     * It is a scripted test press; the UI still requires a true key edge. */
+    dino_arena_step(&a,0u,DINO_ARENA_COUNTER);
+    if (!record(out,"EARLY_REPEAT",&a,0u,DINO_PCM_WITNESS_INIT)) return 0;
+
+    /* 46 later 60-Hz ticks exactly finish the remaining cooldown.
+     * The opponent may start its next 12-tick telegraph, but the
+     * player cannot have received a hit during those recovery ticks. */
+    for (unsigned tick=0u;tick<46u;++tick) dino_arena_step(&a,0u,0u);
+    if (!record(out,"REARMED",&a,0u,DINO_PCM_WITNESS_INIT)) return 0;
+
+    /* A NEW edge at the NEXT tick can interrupt the new telegraph.
+     * Re-run the exact original synthesized cue in an isolated synth
+     * to require byte-stable PCM for two separately legal counters. */
+    dino_arena_step(&a,0u,DINO_ARENA_COUNTER);
+    dino_sfx_reset(&synth);
+    dino_sfx_events(&synth,a.events);
+    dino_sfx_render_tick(&synth,pcm,DINO_SFX_TICK_FRAMES);
+    nonzero=0u;
+    for (unsigned i=0u;i<2u*DINO_SFX_TICK_FRAMES;++i)
+        if (pcm[i]!=0) { nonzero=1u; break; }
+    const uint64_t second_pcm_hash=dino_pcm_witness_feed(
+        DINO_PCM_WITNESS_INIT,pcm,DINO_SFX_TICK_FRAMES);
+    if (!record(out,"SECOND_COUNTER",&a,nonzero,second_pcm_hash)) return 0;
+
     /* Negative control: facing away on last windup tick must take the
      * ordinary hit; counter must never provide passive invulnerability. */
     dino_arena_reset(&a);
