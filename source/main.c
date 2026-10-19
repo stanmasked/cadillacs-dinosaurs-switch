@@ -613,6 +613,7 @@ int main(int argc, char **argv) {
     FILE *guest_controller_witness=NULL;
     bool guest_controller_active=false, guest_controller_done=false;
     uint32_t guest_controller_flags=0;
+    bool guest_counter_hid_done=false; /* stage 234, after audio stress */
     /* An independent, ordered game-tick trace of actual HID effects.
      * Tick values are guest simulation time, NOT host input latency. */
     FILE *guest_hid_timeline=NULL;
@@ -774,6 +775,43 @@ int main(int argc, char **argv) {
                 counter_feedback_ticks=dino_arena_counter_feedback_tick(
                     counter_feedback_ticks,arena.events);
 #ifdef DINO_EMULATOR_SELFTEST
+                /* Stage 234: optional external HID ZR proof, only after the
+                 * existing 900-tick audio stress evidence is finalized.
+                 * The trigger MUST be libnx padGetButtonsDown AND the
+                 * actual pending edge consumed by this game tick.
+                 * This isolated prepared arena avoids modifying the live
+                 * game, controller sequence or historical audio witnesses. */
+                if (guest_audio_stress_done && guest_controller_done &&
+                    !demo_active && !guest_counter_hid_done &&
+                    (down&HidNpadButton_ZR) &&
+                    (step_pressed&DINO_ARENA_COUNTER)) {
+                    guest_counter_hid_done=true;
+                    DinoArena test_counter;
+                    dino_arena_reset(&test_counter);
+                    test_counter.x=220;
+                    dino_arena_step(&test_counter,0u,DINO_ARENA_TOGGLE_SPAR);
+                    const uint32_t ready_tick=test_counter.ticks;
+                    const uint32_t ready_windup=test_counter.dummy_windup;
+                    dino_arena_step(&test_counter,0u,
+                                    step_pressed&DINO_ARENA_COUNTER);
+                    const char *const path="sdmc:/cadillacs-counter-hid.csv";
+                    FILE *proof=fopen(path,"w");
+                    if (proof) {
+                        fprintf(proof,"phase,tick,player_hp,enemy_hp,windup,"
+                                "stun,cooldown,event_mask,hid_edge\\n");
+                        fprintf(proof,"READY,%u,5,3,%u,0,0,1,0\\n",
+                                (unsigned)ready_tick,(unsigned)ready_windup);
+                        fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1\\n",
+                                (unsigned)test_counter.ticks,
+                                (unsigned)test_counter.player_hp,
+                                (unsigned)test_counter.dummy_hp,
+                                (unsigned)test_counter.dummy_windup,
+                                (unsigned)test_counter.dummy_hitstun,
+                                (unsigned)test_counter.dummy_cooldown,
+                                (unsigned)test_counter.events);
+                        (void)fclose(proof);
+                    }
+                }
                 if (guest_controller_active && !demo_active) {
                     /* A second witness records the ordered effect timeline.
                      * A misordered key sequence never advances the phase.
