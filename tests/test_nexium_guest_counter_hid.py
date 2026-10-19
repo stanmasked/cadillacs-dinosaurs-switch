@@ -31,6 +31,31 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
             self.assertTrue(result['synthetic_pcm_verified'])
             self.assertEqual(result['counter_pcm_fnv64'],'1169E164EDF5FD7D')
 
+    def test_ready_expected_schema_has_all_numeric_and_pcm_fields(self):
+        # Regression: the READY expected tuple once omitted the
+        # pcm_nonzero zero introduced with the 48kHz FNV64 column.
+        self.assertEqual(len(verifier.FIELDS),11)
+        for phase,expected in zip(('READY','HID_COUNTER'),verifier.EXPECTED):
+            with self.subTest(phase=phase):
+                self.assertEqual(len(expected),len(verifier.FIELDS))
+        expected_ready=dict(zip(verifier.FIELDS,verifier.EXPECTED[0]))
+        self.assertEqual(expected_ready['hid_edge'],0)
+        self.assertEqual(expected_ready['pcm_nonzero'],0)
+        self.assertEqual(expected_ready['pcm_fnv64'],'CBF29CE484222325')
+
+    def test_ready_pcm_mutations_fail_closed(self):
+        for wrong in (
+            READY.replace(',1,0,0,CBF29',',1,0,1,CBF29'),
+            READY.replace(',1,0,0,CBF29',',1,0,0,CBF28'),
+            READY.replace(',1,0,0,CBF29',',1,0,CBF29'),
+        ):
+            with self.subTest(wrong=wrong):
+                with tempfile.TemporaryDirectory() as d:
+                    file=Path(d)/'tampered-ready.csv'
+                    file.write_text(HEADER+wrong+SUCCESS,encoding='ascii')
+                    with self.assertRaises(ValueError):
+                        verifier.verify(file)
+
     def test_verifier_rejects_missing_and_symlinked_evidence(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'absent.csv'
