@@ -37,6 +37,11 @@ PROBE = r'''
 			char path[128], registers_path[128], latch_path[128];
 			const unsigned long long observed_latch_count =
 				cps1_dino_obj_latch_events.load(std::memory_order_relaxed);
+			// Same-process session marker shared by Lua and C++, not hardware timing.
+			const char *capture_session = std::getenv("CPS1_DINO_CAPTURE_SESSION");
+			const bool session_valid = capture_session &&
+				std::strlen(capture_session) == 32 &&
+				std::strspn(capture_session, "0123456789abcdef") == 32;
 			// Sample the 1024 buffered OBJ words ONCE, before any file I/O.
 			// FNV and the emitted 2048 bytes come from this one private
 			// stack snapshot, never a second read of mutable m_buffered_obj.
@@ -128,9 +133,12 @@ PROBE = r'''
 									osd_printf_warning("OBJ probe: unable to open %s\n", latch_path);
 								else
 								{
-									const bool wrote = std::fprintf(latch_output,
+									bool wrote = std::fprintf(latch_output,
 										"CPS1_DINO_LATCH_V2 %llu %016llx\n",
 										observed_latch_count, observed_obj_fnv1a64) > 0;
+									if (session_valid)
+										wrote = (std::fprintf(latch_output,
+											"CPS1_DINO_SESSION %s\n", capture_session) > 0) && wrote;
 									const bool closed = std::fclose(latch_output) == 0;
 									if (!wrote || !closed)
 										osd_printf_warning("OBJ probe: incomplete %s\n", latch_path);
@@ -161,7 +169,7 @@ def instrument(source):
         raise ValueError('CPS-1 VBlank-latched OBJ implementation not found')
     result = source.replace(
         INCLUDE,
-        INCLUDE + '#include <atomic>\n#include <cstdio>\n#include <cstring>\n'
+        INCLUDE + '#include <atomic>\n#include <cstdio>\n#include <cstring>\n#include <cstdlib>\n'
         + 'static std::atomic<unsigned long long> '
           'cps1_dino_obj_latch_events{0};\n',
         1)

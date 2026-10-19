@@ -1,0 +1,4 @@
+#!/bin/sh
+# Optional local protection BEFORE a public commit. Enable with:
+# git config --local core.hooksPath .githooks
+exec python3 tools/check_public_tree_rom_free.py

@@ -32,6 +32,11 @@ def pack_sequence(frame_blobs, fps):
         if struct.unpack_from('<I',blob,8)[0]!=SCENE_BYTES-16 or (
            zlib.crc32(blob[16:]) != struct.unpack_from('<I',blob,12)[0]):
             raise ValueError(f'Frame {i} failed CRC or length')
+        # Match the native CPS1SCN1 loader's canonical Boolean layout.
+        # A frame whose inner CRC was recomputed must still be rejected
+        # here, before a CPS1SEQ1 envelope can be published locally.
+        if any(value not in (0,1) for value in blob[32:35]):
+            raise ValueError(f'Frame {i} has noncanonical layer-enable flag')
         if blob[35]!=0:
             raise ValueError(f'Frame {i} has nonzero reserved byte')
     payload=b''.join(frame_blobs)

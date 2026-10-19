@@ -104,7 +104,7 @@ class PrivateCaptureStabilityTests(unittest.TestCase):
     def test_variable_length_manifest_and_latch_sidecar_are_bounded(self):
         for suffix, bad in (
             ('manifest.json', b'{'+b'x' * (16384+1)),
-            ('obj-latch-count.txt', b'CPS1_DINO_LATCH_V2 '+b'x' * 100),
+            ('obj-latch-count.txt', b'CPS1_DINO_LATCH_V2 '+b'x' * 200),
         ):
             path = self.root / ('frame-00000904.' + suffix)
             original = path.read_bytes()

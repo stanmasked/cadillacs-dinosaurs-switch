@@ -104,6 +104,8 @@ class MameLuaCaptureStubTests(unittest.TestCase):
                     prefix=f'frame-{frame:08d}.'
                     manifest=json.loads((root/(prefix+'manifest.json')).read_text())
                     self.assertEqual(manifest['frame'],frame)
+                    # Standalone Lua test does not issue a launcher session.
+                    self.assertEqual(manifest['capture_session'], 'UNBOUND')
                     self.assertFalse(manifest['pixel_parity_eligible'])
                     self.assertEqual(manifest['obj_latch'],'NOT_CAPTURED')
                     self.assertEqual(set(manifest['file_crc32']),names)

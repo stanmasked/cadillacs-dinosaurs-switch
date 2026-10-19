@@ -1,0 +1,91 @@
+name: ROM-free Linux runtime dependencies for private MAME diagnostics
+
+# Runtime shared libraries only. No copyrighted ROM inputs or captures.
+on:
+  push:
+    paths:
+      - '.github/workflows/mame-linux-runtime-libs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-linux-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install runtime libraries used by compiled MAME 0.289 ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            qt6-base-dev libsdl2-ttf-dev
+      - name: Package dynamic libraries with no ROM access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import subprocess
+
+          out = Path('mame-linux-runtime-libs')
+          out.mkdir(mode=0o755)
+          required = (
+              'libQt6Core.so.6',
+              'libQt6Gui.so.6',
+              'libQt6Widgets.so.6',
+              'libSDL2_ttf-2.0.so.0',
+          )
+          cache = subprocess.run(
+              ['ldconfig', '-p'], check=True, capture_output=True,
+              text=True).stdout
+          lookup = {}
+          for line in cache.splitlines():
+              m = re.search(r'^\s*(\S+)\s+\([^)]*\)\s+=>\s+(\S+)', line)
+              if m and m.group(1) not in lookup:
+                  lookup[m.group(1)] = m.group(2)
+          for name in required:
+              assert name in lookup, 'required open-source library unavailable'
+          # Copy the dependencies resolved by ldd as names the binary
+          # expects. Exclude core GNU libc/stdc++ libraries to avoid
+          # interposing an older glibc on the private machine.
+          omit = (
+              'libc.so.', 'libm.so.', 'libpthread.so.', 'libdl.so.',
+              'libstdc++.so.', 'libgcc_s.so.', 'libresolv.so.',
+              'libnss_', 'ld-linux-',
+          )
+          selected_paths = {name: lookup[name] for name in required}
+          for name in required:
+              resolved = subprocess.run(
+                  ['ldd', lookup[name]], check=True, capture_output=True,
+                  text=True).stdout
+              for line in resolved.splitlines():
+                  m = re.search(r'^\s*(\S+)\s+=>\s+(/\S+)', line)
+                  if m and not m.group(1).startswith(omit):
+                      selected_paths[m.group(1)] = m.group(2)
+          for name, path in sorted(selected_paths.items()):
+              assert path is not None, 'required transitive library unavailable'
+              source = Path(path).resolve(strict=True)
+              assert source.is_file(), 'runtime dependency not a regular file'
+              shutil.copy2(source, out / name)
+          (out / 'README.txt').write_text(
+              'Linux runtime libraries from Ubuntu GitHub Actions.\n'
+              'Only shared-library dependencies, no game ROMs.\n'
+              'For the user-supplied original image, run MAME privately;\n'
+              'do not upload game files or private traces to GitHub.\n'
+              'Libraries may have different licenses. Their upstream\n'
+              'package copyright/licensing information is available\n'
+              'in official Ubuntu package metadata.\n')
+          print('ROM-free shared libraries packaged:', len(selected_paths))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mame0289-private-runtime-shared-libs-rom-free
+          path: mame-linux-runtime-libs/
+          retention-days: 3
+          if-no-files-found: error

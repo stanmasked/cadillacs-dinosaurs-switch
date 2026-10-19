@@ -5,6 +5,7 @@ instrumentation body comes from the actual production source generator.
 The fake cps_state emulates only member shapes needed for compilation.
 """
 from pathlib import Path
+import os
 import shutil
 import struct
 import subprocess
@@ -154,8 +155,10 @@ class GeneratedMameProbeCppSmoke(unittest.TestCase):
             raise AssertionError(
                 "Generated MAME probe C++ failed strict compilation:\n" +
                 result.stdout + result.stderr)
+        session_env = os.environ.copy()
+        session_env['CPS1_DINO_CAPTURE_SESSION'] = '0123456789abcdef0123456789abcdef'
         result = subprocess.run(
-            [str(cls.root / "probe-smoke")], cwd=cls.root,
+            [str(cls.root / "probe-smoke")], cwd=cls.root, env=session_env,
             capture_output=True, text=True, check=False)
         if result.returncode:
             cls.tmp.cleanup()
@@ -196,6 +199,7 @@ class GeneratedMameProbeCppSmoke(unittest.TestCase):
             self.assertTrue(
                 line.startswith("CPS1_DINO_LATCH_V2 "), frame)
             self.assertIn(obj_fnv1a64(raw), line)
+            self.assertIn('CPS1_DINO_SESSION 0123456789abcdef0123456789abcdef', line)
         evidence = latch_counter_diagnostic(
             self.root / "cps1-captures", 900, 4, 2,
             changed_obj_slots=[0, 1, 0], obj_frames=objs)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """ROM-free, fail-closed verification of an actual built MAME dino subtarget.
 
-Checks the original driver XML and that a nonempty ELF object for
-instrumented cps1_v.cpp exists in the *freshly built* MAME build tree.
+Checks the original driver XML, session-aware cps1_v.o in the MAME build
+tree, and the same probe strings in the actual linked dino executable.
 This is build identity evidence, not original-game or VBlank parity.
 """
 import argparse
@@ -15,7 +15,11 @@ import xml.etree.ElementTree as ET
 
 MAX_XML_BYTES = 2 * 1024 * 1024
 MAX_OBJECT_BYTES = 64 * 1024 * 1024
+MAX_BINARY_BYTES = 2 * 1024 * 1024 * 1024
+SCAN_CHUNK_BYTES = 1024 * 1024
 PROBE_COMPILED_MARKER = b'CPS1_DINO_LATCH_V2'
+SESSION_COMPILED_MARKER = b'CPS1_DINO_SESSION'
+SESSION_ENV_COMPILED_MARKER = b'CPS1_DINO_CAPTURE_SESSION'
 OBJECT_BASENAME = 'cps1_v.o'
 EXPECTED_DRIVER = 'dino'
 EXPECTED_SOURCE = 'capcom/cps1.cpp'
@@ -85,12 +89,58 @@ def verify_compiled_cps1_video_object(directory):
         raise ValueError('Compiled cps1_v.o is not a Linux ELF object')
     if PROBE_COMPILED_MARKER not in data:
         raise ValueError('Compiled cps1_v.o lacks the generated latch V2 format')
+    if SESSION_COMPILED_MARKER not in data:
+        raise ValueError('Compiled cps1_v.o lacks the new session label sidecar format')
+    if SESSION_ENV_COMPILED_MARKER not in data:
+        raise ValueError('Compiled cps1_v.o lacks the session environment lookup')
     return {
         'compiled_cps1_video_object': True,
         'compiled_instrumented_latch_v2_format': True,
+        'compiled_session_label_probe_marker': True,
+        'compiled_session_environment_probe_marker': True,
         'compiled_cps1_video_object_bytes': path.stat().st_size,
         'compiled_cps1_video_object_relative_path': path.relative_to(root).as_posix(),
         'instrumentation_runtime_verified': False,
+    }
+
+
+def verify_linked_probe_markers(binary):
+    """Require all three C++ probe strings in the linked ELF, not just .o.
+
+    Read the executable incrementally; it can be much larger than the .o.
+    This is a ROM-free *static* link-consistency check, not proof the
+    instrumented video hook executed at runtime or observed VBlank.
+    """
+    path = Path(binary)
+    if not path.is_file() or path.is_symlink():
+        raise ValueError('Linked MAME executable is missing or symlinked')
+    size = path.stat().st_size
+    if not 64 <= size <= MAX_BINARY_BYTES:
+        raise ValueError('Linked MAME executable size is invalid')
+    markers = (PROBE_COMPILED_MARKER, SESSION_COMPILED_MARKER,
+               SESSION_ENV_COMPILED_MARKER)
+    found = set()
+    overlap = b''
+    carry = max(map(len, markers)) - 1
+    with path.open('rb') as source:
+        if source.read(4) != b'\x7fELF':
+            raise ValueError('Linked MAME executable is not ELF')
+        source.seek(0)
+        while True:
+            chunk = source.read(SCAN_CHUNK_BYTES)
+            if not chunk:
+                break
+            window = overlap + chunk
+            found.update(marker for marker in markers if marker in window)
+            overlap = window[-carry:]
+    if len(found) != len(markers):
+        raise ValueError('Linked MAME executable lacks session-aware V2 probe markers')
+    return {
+        'linked_dino_executable_probe_markers': True,
+        'linked_latch_v2_probe_marker': True,
+        'linked_session_label_probe_marker': True,
+        'linked_session_environment_probe_marker': True,
+        'linked_probe_runtime_verified': False,
     }
 
 
@@ -126,6 +176,7 @@ def inspect_binary(binary, build_dir, timeout_seconds=90):
         data = xml_output.read(MAX_XML_BYTES + 1)
     result = validate_dino_xml(data)
     result.update(verify_compiled_cps1_video_object(build_dir))
+    result.update(verify_linked_probe_markers(file))
     return result
 
 

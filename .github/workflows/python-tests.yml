@@ -27,6 +27,12 @@ on:
       - 'Makefile'
   workflow_dispatch:
 
+# Cancel superseded runs for the same event and PR/ref. Keep different
+# workflows, branches and manually dispatched checks independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -62,3 +68,24 @@ jobs:
             --out "$tmp/cps1_v.instrumented.cpp"
           python tools/mame_obj_real_source_audit.py \
             "$tmp/cps1_v.cpp" "$tmp/cps1_v.instrumented.cpp"
+
+      - name: Preserve code-only scene parity reproduction sources
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cps1-scene-parity-source-rom-free
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            source/cps1_scene.c
+            source/cps1_scene.h
+            source/cps1_tile.c
+            source/cps1_tile.h
+            tools/cps1_gfx.py
+            tools/cps1_tiles.py
+            tools/cps1_video.py
+            tools/cps1_raster.py
+            tools/cps1_frame.py
+            tools/cps1_scene_export.py
+            tools/cps1_private_native_tile_parity.py
+            tools/cps1_private_scene_compositor_parity.py

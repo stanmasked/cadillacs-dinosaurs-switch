@@ -1,0 +1,621 @@
+name: NeXium real Switch NRO guest replay
+
+on:
+  workflow_dispatch:
+    inputs:
+      audio_mode:
+        description: "ROM-free guest audio mode (manual runs only)"
+        type: choice
+        required: true
+        default: baseline
+        options:
+          - baseline
+          - extra-poll
+  push:
+    branches:
+      - feature/mame-capture-crossprobe-session-id
+    paths:
+      - 'source/**'
+      - 'Makefile'
+      - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/nexium_hid_fallback_guard.py'
+      - 'tests/test_nexium_hid_fallback_guard.py'
+      - 'tools/verify_nexium_guest_replay.py'
+      - 'tools/verify_nexium_host_audio.py'
+      - 'tools/verify_nexium_guest_controller.py'
+      - 'tools/verify_nexium_hid_timeline.py'
+      - 'tools/nexium_host_input_pixel.py'
+      - 'tools/nexium_host_spar_audio.py'
+      - 'tools/verify_nexium_spar_audio_bound.py'
+      - 'tools/verify_nexium_audio_stress.py'
+      - 'tools/verify_nexium_audio_mode_binding.py'
+      - 'tools/verify_nexium_host_input_bound.py'
+      - 'tests/test_nexium_guest_replay.py'
+      - 'tests/test_nexium_host_audio.py'
+      - 'tests/test_nexium_guest_controller.py'
+      - 'tests/test_nexium_hid_timeline.py'
+      - 'tests/test_nexium_host_input_pixel.py'
+      - 'tests/test_nexium_spar_audio_bound.py'
+      - 'tests/test_nexium_audio_stress.py'
+      - 'tests/test_nexium_audio_mode_binding.py'
+      - 'tools/verify_nexium_audio_paired_artifacts.py'
+      - 'tests/test_nexium_audio_paired_artifacts.py'
+      - 'tools/nexium_audio_control_plan.py'
+      - 'tests/test_nexium_audio_controlled_mock.py'
+      - 'tools/verify_nexium_audio_controlled_oracle.py'
+      - 'tests/test_nexium_audio_controlled_oracle.py'
+      - 'tools/nexium_audio_release_corpus.py'
+      - 'tests/test_nexium_audio_release_corpus.py'
+      - 'tools/verify_nexium_audio_provenance_manifest.py'
+      - 'tests/test_nexium_audio_provenance_manifest.py'
+      - 'tools/nexium_audio_intertick_phase.py'
+      - 'tests/test_nexium_audio_intertick_phase.py'
+      - 'tools/nexium_audio_queue_capacity_bound.py'
+      - 'tests/test_nexium_audio_queue_capacity_bound.py'
+      - 'tools/nexium_audio_queue_depth_tradeoff.py'
+      - 'tests/test_nexium_audio_queue_depth_tradeoff.py'
+      - 'tools/nexium_audio_occupancy_service.py'
+      - 'tests/test_nexium_audio_occupancy_service.py'
+      - 'tools/verify_nexium_guest_ack_observability.py'
+      - 'tests/test_nexium_guest_ack_observability.py'
+      - 'tools/verify_nexium_audio_ack_tick_trace.py'
+      - 'tests/test_nexium_audio_ack_tick_trace.py'
+      - 'tools/compare_nexium_guest_ack_discovery.py'
+      - 'tests/test_nexium_guest_ack_discovery_profile.py'
+      - 'tests/test_dino_guest_ack_trace_buffer.py'
+      - 'tools/nexium_guest_fixed_ack_capacity_replay.py'
+      - 'tests/test_nexium_guest_fixed_ack_capacity_replay.py'
+      - 'tools/nexium_guest_fixed_ack_residence.py'
+      - 'tests/test_nexium_guest_fixed_ack_residence.py'
+      - 'tools/nexium_guest_frame_phase_skip_decomposition.py'
+      - 'tests/test_nexium_guest_frame_phase_skip_decomposition.py'
+      - 'tools/nexium_guest_frame_topology.py'
+      - 'tests/test_nexium_guest_frame_topology.py'
+      - 'tools/nexium_guest_frame_gap_burst_audit.py'
+      - 'tests/test_nexium_guest_frame_gap_burst_audit.py'
+      - 'source/dino_guest_frame_clock.c'
+      - 'source/dino_guest_frame_clock.h'
+      - 'tools/verify_nexium_guest_frame_clock.py'
+      - 'tests/test_nexium_guest_frame_clock.py'
+      - 'tools/nexium_guest_clock_phase_invariant.py'
+      - 'tests/test_nexium_guest_clock_phase_invariant.py'
+      - 'tools/nexium_guest_frame_interval_pcm_bins.py'
+      - 'tests/test_nexium_guest_frame_interval_pcm_bins.py'
+      - 'tools/nexium_guest_audio_pressure_witness.py'
+      - 'tests/test_nexium_guest_audio_pressure_witness.py'
+      - 'source/dino_pcm_resume_ramp.c'
+      - 'source/dino_pcm_resume_ramp.h'
+      - 'tests/test_dino_pcm_resume_ramp.py'
+      - '.github/workflows/nexium-guest-replay.yml'
+  pull_request:
+    paths:
+      - 'source/**'
+      - 'Makefile'
+      - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/nexium_hid_fallback_guard.py'
+      - 'tests/test_nexium_hid_fallback_guard.py'
+      - 'tools/verify_nexium_guest_replay.py'
+      - 'tools/verify_nexium_host_audio.py'
+      - 'tools/verify_nexium_guest_controller.py'
+      - 'tools/verify_nexium_hid_timeline.py'
+      - 'tools/nexium_host_input_pixel.py'
+      - 'tools/nexium_host_spar_audio.py'
+      - 'tools/verify_nexium_spar_audio_bound.py'
+      - 'tools/verify_nexium_audio_stress.py'
+      - 'tools/verify_nexium_audio_mode_binding.py'
+      - 'tools/verify_nexium_host_input_bound.py'
+      - 'tests/test_nexium_guest_replay.py'
+      - 'tests/test_nexium_host_audio.py'
+      - 'tests/test_nexium_guest_controller.py'
+      - 'tests/test_nexium_hid_timeline.py'
+      - 'tests/test_nexium_host_input_pixel.py'
+      - 'tests/test_nexium_spar_audio_bound.py'
+      - 'tests/test_nexium_audio_stress.py'
+      - 'tests/test_nexium_audio_mode_binding.py'
+      - 'tools/verify_nexium_audio_paired_artifacts.py'
+      - 'tests/test_nexium_audio_paired_artifacts.py'
+      - 'tools/nexium_audio_control_plan.py'
+      - 'tests/test_nexium_audio_controlled_mock.py'
+      - 'tools/verify_nexium_audio_controlled_oracle.py'
+      - 'tests/test_nexium_audio_controlled_oracle.py'
+      - 'tools/nexium_audio_release_corpus.py'
+      - 'tests/test_nexium_audio_release_corpus.py'
+      - 'tools/verify_nexium_audio_provenance_manifest.py'
+      - 'tests/test_nexium_audio_provenance_manifest.py'
+      - 'tools/nexium_audio_intertick_phase.py'
+      - 'tests/test_nexium_audio_intertick_phase.py'
+      - 'tools/nexium_audio_queue_capacity_bound.py'
+      - 'tests/test_nexium_audio_queue_capacity_bound.py'
+      - 'tools/nexium_audio_queue_depth_tradeoff.py'
+      - 'tests/test_nexium_audio_queue_depth_tradeoff.py'
+      - 'tools/nexium_audio_occupancy_service.py'
+      - 'tests/test_nexium_audio_occupancy_service.py'
+      - 'tools/verify_nexium_guest_ack_observability.py'
+      - 'tests/test_nexium_guest_ack_observability.py'
+      - 'tools/verify_nexium_audio_ack_tick_trace.py'
+      - 'tests/test_nexium_audio_ack_tick_trace.py'
+      - 'tools/compare_nexium_guest_ack_discovery.py'
+      - 'tests/test_nexium_guest_ack_discovery_profile.py'
+      - 'tests/test_dino_guest_ack_trace_buffer.py'
+      - 'tools/nexium_guest_fixed_ack_capacity_replay.py'
+      - 'tests/test_nexium_guest_fixed_ack_capacity_replay.py'
+      - 'tools/nexium_guest_fixed_ack_residence.py'
+      - 'tests/test_nexium_guest_fixed_ack_residence.py'
+      - 'tools/nexium_guest_frame_phase_skip_decomposition.py'
+      - 'tests/test_nexium_guest_frame_phase_skip_decomposition.py'
+      - 'tools/nexium_guest_frame_topology.py'
+      - 'tests/test_nexium_guest_frame_topology.py'
+      - 'tools/nexium_guest_frame_gap_burst_audit.py'
+      - 'tests/test_nexium_guest_frame_gap_burst_audit.py'
+      - 'source/dino_guest_frame_clock.c'
+      - 'source/dino_guest_frame_clock.h'
+      - 'tools/verify_nexium_guest_frame_clock.py'
+      - 'tests/test_nexium_guest_frame_clock.py'
+      - 'tools/nexium_guest_clock_phase_invariant.py'
+      - 'tests/test_nexium_guest_clock_phase_invariant.py'
+      - 'tools/nexium_guest_frame_interval_pcm_bins.py'
+      - 'tests/test_nexium_guest_frame_interval_pcm_bins.py'
+      - 'tools/nexium_guest_audio_pressure_witness.py'
+      - 'tests/test_nexium_guest_audio_pressure_witness.py'
+      - 'source/dino_pcm_resume_ramp.c'
+      - 'source/dino_pcm_resume_ramp.h'
+      - 'tests/test_dino_pcm_resume_ramp.py'
+      - '.github/workflows/nexium-guest-replay.yml'
+
+# Cancel superseded runs for the same event and PR/ref. Keep different
+# workflows, branches and manually dispatched checks independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-guest-nro:
+    strategy:
+      fail-fast: false
+      matrix:
+        audio_mode: ${{ fromJSON(github.event_name == 'pull_request' && '["baseline","extra-poll"]' || github.event_name == 'workflow_dispatch' && inputs.audio_mode == 'extra-poll' && '["extra-poll"]' || '["baseline"]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure devkitPro and compile selected ROM-free Switch guest mode
+        env:
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
+        run: |
+          # The devkitPro container's default shell is POSIX sh, not bash.
+          # No pipelines are used here; -eu supplies portable fail-fast.
+          set -eu
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          case "$DINO_AUDIO_MODE" in
+            baseline)
+              defines="-DDINO_EMULATOR_SELFTEST"
+              ;;
+            extra-poll)
+              defines="-DDINO_EMULATOR_SELFTEST -DDINO_AUDIO_EXPERIMENT_MID_BATCH_POLL"
+              ;;
+            *)
+              echo "Unsupported audio mode" >&2
+              exit 1
+              ;;
+          esac
+          make -j2 DEFINES="$defines"
+          printf '%s\n' "$DINO_AUDIO_MODE" > dino-guest-audio-mode.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          file=Path("cadillacs-dinosaurs-switch.nro")
+          blob=file.read_bytes()
+          assert blob[0x10:0x14]==b"NRO0"
+          declared=struct.unpack_from("<I",blob,0x18)[0]
+          assert 0x80<=declared<=len(blob)
+          assert b"cadillacs-arena-selftest.csv" in blob
+          assert b"FRAME_SUBMITTED" in blob
+          assert b"REPLAY_DONE" in blob
+          print("ROM-free NRO with guest-origin evidence compiled")
+          PY
+          sha256sum cadillacs-dinosaurs-switch.nro
+          sha256sum cadillacs-dinosaurs-switch.nro > dino-guest-nro.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro-${{ matrix.audio_mode }}
+          path: |
+            cadillacs-dinosaurs-switch.nro
+            dino-guest-audio-mode.txt
+            dino-guest-nro.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+  run-real-guest:
+    needs: build-guest-nro
+    strategy:
+      fail-fast: false
+      matrix:
+        audio_mode: ${{ fromJSON(github.event_name == 'pull_request' && '["baseline","extra-poll"]' || github.event_name == 'workflow_dispatch' && inputs.audio_mode == 'extra-poll' && '["extra-poll"]' || '["baseline"]') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro-${{ matrix.audio_mode }}
+          path: emulator-input
+      - name: Verify mode manifest and NRO integrity before execution
+        env:
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
+        run: |
+          set -euo pipefail
+          test "$(cat emulator-input/dino-guest-audio-mode.txt)" = "$DINO_AUDIO_MODE"
+          (cd emulator-input && sha256sum -c dino-guest-nro.sha256)
+      - name: Test script syntax and refuse synthetic malformed guest reports
+        run: |
+          bash -n tools/nexium_guest_replay_probe.sh
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_hid_fallback_guard.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_hid_timeline.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_input_pixel.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_mode_binding.py' -v
+      - name: Install Xvfb and software Vulkan dependencies for NeXium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0 \
+            pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Attempt actual ARM64 homebrew guest execution
+        env:
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
+        run: |
+          bash tools/nexium_guest_replay_probe.sh \
+            emulator-input/cadillacs-dinosaurs-switch.nro \
+            emulator-evidence
+      - name: Attest selected mode from actual guest audio stress counters
+        env:
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
+        run: |
+          python3 tools/verify_nexium_audio_mode_binding.py \
+            --selected-mode "$DINO_AUDIO_MODE" \
+            --report emulator-evidence/guest-audio-stress-evidence.json \
+            --nro emulator-input/cadillacs-dinosaurs-switch.nro \
+            --out emulator-evidence/guest-audio-mode-binding.json
+      - name: Preserve verified result or honest inconclusive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-ne-xium-actual-nro-guest-evidence-${{ matrix.audio_mode }}
+          path: |
+            emulator-evidence/result.txt
+            emulator-evidence/metadata.txt
+            emulator-evidence/emulator-hash-check.txt
+            emulator-evidence/emulator-stdout.txt
+            emulator-evidence/vulkan.txt
+            emulator-evidence/guest-replay.csv
+            emulator-evidence/guest-window.png
+            emulator-evidence/frame-pixels.txt
+            emulator-evidence/host-audio-evidence.json
+            emulator-evidence/guest-controller-evidence.json
+            emulator-evidence/guest-controller.csv
+            emulator-evidence/guest-hid-timeline-evidence.json
+            emulator-evidence/guest-hid-timeline.csv
+            emulator-evidence/host-input-bound-evidence.json
+            emulator-evidence/host-pixel-raw.json
+            emulator-evidence/host-spar-raw.json
+            emulator-evidence/host-spar-audio-evidence.json
+            emulator-evidence/guest-audio-stress-evidence.json
+            emulator-evidence/guest-audio-mode-binding.json
+            emulator-evidence/guest-audio-stress.csv
+            emulator-evidence/guest-audio-ack-ticks.csv
+            emulator-evidence/guest-audio-ack-tick-evidence.json
+            emulator-evidence/guest-frame-clock.csv
+            emulator-evidence/guest-frame-clock-evidence.json
+            emulator-evidence/xdg-config/NeXium/logs/*.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  compare-pr-guest-audio:
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: run-real-guest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual baseline guest evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-ne-xium-actual-nro-guest-evidence-baseline
+          path: paired/baseline
+      - name: Download actual experimental guest evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-ne-xium-actual-nro-guest-evidence-extra-poll
+          path: paired/extra-poll
+      - name: Download baseline NRO build artifact for hash verification
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro-baseline
+          path: paired/build-baseline
+      - name: Download experimental NRO build artifact for hash verification
+        uses: actions/download-artifact@v4
+        with:
+          name: dino-nexium-selftest-nro-extra-poll
+          path: paired/build-extra-poll
+      - name: Verify bound guest evidence and compare two modes
+        run: |
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_paired_artifacts.py' -v
+          DINO_CONTROLLED_AUDOUT_RESULT=controlled-host-audout-result.json \
+            python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_mock.py' -v
+          python3 tools/nexium_audio_control_plan.py --out controlled-host-audout-plan.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_controlled_oracle.py' -v
+          python3 tools/verify_nexium_audio_controlled_oracle.py \
+            --plan controlled-host-audout-plan.json \
+            --result controlled-host-audout-result.json \
+            --out controlled-host-audout-oracle.json
+          python3 tools/nexium_audio_release_corpus.py \
+            --out controlled-host-release-corpus-plan.json
+          DINO_CONTROLLED_AUDOUT_CORPUS_PLAN=controlled-host-release-corpus-plan.json \
+            DINO_CONTROLLED_AUDOUT_CORPUS_RESULT=controlled-host-release-corpus-result.json \
+            python3 -m unittest discover -s tests -p 'test_nexium_audio_release_corpus.py' -v
+          python3 tools/nexium_audio_release_corpus.py \
+            --corpus controlled-host-release-corpus-plan.json \
+            --result controlled-host-release-corpus-result.json \
+            --out controlled-host-release-corpus-attestation.json
+          python3 tools/nexium_audio_intertick_phase.py \
+            --out controlled-host-intertick-plan.json
+          DINO_INTERTICK_RESULT=controlled-host-intertick-result.json \
+            python3 -m unittest discover -s tests -p 'test_nexium_audio_intertick_phase.py' -v
+          python3 tools/nexium_audio_intertick_phase.py \
+            --plan controlled-host-intertick-plan.json \
+            --result controlled-host-intertick-result.json \
+            --out controlled-host-intertick-attestation.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_queue_capacity_bound.py' -v
+          python3 tools/nexium_audio_queue_capacity_bound.py \
+            --out controlled-host-capacity-bound.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_queue_depth_tradeoff.py' -v
+          python3 tools/nexium_audio_queue_depth_tradeoff.py \
+            --out controlled-host-depth-tradeoff.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_occupancy_service.py' -v
+          python3 tools/nexium_audio_occupancy_service.py \
+            --out controlled-host-occupancy-feedback.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          plan=json.loads(Path('controlled-host-audout-plan.json').read_text())
+          result=json.loads(Path('controlled-host-audout-result.json').read_text())
+          assert result['stimulus_sha256']==plan['stimulus_sha256']
+          assert result['total_measured_ticks']==plan['total_simulation_ticks']
+          assert len(result['per_150tick_counters'])==6
+          assert result['host_input_schedule_matched'] is True
+          assert result['guest_frame_pacing_matched_verified'] is False
+          print('ROM-free controlled native C adapter provenance verified')
+          PY
+          python3 tools/verify_nexium_audio_paired_artifacts.py \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-audio-comparison.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
+          python3 tools/verify_nexium_guest_ack_observability.py \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out bound-guest-ack-observability.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_ack_tick_trace.py' -v
+          python3 tools/verify_nexium_audio_ack_tick_trace.py \
+            --trace paired/baseline/guest-audio-ack-ticks.csv \
+            --report paired/baseline/guest-audio-stress-evidence.json \
+            --mode baseline --out paired-baseline-ack-tick-evidence.json
+          python3 tools/verify_nexium_audio_ack_tick_trace.py \
+            --trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --report paired/extra-poll/guest-audio-stress-evidence.json \
+            --mode extra-poll --out paired-extra-ack-tick-evidence.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          for group,name in [('baseline','paired-baseline-ack-tick-evidence.json'),
+                             ('extra-poll','paired-extra-ack-tick-evidence.json')]:
+              recorded=Path('paired')/group/'guest-audio-ack-tick-evidence.json'
+              fresh=Path(name)
+              assert json.loads(recorded.read_text())==json.loads(fresh.read_text())
+          print('Both actual guest per-tick ACK logs independently reverified')
+          PY
+          python3 -m unittest discover -s tests -p 'test_dino_guest_ack_trace_buffer.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_discovery_profile.py' -v
+          python3 tools/compare_nexium_guest_ack_discovery.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-ack-discovery-profile.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_fixed_ack_capacity_replay.py' -v
+          python3 tools/nexium_guest_fixed_ack_capacity_replay.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frozen-ack-capacity.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_fixed_ack_residence.py' -v
+          python3 tools/nexium_guest_fixed_ack_residence.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frozen-ack-fifo-residence.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_phase_skip_decomposition.py' -v
+          python3 tools/nexium_guest_frame_phase_skip_decomposition.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-phase-skip-decomposition.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_topology.py' -v
+          python3 tools/nexium_guest_frame_topology.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-topology.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_gap_burst_audit.py' -v
+          python3 tools/nexium_guest_frame_gap_burst_audit.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-gap-bursts.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_clock.py' -v
+          python3 tools/verify_nexium_guest_frame_clock.py \
+            --baseline-clock paired/baseline/guest-frame-clock.csv \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-clock paired/extra-poll/guest-frame-clock.csv \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-clock.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          from tools import verify_nexium_guest_frame_clock as v
+          for mode in ('baseline','extra-poll'):
+              recorded=json.loads((Path('paired')/mode/'guest-frame-clock-evidence.json').read_text())
+              fresh=v.verify_one(
+                  Path('paired')/mode/'guest-frame-clock.csv',
+                  Path('paired')/mode/'guest-audio-ack-ticks.csv',
+                  Path('paired')/mode/'guest-audio-stress-evidence.json',mode)
+              assert recorded==fresh
+          print('Both real guest frame clocks independently reverified before NRO-bound comparison')
+          PY
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_clock_phase_invariant.py' -v
+          python3 tools/nexium_guest_clock_phase_invariant.py \
+            --baseline-clock paired/baseline/guest-frame-clock.csv \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-clock paired/extra-poll/guest-frame-clock.csv \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-60hz-clock-phase-invariant.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_interval_pcm_bins.py' -v
+          python3 tools/nexium_guest_frame_interval_pcm_bins.py \
+            --baseline-clock paired/baseline/guest-frame-clock.csv \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-clock paired/extra-poll/guest-frame-clock.csv \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-interval-pcm-bins.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_audio_pressure_witness.py' -v
+          python3 tools/nexium_guest_audio_pressure_witness.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-queue-pressure-witness.json
+          # Optional DSP candidate is compiled/tested but never enabled in
+          # the normal NRO or either current real guest A/B configuration.
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_ramp.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
+          python3 tools/verify_nexium_audio_provenance_manifest.py \
+            --host-plan controlled-host-audout-plan.json \
+            --host-result controlled-host-audout-result.json \
+            --host-oracle controlled-host-audout-oracle.json \
+            --corpus-plan controlled-host-release-corpus-plan.json \
+            --corpus-result controlled-host-release-corpus-result.json \
+            --corpus-attestation controlled-host-release-corpus-attestation.json \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --guest-comparison paired-audio-comparison.json \
+            --out audio-two-domain-provenance-manifest.json
+      - name: Save descriptive result or inconclusive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-ne-xium-bound-audio-ab-comparison
+          path: |
+            paired-audio-comparison.json
+            controlled-host-audout-plan.json
+            controlled-host-audout-result.json
+            controlled-host-audout-oracle.json
+            controlled-host-release-corpus-plan.json
+            controlled-host-release-corpus-result.json
+            controlled-host-release-corpus-attestation.json
+            audio-two-domain-provenance-manifest.json
+            controlled-host-intertick-plan.json
+            controlled-host-intertick-result.json
+            controlled-host-intertick-attestation.json
+            controlled-host-capacity-bound.json
+            controlled-host-depth-tradeoff.json
+            controlled-host-occupancy-feedback.json
+            bound-guest-ack-observability.json
+            paired-baseline-ack-tick-evidence.json
+            paired-extra-ack-tick-evidence.json
+            paired-guest-ack-discovery-profile.json
+            paired-guest-frozen-ack-capacity.json
+            paired-guest-frozen-ack-fifo-residence.json
+            paired-guest-frame-phase-skip-decomposition.json
+            paired-guest-frame-topology.json
+            paired-guest-frame-gap-bursts.json
+            paired-guest-frame-clock.json
+            paired-guest-60hz-clock-phase-invariant.json
+            paired-guest-frame-interval-pcm-bins.json
+            paired-guest-queue-pressure-witness.json
+          if-no-files-found: warn
+          retention-days: 7

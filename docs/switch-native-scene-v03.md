@@ -93,3 +93,251 @@ game**. MAME capture + synchronized parity comparison remain necessary.
 - HD asset restoration. This remains a crisp native playback of original
   4-bit indexed graphics, not newly drawn HD art.
 - Validation on physical Switch hardware.
+
+## Stage 99 — shared CPS-1 native multi-size tile decoding
+
+The native Switch scene renderer now delegates Scroll1/2/3 planar pixel
+extraction to `cps1_tile_pixel()` in the same portable `source/cps1_tile.c`
+used for 16x16 sprites. This removes duplicate and potentially drifting
+ROM address/4-bit plane decode logic from `source/cps1_scene.c`.
+Separate native APIs `cps1_decode_tile8()` and `cps1_decode_tile32()`
+cover background tile sizes in addition to the existing 16x16 routine.
+Scroll1's tilemap-index bit 5 selects the left or right 4-byte half-row;
+strict bounds checks reject invalid geometry or unmapped tile codes.
+A failed tile read stays transparent in the scene renderer.
+
+The new opt-in `tools/cps1_private_multisize_tile_parity.py` operates
+only on a **user-owned local** original dino ZIP:
+
+~~~sh
+python3 tools/cps1_private_multisize_tile_parity.py /private/owned/dino.zip
+~~~
+
+It interleaves eight local graphics lanes into a 4-MiB CPS-1 region
+**in RAM only** and compares independently decoded 8x8-left,
+8x8-right, 16x16 and 32x32 pen indices with the same native C
+implementation used by the Switch renderer. Selection includes
+beginning/end, exact graphic-bank seam, even intervals and reproducible
+pseudorandom codes. The output includes only aggregate match counts,
+never private paths, SHA-256 hashes, original pixel data or extracted ROMs.
+
+The privately supplied original dino ZIP yielded **1,539 sampled tile
+variants**, **538,368 compared pen indices**, and **zero mismatches**.
+All sixteen 4-bit pen values were observed in every variant. Public CI
+runs 100% synthetic fixtures, catches deliberate reference-decoder
+errors, and exercises malformed ZIP and native out-of-range refusals.
+
+**Limitation:** this result verifies the sampled indexed tile-decode
+operations, not a game frame. It does not establish correct CPS-1
+runtime palette, tilemap VRAM, row-scroll timings, sprite buffering,
+VBlank, MAME game execution or Nintendo Switch hardware pixel parity.
+Original ROM contents and any raw derived sprites/scenes are not
+included in the public repository or CI.
+
+## Stage 100 — compare the actual native Switch compositor with controlled video state
+
+The first private **scene-level** parity tool is now available:
+
+~~~sh
+python3 tools/cps1_private_scene_compositor_parity.py /private/owned/dino.zip
+~~~
+
+It reads the eight original, privately held CPS-1 graphics ROM lanes
+**locally and in RAM**, builds the same `source/cps1_scene.c` plus
+`source/cps1_tile.c` used in the technical Nintendo Switch NRO as a
+temporary host library, and compares complete **384×224 RGBA frames**
+with the separately implemented Python `tools/cps1_frame.py` compositor.
+Four completely **synthetic control states** exercise layer ordering,
+Scroll1/2/3 tilemap placement, RGB palette pages and sprite colors,
+priority-mask sprite occlusion, transparency, horizontal/vertical flips,
+composite and overlapping sprites, viewport clipping and Scroll2
+rowscroll near a 1024-entry wrap.
+
+The original game contributes **only its graphics tile data**, never
+original video state, palette RAM or an emulator-captured frame.
+No private game pixels, screenshots, ROM contents, raw CRC/SHA values,
+user paths or generated RGBA frames are written out or sent to GitHub.
+The JSON includes fixed statuses and per-scenario aggregate mismatch
+counts only; public Actions run on fabricated eight-lane ZIP fixtures.
+An intentionally corrupted reference renderer is required to fail,
+guarding against accidental always-pass comparisons.
+
+Successful parity therefore supports *internal C/Python compositing
+consistency for these controlled scenes*, **not** reproduction of an
+original `dino` frame, MAME gameplay/VBlank accuracy, real palette
+history or Switch hardware framebuffer equivalence. The current
+MAME 0.289 ROM audit limitations remain unchanged.
+
+### Stage 100 — private original-ROM trial (no gameplay data published)
+
+The Stage 100 tool was actually executed in an isolated private Linux
+workspace using the **user-provided original dino ZIP** and the
+exact ROM-free native C source exported from GitHub Actions
+`cps1-scene-parity-source-rom-free`.
+
+- **4** controlled synthetic scenes at **384×224 RGBA**;
+- **344,064** pixel comparisons across Python and Nintendo Switch
+  source-level C renderers;
+- **0** RGBA pixel mismatches;
+- **752** pixels changed when **only** the CPS-1 sprite-priority masks
+  were altered while tilemaps, RGB palette, sprite list and layer order
+  were kept identical.
+
+Thus original game **graphics tiles** were consumed, but the scene
+registers/VRAM/palette/OBJ were synthetic. This is strictly internal
+compositor equivalence, **not an arcade original-game frame or proof
+of MAME sprite/VBlank chronology**. No proprietary ROM, derived
+full-frame image, original palette, or frame data was uploaded to the
+GitHub repo or CI; only a compact local numeric/Boolean result was
+retained. The code-only CI artifact is explicitly allowlisted and
+expires after three days.
+
+## Stage 101 — explicit palette, transparent-pen and multi-layer differential coverage
+
+The local private-native scene parity tool now runs **ten synthetic
+video-state scenarios** against the identical native Switch compositor
+and independent Python renderer. Only the graphic tile data may come
+from a privately owned original ROM; all scene registers, palette,
+OBJ lists and tilemap VRAM are generated, not captured from MAME.
+
+Six paired differential checks augment full-frame C/Python equality:
+
+- Mask changes must visibly alter sprite occlusion with Scroll2
+  immediately before sprites, as in Stage 100.
+- Setting *only* mask bit 15 for each of the four priority groups must
+  leave output unchanged: pen 15 is transparent, even if masked.
+- Selective masks with different pen patterns for each priority group
+  must visibly differ from the all-opaque-pen mask.
+- Changing only transparent-pen RGB entries (except explicit backdrop
+  entry 0xbff) must leave the whole frame unchanged.
+- Changing only the RGB palette channels for opaque pens must visibly
+  change the resulting frame.
+- Reordering Scroll1 and Scroll2 and then changing *only* the priority
+  masks must produce a visible sprite-occlusion difference with
+  **Scroll1** immediately before sprites. This guards against a
+  compositor that only works for one scroll-layer priority position.
+
+Coverage now fails closed when a required positive stimulus makes no
+observable change, when an invariant unexpectedly changes, or when
+any C/Python RGBA pixel comparison differs. It does not treat
+C/Python agreement alone as sufficient evidence.
+
+All extra cases and negative tests in public CI use **fabricated
+graphics only**. No original ROM files, reconstructed sprites,
+palette images, original game frames, or MAME captures are committed
+or exported. The earlier **344,064 zero-mismatch** Stage 100 private
+comparison remains historical evidence for four cases; it is **not**
+automatically upgraded to ten-case original-ROM evidence by these
+source changes. No actual original-game video frame, VBlank timing,
+Switch physical framebuffer parity or playable game is established.
+
+## Stage 102 — isolate all four sprite-priority register groups
+
+The controlled test matrix now contains **14 synthetic CPS-1 scenes**.
+Four extra variants start with the same Scroll2-before-sprites
+VRAM, sprite list, 3072 RGB colors and layer ordering, then clear
+**exactly one** mask register at a time. The other three register
+values remain 0x7fff. The native C renderer must produce a visibly
+different RGBA result from the all-groups-enabled baseline for
+**each** group 0, 1, 2 and 3. A ROM-free negative mutation test
+deliberately makes group 2's scenario identical to its baseline
+and confirms the run is **rejected**, even though both C and Python
+compositors still match pixel-for-pixel.
+
+This raises the complete frame comparison target to
+**1,204,224 pixels** (14 x 384 x 224) per input graphic region.
+It establishes only code-level test coverage on synthetic video
+states. Genuine user-owned ROM graphics must be tested separately
+in a private local execution environment to make any Stage 102
+real-graphics comparison claim. No private original game frames,
+source ROM data or emulator-side effects are stored on GitHub;
+runtime palette provenance, original buffered-OBJ timing, actual
+MAME game video and physical Nintendo Switch framebuffer parity
+remain unverified.
+
+## Stage 103 — fail closed on impure differential scene inputs
+
+The fourteen-scene native/Python comparison now verifies **input
+purity** as well as full pixel agreement and observable effects.
+All ten paired controls are checked before result publication:
+priority variants may change only the four relevant CPS-B masks;
+a single-group variant must change exactly its designated register;
+the pen-15 priority case may only add bit 15; transparent-pen
+palette variants may alter only palette entries at pen 15,
+excluding the explicit backdrop 0xbff; opaque-color variants
+may alter only nontransparent RGB entries. Every other scene
+field, including layer ordering, VRAM tilemap words, Scroll2
+rowscroll, scroll registers and buffered OBJ sprite data, must
+stay identical between members of a differential pair.
+
+An extra change is now visible in the fixed-schema report through
+differential_inputs_verified=false and necessarily refuses
+differential_coverage_verified or a successful parity status,
+even if both compositors agree on every generated pixel.
+ROM-free tests also mutate sprite data, tilemaps, layer control,
+palette entries, unknown fields and intentional single-group
+mask stimuli to check those refusals. The report still carries
+only fixed-code statuses and aggregate counts; it does not
+include private paths, input state, original game ROM bytes,
+reconstructed frames, sprites or full-resolution pixel output.
+
+This change is strictly synthetic controlled-state validation.
+It does not establish that any input came from an authentic
+MAME gameplay frame, observed VBlank, hardware sprite latch
+or the Nintendo Switch framebuffer. The earlier Stage 100
+four-case original-graphics comparison remains separate.
+
+## Stage 112 — native scene-enable schema validation
+
+The portable `source/cps1_scene.c` reader, used unchanged by the
+Nintendo Switch NRO, now accepts only **0** and **1** for each of
+the three Scroll1/2/3 enable bytes in the `CPS1SCN1` payload.
+The Python exporter already writes this canonical boolean encoding,
+but the native reader previously accepted any nonzero flag.
+
+This matters even for a scene with a **valid recomputed CRC32**:
+an invalid flag must not silently change an inactive tile layer
+into an active one when reading a local capture. The native loader
+returns false, leaves the caller's output scene entirely unchanged,
+and never renders an invalid scene. It preserves the existing strict
+reserved-byte check and all other binary layout fields.
+
+Two **ROM-free** native C regression tests compile the actual
+Switch C source on a Linux host, mutate each enable byte to
+2, 128 and 255 while recomputing the payload CRC32, assert
+fail-closed/no output mutation, and confirm all eight valid
+three-layer Boolean-enable combinations remain accepted.
+This does not prove original MAME frame timing, arcade game
+execution or physical Nintendo Switch framebuffer accuracy.
+
+## Stage 113 — refuse noncanonical embedded frames before sequence playback
+
+The native Nintendo Switch playback container `CPS1SEQ1` previously
+prevalidated each embedded `CPS1SCN1` scene magic, length, CRC32 and
+reserved byte, **but not the three layer-enable flag bytes**. Since
+Stage 112 made the stand-alone scene decoder reject flags other
+than `0` or `1`, a sequence with an altered, CRC-recomputed
+frame could pass `cps1_sequence_decode` and fail later only
+when that particular frame was selected.
+
+The native sequence loader now checks all three flags for every
+frame **at initial sequence load**, before it publishes the decoded
+sequence descriptor. The Python sequence exporter applies the
+same rule before writing a sequence. The input format remains
+unchanged and all valid Boolean layer configurations are supported.
+
+Two ROM-free regression tests compile the actual native Switch
+scene and sequence C sources on the host. They check 18 mutations
+across the first, middle and last frames, all three enable bytes,
+and two invalid values (`2` and `255`). Each mutation has
+**both the inner scene CRC and outer sequence CRC recomputed**
+to prove a rejection based on content semantics rather than
+a checksum mismatch. Tests also assert that failure leaves the
+caller-provided sequence descriptor untouched and that the
+Python exporter refuses the same frames. All eight valid layer
+enable combinations decode and replay through the sequence
+loader.
+
+This establishes stricter parsing of synthetic local replay data,
+not original MAME frame capture, game execution, emulator timing,
+or physical Switch hardware image parity.

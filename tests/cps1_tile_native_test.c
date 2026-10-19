@@ -35,6 +35,40 @@ int main(void) {
     for (unsigned i = 0; i < CPS1_TILE16_PIXELS; ++i)
         assert(pixels[i] == 0);
 
-    puts("PASS: CPS-1 native C 16x16 decoder, planes, rows, bounds and tile offsets");
+    uint8_t tile8[64] = {0};
+    uint8_t tile32[1024] = {0};
+    uint8_t pen = 99;
+    uint8_t full_region[512] = {0};
+    /* Scroll1 tilemap bit 5 selects the right 4-byte half-row. */
+    for (unsigned row=0;row<8u;++row) {
+        full_region[row*8u+0u]=255u; /* left half pen 8 */
+        full_region[row*8u+4u]=255u; /* right half pen 8 */
+        full_region[row*8u+7u]=255u; /* right half pen 9 */
+    }
+    assert(cps1_decode_tile8(full_region,sizeof(full_region),0,0,tile8));
+    for (unsigned i=0;i<64;++i) assert(tile8[i]==8u);
+    assert(cps1_decode_tile8(full_region,sizeof(full_region),0,32,tile8));
+    for (unsigned i=0;i<64;++i) assert(tile8[i]==9u);
+    assert(cps1_tile_pixel(full_region,sizeof(full_region),8u,0,32,
+                           7u,7u,&pen) && pen==9u);
+    assert(cps1_decode_tile32(full_region,sizeof(full_region),0,tile32));
+    assert(tile32[0]==8u);
+    assert(tile32[8]==9u);
+    assert(tile32[31]==9u); /* 32x32 row stride is 16 bytes; row1 test data overlaps x24 */
+    /* An unmapped code must fail without modifying the result. */
+    pen=99u;
+    assert(!cps1_tile_pixel(full_region,sizeof(full_region),8u,9u,0,
+                            0,0,&pen) && pen==99u);
+    assert(!cps1_tile_pixel(full_region,sizeof(full_region),24u,0,0,
+                            0,0,&pen) && pen==99u);
+    assert(!cps1_tile_pixel(full_region,sizeof(full_region),16u,0,0,
+                            16,0,&pen) && pen==99u);
+    assert(!cps1_decode_tile8(NULL,sizeof(full_region),0,0,tile8));
+    assert(!cps1_decode_tile8(full_region,63u,0,0,tile8));
+    assert(!cps1_decode_tile8(full_region,sizeof(full_region),8u,0,tile8));
+    assert(!cps1_decode_tile32(full_region,511u,0,tile32));
+    assert(!cps1_decode_tile32(full_region,sizeof(full_region),1u,tile32));
+
+    puts("PASS: CPS-1 native C 8x8/16x16/32x32 planes, half-row selection, bounds and decoding");
     return 0;
 }

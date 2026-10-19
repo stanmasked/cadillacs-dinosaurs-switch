@@ -21,7 +21,7 @@ except ModuleNotFoundError:
     )
 
 INCLUDE_ADDITION = (
-    '#include <atomic>\n#include <cstdio>\n#include <cstring>\n'
+    '#include <atomic>\n#include <cstdio>\n#include <cstring>\n#include <cstdlib>\n'
     'static std::atomic<unsigned long long> cps1_dino_obj_latch_events{0};\n'
 )
 LATCH_ADDITION = (

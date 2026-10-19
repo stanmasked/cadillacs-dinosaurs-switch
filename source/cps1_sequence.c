@@ -38,10 +38,18 @@ bool cps1_sequence_decode(const uint8_t *data, size_t length,
     for (unsigned i=0; i<count; ++i) {
         const uint8_t *frame=data+CPS1_SEQUENCE_HEADER_BYTES+
                              (size_t)i*CPS1_SCENE_FILE_BYTES;
+        /* Each embedded frame must obey the same canonical three
+         * Boolean layer-enable bytes as cps1_scene_decode. Merely
+         * checking the outer and inner CRCs permits a recomputed-CRC
+         * sequence that opens successfully but cannot replay a frame.
+         * Flags start at payload offset 4 controls + 12 scroll regs.
+         */
+        const uint8_t *flags=frame+16+4+12;
         if (memcmp(frame,"CPS1SCN1",8) ||
             le32(frame+8)!=CPS1_SCENE_PAYLOAD_BYTES ||
             crc32_region(frame+16,CPS1_SCENE_PAYLOAD_BYTES)!=le32(frame+12) ||
-            frame[16+4+12+3]!=0) /* reserved byte after 3 flags */
+            flags[0]>1u || flags[1]>1u || flags[2]>1u ||
+            flags[3]!=0) /* reserved byte after 3 flags */
             return false;
     }
     Cps1Sequence accepted={data,(uint16_t)count,(uint16_t)fps};

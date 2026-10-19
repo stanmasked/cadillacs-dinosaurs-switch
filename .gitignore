@@ -16,3 +16,24 @@ cps1-captures/
 *.reference-rgb24.bin
 *.mame-reference.png
 *.partial-snapshot.json
+
+# Other original game archive formats, runtime binaries and private workspaces
+*.7z
+*.rar
+*.chd
+*.iso
+*.cue
+*.rom
+*.gen
+*.nsp
+*.xci
+*.nca
+*.nes
+*.sfc
+*.gba
+*.gb
+*.gbc
+private-roms/
+private-captures/
+mame-roms/
+game-roms/

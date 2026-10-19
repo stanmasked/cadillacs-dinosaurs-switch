@@ -1,0 +1,27 @@
+name: Public repository ROM-free privacy gate
+
+# Runs on *every* push/PR, including README/docs-only changes. This is
+# defense-in-depth after Git upload, not an authorization to push ROMs.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs for the same event and PR/ref. Keep different
+# workflows, branches and manually dispatched checks independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tracked-source-privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out public source tree
+        uses: actions/checkout@v4
+      - name: Reject ROMs, game captures and unsafe staged blobs
+        run: python3 tools/check_public_tree_rom_free.py

@@ -1,0 +1,152 @@
+name: NeXium audout mid-batch A/B (experimental)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/mame-capture-crossprobe-session-id
+    paths:
+      - '.github/workflows/nexium-audio-mid-batch-ab.yml'
+      - 'source/**'
+      - 'tools/verify_nexium_audio_stress.py'
+      - 'tools/verify_nexium_audio_mid_batch_ab.py'
+      - 'tools/verify_nexium_audio_ab_build_symbols.py'
+      - 'tests/test_nexium_audio_ab_build_symbols.py'
+      - 'Makefile'
+      - 'tests/test_nexium_audio_stress.py'
+      - 'tests/test_nexium_audio_mid_batch_ab.py'
+
+permissions:
+  contents: read
+
+# Both branches compile the exact same revision. Only the explicit
+# DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL guest-only flag differs.
+# They execute independently; host timing and audio latency are NOT matched.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, extra]
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile ROM-free guest with selected experimental macro
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          if [[ "${{ matrix.variant }}" == "extra" ]]; then
+            make -j2 DEFINES="-DDINO_EMULATOR_SELFTEST -DDINO_AUDIO_EXPERIMENT_MID_BATCH_POLL"
+          else
+            make -j2 DEFINES=-DDINO_EMULATOR_SELFTEST
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          data=Path('cadillacs-dinosaurs-switch.nro').read_bytes()
+          assert data[0x10:0x14]==b'NRO0'
+          n=struct.unpack_from('<I',data,0x18)[0]
+          assert 0x80<=n<=len(data)
+          assert b'cadillacs-audio-stress.csv' in data
+          print('Both guests use unchanged 60 Hz synthesis and max two pending pages')
+          PY
+          # Verify the compiled ELF contains precisely the expected
+          # optional experimental function before running either guest.
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" \
+            -g --defined-only cadillacs-dinosaurs-switch.elf \
+            > audout-ab-defined-symbols.txt
+          python3 tools/verify_nexium_audio_ab_build_symbols.py \
+            --symbols audout-ab-defined-symbols.txt \
+            --variant "${{ matrix.variant }}"
+          sha256sum cadillacs-dinosaurs-switch.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "dino-mid-batch-${{ matrix.variant }}-nro"
+          path: cadillacs-dinosaurs-switch.nro
+          retention-days: 7
+          if-no-files-found: error
+
+  guest:
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, extra]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: "dino-mid-batch-${{ matrix.variant }}-nro"
+          path: emulator-input
+      - name: Validate guest replay test harness and CSV parser
+        run: |
+          bash -n tools/nexium_guest_replay_probe.sh
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+      - name: Install ROM-free NeXium runtime prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0 \
+            pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Execute actual guest ARM64 NRO with external host timing
+        run: |
+          bash tools/nexium_guest_replay_probe.sh \
+            emulator-input/cadillacs-dinosaurs-switch.nro \
+            emulator-evidence
+      - name: Preserve guest-authored release-count observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "dino-mid-batch-${{ matrix.variant }}-witness"
+          path: |
+            emulator-evidence/result.txt
+            emulator-evidence/metadata.txt
+            emulator-evidence/guest-audio-stress-evidence.json
+            emulator-evidence/guest-audio-stress.csv
+            emulator-evidence/guest-hid-timeline.csv
+            emulator-evidence/guest-hid-timeline-evidence.json
+            emulator-evidence/guest-controller-evidence.json
+            emulator-evidence/frame-pixels.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  compare:
+    needs: guest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'dino-mid-batch-*-witness'
+          path: experiment
+      - name: Compare verified ROM-free metadata without causal claims
+        run: |
+          python3 tools/compare_nexium_audio_stress_runs.py \
+            --report experiment/dino-mid-batch-baseline-witness/guest-audio-stress-evidence.json \
+            --report experiment/dino-mid-batch-extra-witness/guest-audio-stress-evidence.json \
+            --out experiment/comparison.json
+          python3 tools/verify_nexium_audio_mid_batch_ab.py \
+            --baseline experiment/dino-mid-batch-baseline-witness/guest-audio-stress-evidence.json \
+            --experimental experiment/dino-mid-batch-extra-witness/guest-audio-stress-evidence.json \
+            --out experiment/ab-descriptive.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dino-mid-batch-ab-descriptive-report
+          path: |
+            experiment/comparison.json
+            experiment/ab-descriptive.json
+          retention-days: 7
+          if-no-files-found: warn

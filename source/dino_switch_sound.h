@@ -1,0 +1,54 @@
+#ifndef DINO_SWITCH_SOUND_INCLUDED_H
+#define DINO_SWITCH_SOUND_INCLUDED_H
+#include <stdbool.h>
+#include <stdint.h>
+
+/* Optional libnx audout adapter. Device errors degrade to silent gameplay;
+ * the portable 60 Hz simulation must never wait for audio hardware.
+ */
+bool dino_switch_sound_open(void);
+void dino_switch_sound_step(uint32_t events);
+void dino_switch_sound_close(void);
+#if defined(DINO_EMULATOR_SELFTEST) && \
+    defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
+/* Deliberately excluded from ordinary Switch builds. Only experiments. */
+void dino_switch_sound_guest_mid_batch_poll(void);
+#endif
+/* The checksum covers every generated 48kHz PCM tick before queueing.
+ * It does NOT show that emulator/console speakers actually played it. */
+uint64_t dino_switch_sound_pcm_witness(void);
+uint32_t dino_switch_sound_pcm_ticks(void);
+#ifdef DINO_EMULATOR_SELFTEST
+uint32_t dino_switch_sound_guest_mid_batch_enabled(void);
+uint32_t dino_switch_sound_guest_mid_batch_calls(void);
+uint32_t dino_switch_sound_guest_mid_batch_releases(void);
+#endif
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+/* Read-only counts for a separate opt-in guest NRO proof. They are
+ * diagnostic, not an audible-quality metric or service timestamp. */
+uint32_t dino_switch_sound_guest_resume_ramp_applications(void);
+uint32_t dino_switch_sound_guest_resume_ramp_pending(void);
+#endif
+
+/* Read-only on-device diagnostics, not a measurement of actual latency.
+ * They intentionally contain no audio PCM, private file paths or ROM data. */
+typedef struct {
+    uint32_t simulated_ticks;
+    uint32_t audio_errors;
+    uint32_t pending;
+    uint32_t submitted;
+    uint32_t released;
+    uint32_t skipped;
+    uint8_t active;
+    uint8_t queue_valid;
+    /* Queue admission reasons, not measured audio output. */
+    uint32_t full_queue_skips;
+    /* Full before release sweep, and full cured by that sweep. */
+    uint32_t pre_poll_full_steps;
+    uint32_t pre_poll_recovered_steps;
+    uint32_t inactive_backend_skips;
+    uint32_t unexpected_slot_skips;
+    uint32_t max_consecutive_skips;
+} DinoSoundDiagnostics;
+void dino_switch_sound_diagnostics(DinoSoundDiagnostics *out);
+#endif

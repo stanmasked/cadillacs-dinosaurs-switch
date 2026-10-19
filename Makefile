@@ -17,9 +17,9 @@ SOURCES := source
 DATA :=
 INCLUDES :=
 
-APP_TITLE := CPS-1 Frame Sequence Inspector
+APP_TITLE := CPS-1 Research Arena (ROM-Free)
 APP_AUTHOR := Community Research Project
-APP_VERSION := 0.5.0
+APP_VERSION := 0.9.4
 
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS := -g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES)

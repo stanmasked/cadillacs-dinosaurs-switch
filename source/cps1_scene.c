@@ -37,7 +37,14 @@ bool cps1_scene_decode(const uint8_t *blob, size_t length, Cps1Scene *out) {
     s->video_control=get_u16(p); p+=2;
     for (int i=0;i<3;++i) { s->scrollx[i]=get_u16(p);p+=2; }
     for (int i=0;i<3;++i) { s->scrolly[i]=get_u16(p);p+=2; }
-    for (int i=0;i<3;++i) { s->enabled[i]=*p++; }
+    /* The exported binary schema encodes each layer enable as exactly
+     * 0 or 1. Refuse noncanonical values even with a recomputed CRC:
+     * interpreting arbitrary nonzero bytes as true hides corrupt input.
+     */
+    for (int i=0;i<3;++i) {
+        if (*p > 1u) { free(s);return false; }
+        s->enabled[i]=*p++;
+    }
     if (*p++ != 0) { free(s);return false; }
     for (int i=0;i<4;++i) { s->priority[i]=get_u16(p);p+=2; }
     s->rowscroll_offset=get_u16(p);p+=2;
@@ -69,19 +76,14 @@ static unsigned tile_size(int layer) { return 8u << layer; }
 static uint8_t gfx_pen(const uint8_t *gfx, size_t gfx_bytes,
                        int layer, unsigned code, unsigned tile_index,
                        unsigned x, unsigned y) {
-    unsigned side=tile_size(layer);
-    size_t stride=side==8?64u:(size_t)side*side/2u;
-    size_t slot_count=gfx_bytes/stride;
-    unsigned raw_limit=side==8?0xffffu:(side==16?0x7fffu:0x1fffu);
-    if (code>raw_limit || code>=slot_count) return 15;
-    size_t tile_base=(size_t)code*stride;
-    unsigned row_stride=side==8?8u:side/2u;
-    unsigned half=side==8 && (tile_index&32u)?4u:0u;
-    size_t offset=tile_base+(size_t)y*row_stride+half+(x/8u)*4u;
-    unsigned bit=7u-(x&7u);
-    uint8_t pen=0;
-    for (unsigned p=0;p<4;++p)
-        pen |= (uint8_t)(((gfx[offset+p]>>bit)&1u) << (3u-p));
+    uint8_t pen=15u;
+    /* Invalid CD63B ROM addresses remain transparent; never index
+     * beyond the interleaved graphics region or duplicate bit logic.
+     * This shared source also provides ROM-free host/real-ROM parity
+     * checks for all three CPS-1 background tile formats.
+     */
+    (void)cps1_tile_pixel(gfx,gfx_bytes,tile_size(layer),code,
+                          tile_index,x,y,&pen);
     return pen;
 }
 

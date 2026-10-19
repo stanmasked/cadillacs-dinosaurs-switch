@@ -22,6 +22,11 @@ jobs:
       - name: Check out our ROM-free probe tooling
         uses: actions/checkout@v4
 
+      - name: Run session-aware ROM-free verifier regressions
+        run: |
+          python3 -m unittest discover -s tests -p test_mame_dino_binary_verify.py -v
+          python3 -m unittest discover -s tests -p test_mame_private_dino_session.py -v
+
       - name: Install official Debian/Ubuntu MAME build prerequisites
         run: |
           set -euo pipefail
@@ -83,9 +88,65 @@ jobs:
             exit 1
           fi
           echo "Instrumented real MAME built successfully: $binary"
-          # Verify the real MAME 0.289 driver XML AND that the freshly
-          # compiled CPS-1 video ELF includes our V2 latch-probe format.
+          # Require the original 0.289 dino XML, freshly compiled
+          # CPS-1 ELF .o AND all three probe markers in the final linked
+          # executable. A stale V2-only executable must fail closed.
           # No original game ROMs, screenshots or emulator binaries uploaded.
           python3 "$GITHUB_WORKSPACE/tools/mame_dino_binary_verify.py" \
             "$binary" "$RUNNER_TEMP/mame0289"
           echo "Verified genuine dino driver and instrumented CPS-1 ELF"
+
+      - name: Validate real MAME frontend rejects an empty ROM directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mame0289"
+          binary="$(find . -maxdepth 1 -type f -executable \
+            -name '*dino*' -print -quit)"
+          test -n "$binary"
+          empty_rompath="$RUNNER_TEMP/rom-free-empty-set"
+          mkdir -m 700 "$empty_rompath"
+          # This is a NEGATIVE integration smoke test, deliberately run
+          # against an empty temporary ROM directory. No game image data
+          # is ever downloaded, used, printed or attached to artifacts.
+          if "$binary" dino -verifyroms -rompath "$empty_rompath" \
+               -noreadconfig > "$RUNNER_TEMP/rom-free-negative-smoke.log" 2>&1; then
+            echo "Unexpected success verifying an absent dino ROM set" >&2
+            exit 1
+          fi
+          echo "Genuine MAME frontend rejected missing private ROMs as expected"
+          # Do not print the MAME frontend's potentially verbose messages.
+          rm -f "$RUNNER_TEMP/rom-free-negative-smoke.log"
+
+      - name: Package only the instrumented open-source MAME Linux executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mame0289"
+          binary="$(find . -maxdepth 1 -type f -executable \
+            -name '*dino*' -print -quit)"
+          test -n "$binary"
+          output="$RUNNER_TEMP/rom-free-dino-linux"
+          mkdir -m 700 "$output"
+          install -m 0755 "$binary" "$output/dino"
+          sha256sum "$output/dino" > "$output/dino.sha256"
+          cat > "$output/README.txt" <<'EOF'
+          MAME 0.289 CPS-1 dino — Linux executable, NO GAME ROMS.
+          Source: official mamedev/mame tag mame0289.
+          Pinned original source commit: f34f02505e32c1993c6a782b6814232cbfc74e36
+          CPS-1 instrumentation: repository tools/mame_obj_source_probe.py
+          This is a ROM-free build artifact only, NOT a playable game.
+          Keep the game ROM private and outside the GitHub repository.
+          The strict private launcher also expects a matching full MAME
+          source/build tree with instrumented CPS-1 object files, not
+          merely this executable archive alone.
+          License and notices: refer to upstream MAME source tree.
+          EOF
+
+      - name: Preserve ROM-free instrumented MAME Linux executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: mame0289-instrumented-dino-linux-rom-free
+          path: ${{ runner.temp }}/rom-free-dino-linux/
+          if-no-files-found: error
+          retention-days: 7

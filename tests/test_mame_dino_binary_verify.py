@@ -5,10 +5,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.mame_dino_binary_verify import (
-    MAX_XML_BYTES, PROBE_COMPILED_MARKER, inspect_binary, main,
+    MAX_XML_BYTES, PROBE_COMPILED_MARKER, SESSION_COMPILED_MARKER,
+    SESSION_ENV_COMPILED_MARKER, inspect_binary, main,
     validate_dino_xml, verify_compiled_cps1_video_object,
+    verify_linked_probe_markers,
 )
 
 
@@ -29,7 +32,8 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         self.build.mkdir(parents=True)
         self.obj = self.build / 'cps1_v.o'
         self.obj.write_bytes(b'\x7fELF' + bytes(124) +
-                             PROBE_COMPILED_MARKER)
+                             PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER +
+                             SESSION_ENV_COMPILED_MARKER)
 
     def test_valid_0289_dino_xml_keeps_game_parity_false(self):
         result = validate_dino_xml(fake_xml())
@@ -67,8 +71,12 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         meta = verify_compiled_cps1_video_object(self.root)
         self.assertTrue(meta['compiled_cps1_video_object'])
         self.assertEqual(meta['compiled_cps1_video_object_bytes'],
-                         128 + len(PROBE_COMPILED_MARKER))
+                         128 + len(PROBE_COMPILED_MARKER) +
+                         len(SESSION_COMPILED_MARKER) +
+                         len(SESSION_ENV_COMPILED_MARKER))
         self.assertTrue(meta['compiled_instrumented_latch_v2_format'])
+        self.assertTrue(meta['compiled_session_label_probe_marker'])
+        self.assertTrue(meta['compiled_session_environment_probe_marker'])
         self.assertFalse(meta['instrumentation_runtime_verified'])
 
     def test_rejects_missing_duplicate_invalid_or_symlinked_objects(self):
@@ -78,7 +86,8 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_compiled_cps1_video_object(self.root)
         self.obj.write_bytes(b'\x7fELF' + bytes(124) +
-                             PROBE_COMPILED_MARKER)
+                             PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER +
+                             SESSION_ENV_COMPILED_MARKER)
         duplicate = self.root / 'cps1_v.o'
         duplicate.write_bytes(self.obj.read_bytes())
         with self.assertRaisesRegex(ValueError, 'exactly one'):
@@ -93,6 +102,57 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
         self.obj.write_bytes(b'\x7fELF' + bytes(300))
         with self.assertRaisesRegex(ValueError, 'lacks the generated'):
             verify_compiled_cps1_video_object(self.root)
+
+    def test_rejects_pre_session_v2_elf_even_with_latch_marker(self):
+        self.obj.write_bytes(b'\x7fELF' + bytes(124) +
+                             PROBE_COMPILED_MARKER)
+        with self.assertRaisesRegex(ValueError, 'session label sidecar'):
+            verify_compiled_cps1_video_object(self.root)
+
+    def test_rejects_session_sidecar_marker_without_environment_lookup(self):
+        self.obj.write_bytes(b'\x7fELF' + bytes(124) +
+                             PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER)
+        with self.assertRaisesRegex(ValueError, 'session environment lookup'):
+            verify_compiled_cps1_video_object(self.root)
+
+    def test_linked_elf_scanner_accepts_all_markers_across_chunk_boundaries(self):
+        elf = self.root / 'linked-dino'
+        elf.write_bytes(b'\x7fELF' + bytes(124) +
+                        PROBE_COMPILED_MARKER + bytes(3) +
+                        SESSION_COMPILED_MARKER + bytes(5) +
+                        SESSION_ENV_COMPILED_MARKER)
+        with patch('tools.mame_dino_binary_verify.SCAN_CHUNK_BYTES', 11):
+            result = verify_linked_probe_markers(elf)
+        self.assertTrue(result['linked_dino_executable_probe_markers'])
+        self.assertTrue(result['linked_session_label_probe_marker'])
+        self.assertTrue(result['linked_session_environment_probe_marker'])
+        self.assertFalse(result['linked_probe_runtime_verified'])
+
+    def test_linked_elf_rejects_old_v2_or_missing_environment_marker(self):
+        elf = self.root / 'linked-dino'
+        for payload in (PROBE_COMPILED_MARKER,
+                        PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER):
+            elf.write_bytes(b'\x7fELF' + bytes(124) + payload)
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, 'session-aware'):
+                    verify_linked_probe_markers(elf)
+
+    def test_linked_elf_rejects_non_elf_and_symlink(self):
+        elf = self.root / 'linked-dino'
+        elf.write_bytes(b'not ELF' + bytes(124) +
+                        PROBE_COMPILED_MARKER + SESSION_COMPILED_MARKER +
+                        SESSION_ENV_COMPILED_MARKER)
+        with self.assertRaisesRegex(ValueError, 'not ELF'):
+            verify_linked_probe_markers(elf)
+        link = self.root / 'linked-dino-symlink'
+        link.symlink_to(elf)
+        with self.assertRaisesRegex(ValueError, 'symlinked'):
+            verify_linked_probe_markers(link)
+
+    def test_valid_driver_and_object_do_not_certify_unlinked_executable(self):
+        binary = self.make_fake_binary(fake_xml())
+        with self.assertRaisesRegex(ValueError, 'not ELF'):
+            inspect_binary(binary, self.root)
 
     def test_auxiliary_nonrunnable_mame_devices_are_valid(self):
         devices = ('<machine name="ym2151" sourcefile="devices/sound/ymopm.cpp" '
@@ -136,12 +196,18 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
 
     def test_end_to_end_subprocess_accepts_runnable_dino_metadata(self):
         binary = self.make_fake_binary(fake_xml())
-        result = inspect_binary(binary, self.root)
-        self.assertTrue(result['compiled_cps1_video_object'])
-        self.assertTrue(result['listxml_validated'])
-        self.assertFalse(result['instrumentation_runtime_verified'])
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(main([str(binary), str(self.root)]), 0)
+        # Synthetic script exercises XML/CLI handling; it is not an ELF.
+        # The real linked-ELF scanner is independently tested above and
+        # exercised on official upstream MAME by full-tree GitHub Actions.
+        with patch('tools.mame_dino_binary_verify.verify_linked_probe_markers',
+                   return_value={'linked_dino_executable_probe_markers': True}):
+            result = inspect_binary(binary, self.root)
+            self.assertTrue(result['compiled_cps1_video_object'])
+            self.assertTrue(result['linked_dino_executable_probe_markers'])
+            self.assertTrue(result['listxml_validated'])
+            self.assertFalse(result['instrumentation_runtime_verified'])
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main([str(binary), str(self.root)]), 0)
 
     def test_cli_rejects_bad_exit_xml_and_nonexistent_binary(self):
         for xml, rc in ((fake_xml(), 1), (fake_xml(name='dinou'), 0)):
@@ -174,7 +240,9 @@ class MameDinoBinaryVerificationTests(unittest.TestCase):
             f'sys.stdout.buffer.write({fake_xml()!r})\n'
             'sys.stderr.buffer.write(b"warning " * 400000)\n')
         binary.chmod(0o755)
-        meta = inspect_binary(binary, self.root)
+        with patch('tools.mame_dino_binary_verify.verify_linked_probe_markers',
+                   return_value={'linked_dino_executable_probe_markers': True}):
+            meta = inspect_binary(binary, self.root)
         self.assertTrue(meta['listxml_validated'])
         self.assertTrue(meta['compiled_instrumented_latch_v2_format'])
         self.assertFalse(meta['frame_sync_verified'])

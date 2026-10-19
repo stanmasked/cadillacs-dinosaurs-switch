@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Launch a user-owned dino game in a locally built, instrumented MAME 0.289.
 
-No ROMs or captured game data are bundled, uploaded or printed. This program
-never accesses ROM contents directly. It requires an existing private
-workspace outside the project, ROM directory and upstream MAME build tree.
+No ROMs or captured game data are bundled, uploaded or printed. Guarded
+and verify-only modes locally hash original ROM bytes; no hashes escape.
+The private workspace, ROM directory and MAME tree stay outside this repo.
 
 The real game must be operated/closed locally by the user. Success is only
 a complete, locally verified 6-frame diagnostic capture; NEVER frame parity.
@@ -13,6 +13,7 @@ import contextlib
 import io
 import json
 import os
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -25,6 +26,18 @@ try:
     from tools.mame_multistream_interval_evidence import multistream_interval_evidence
     from tools.mame_private_capture_stability import (private_capture_file_snapshot,
                                                      require_stable_private_capture)
+    from tools.mame_capture_session_binding import require_private_capture_session
+    from tools.mame_private_interval_consistency import private_nominal_interval_consistency
+    from tools.mame_private_capture_triage import private_capture_triage
+    from tools.mame_private_rom_entry import require_private_dino_entry
+    from tools.mame_private_rom_metadata import (snapshot_private_dino_rom_entries,
+                                                 require_stable_private_dino_rom_entries)
+    from tools.mame_private_rom_content import (snapshot_private_dino_rom_content,
+                                                require_stable_private_dino_rom_content)
+    from tools.mame_private_cli_errors import write_private_failure
+    from tools.mame_private_capture_failure_summary import safe_capture_failure_report
+    from tools.mame_private_auto_exit_evidence import private_mame_auto_exit_log_observation
+    from tools.mame_private_auto_exit_reconciliation import reconcile_auto_exit_with_capture
 except ModuleNotFoundError:
     from mame_dino_binary_verify import inspect_binary
     from mame_obj_sequence_alignment import main as alignment_main
@@ -32,12 +45,25 @@ except ModuleNotFoundError:
     from mame_multistream_interval_evidence import multistream_interval_evidence
     from mame_private_capture_stability import (private_capture_file_snapshot,
                                                require_stable_private_capture)
+    from mame_capture_session_binding import require_private_capture_session
+    from mame_private_interval_consistency import private_nominal_interval_consistency
+    from mame_private_capture_triage import private_capture_triage
+    from mame_private_rom_entry import require_private_dino_entry
+    from mame_private_rom_metadata import (snapshot_private_dino_rom_entries,
+                                           require_stable_private_dino_rom_entries)
+    from mame_private_rom_content import (snapshot_private_dino_rom_content,
+                                          require_stable_private_dino_rom_content)
+    from mame_private_cli_errors import write_private_failure
+    from mame_private_capture_failure_summary import safe_capture_failure_report
+    from mame_private_auto_exit_evidence import private_mame_auto_exit_log_observation
+    from mame_private_auto_exit_reconciliation import reconcile_auto_exit_with_capture
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LUA_SCRIPT = PROJECT_ROOT / 'tools' / 'mame_cps1_capture.lua'
 CAPTURE_DIR_NAME = 'cps1-captures'
 REPORT_NAME = 'dino-latch-diagnostic.json'
 LOG_NAME = 'dino-mame-private-session.log'
+VERIFY_LOG_NAME = 'dino-mame-private-rom-verification.log'
 FIRST_FRAME = 900
 FRAME_COUNT = 6
 FRAME_STEP = 2
@@ -49,25 +75,43 @@ def _separate(left, right):
                 right.is_relative_to(left))
 
 
-def preflight(mame, mame_source_tree, rom_dir, workspace):
-    """Check only filesystem and path isolation; do not execute/read ROMs."""
+def preflight_mame_build(mame, mame_source_tree):
+    """Check the local emulator build paths; require no ROM or workspace."""
     # Refuse executable symlinks before resolve() erases that fact.
     if Path(mame).expanduser().is_symlink():
         raise ValueError('MAME executable may not be a symlink')
-    paths = tuple(Path(x).expanduser().resolve() for x in (
-        mame, mame_source_tree, rom_dir, workspace))
-    binary, tree, roms, private = paths
+    binary, tree = (Path(x).expanduser().resolve()
+                    for x in (mame, mame_source_tree))
     if (not binary.is_file() or binary.is_symlink() or
             not os.access(binary, os.X_OK)):
         raise ValueError('Instrumented MAME executable is missing or not executable')
     if not tree.is_dir() or not (tree / 'src/mame/capcom/cps1_v.cpp').is_file():
         raise ValueError('Full upstream MAME source directory is missing')
+    if not _separate(tree, PROJECT_ROOT):
+        raise ValueError('Full MAME source tree must stay outside the project')
+    # A modified executable accidentally stored inside the public Git
+    # checkout could later be committed by a broad git add. Prevent this
+    # even when its associated build/source tree is elsewhere.
+    if not _separate(binary, PROJECT_ROOT):
+        raise ValueError('MAME executable must stay outside the project')
+    return binary, tree
+
+
+def preflight(mame, mame_source_tree, rom_dir, workspace):
+    """Check only filesystem and path isolation; do not execute/read ROMs."""
+    binary, tree = preflight_mame_build(mame, mame_source_tree)
+    roms, private = (Path(x).expanduser().resolve()
+                     for x in (rom_dir, workspace))
     if not roms.is_dir():
         raise ValueError('Private ROM directory is missing')
-    # On a public repository, even an accidentally added local ROM or
-    # modified upstream MAME source tree could be exposed. Keep BOTH out.
-    if (not _separate(roms, PROJECT_ROOT) or
-            not _separate(tree, PROJECT_ROOT)):
+    # Do not place commercially owned ROM data in the disposable MAME
+    # source/build tree, which may be copied, cleaned or archived later.
+    # Also refuse a ROM tree that contains the MAME executable itself.
+    if not _separate(roms, tree) or not _separate(roms, binary):
+        raise ValueError('Private ROM directory must be separate from MAME build')
+    # On a public repository, even an accidentally added local ROM
+    # could be exposed; keep original game content out of the repo.
+    if not _separate(roms, PROJECT_ROOT):
         raise ValueError('ROM and full MAME source trees must stay outside the project')
     if not private.is_dir():
         raise ValueError('Private workspace directory must already exist')
@@ -85,16 +129,96 @@ def preflight(mame, mame_source_tree, rom_dir, workspace):
     return binary, tree, roms, private
 
 
-def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
-                            *, timeout_seconds=1800, preflight_only=False):
+def _require_session_aware_build(binary, tree):
+    """ROM-free verified MAME driver, compiler object and linked executable."""
+    identity = inspect_binary(binary, tree)
+    if (identity.get('driver') != 'dino' or
+            identity.get('listxml_validated') is not True or
+            identity.get('compiled_instrumented_latch_v2_format') is not True or
+            identity.get('compiled_session_label_probe_marker') is not True or
+            identity.get('compiled_session_environment_probe_marker') is not True or
+            identity.get('linked_dino_executable_probe_markers') is not True):
+        raise ValueError('MAME identity/session-aware linked probe verification failed')
+    return identity
+
+
+def _run_private_mame_rom_verification(binary, roms, private, timeout_seconds):
+    """Run real MAME ROM audit locally; never print/parse potentially private output.
+
+    Requires validated private paths and linked MAME identity from caller.
+    The exclusive 0600 log survives failure for local inspection only.
+    """
+    verify_log = private / VERIFY_LOG_NAME
+    if verify_log.exists() or verify_log.is_symlink():
+        raise ValueError('Private MAME ROM verification log already exists')
+    args = [
+        str(binary), 'dino', '-verifyroms',
+        '-rompath', str(roms), '-noreadconfig',
+    ]
+    # No game session token is needed for -verifyroms. Do not pass an
+    # inherited label accidentally across separate local invocations.
+    verify_env = os.environ.copy()
+    verify_env.pop('CPS1_DINO_CAPTURE_SESSION', None)
+    try:
+        fd = os.open(
+            verify_log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'wb') as log:
+            process = subprocess.run(
+                args, cwd=private, stdout=log, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, env=verify_env,
+                timeout=timeout_seconds, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(
+            'Private MAME ROM verification timed out; inspect private log') from exc
+    except OSError as exc:
+        raise ValueError(
+            'Private MAME ROM verification could not start; inspect private log') from exc
+    if process.returncode != 0:
+        raise ValueError(
+            'Private MAME ROM verification failed; inspect private log')
+    return True
+
+
+def execute_private_capture(mame, mame_source_tree, rom_dir=None, workspace=None,
+                            *, timeout_seconds=1800, preflight_only=False,
+                            verify_build_only=False,
+                            check_launch_readiness=False,
+                            verify_private_romset_only=False,
+                            verify_private_romset_before_capture=False,
+                            auto_exit_after_capture=False):
     """Run full MAME locally, then audit all private files with strict checks."""
     if (type(timeout_seconds) is not int or
             not 30 <= timeout_seconds <= 3600):
         raise ValueError('Session timeout must be 30..3600 seconds')
     if type(preflight_only) is not bool:
         raise ValueError('preflight_only must be boolean')
-    binary, tree, roms, private = preflight(
-        mame, mame_source_tree, rom_dir, workspace)
+    if type(verify_build_only) is not bool:
+        raise ValueError('verify_build_only must be boolean')
+    if type(check_launch_readiness) is not bool:
+        raise ValueError('check_launch_readiness must be boolean')
+    if type(verify_private_romset_only) is not bool:
+        raise ValueError('verify_private_romset_only must be boolean')
+    if type(verify_private_romset_before_capture) is not bool:
+        raise ValueError('verify_private_romset_before_capture must be boolean')
+    if type(auto_exit_after_capture) is not bool:
+        raise ValueError('auto_exit_after_capture must be boolean')
+    if sum((preflight_only, verify_build_only, check_launch_readiness,
+            verify_private_romset_only, verify_private_romset_before_capture)) > 1:
+        raise ValueError('Choose one ROM-free preflight mode')
+    if auto_exit_after_capture and (
+            preflight_only or verify_build_only or
+            check_launch_readiness or verify_private_romset_only):
+        raise ValueError('Auto exit is only available during private game capture')
+    # A ROM-free build check must work before any owned ROM or private
+    # capture workspace exists. Preserve the old four-path form, with its
+    # full isolation check, for callers that still supply both paths.
+    if verify_build_only and rom_dir is None and workspace is None:
+        binary, tree = preflight_mame_build(mame, mame_source_tree)
+    else:
+        if rom_dir is None or workspace is None:
+            raise ValueError('Game capture requires both private ROM and workspace paths')
+        binary, tree, roms, private = preflight(
+            mame, mame_source_tree, rom_dir, workspace)
     if preflight_only:
         return {
             'status': 'FILESYSTEM_PREFLIGHT_ONLY',
@@ -104,19 +228,99 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             'pixel_parity_eligible': False,
         }
 
+    # The more demanding ROM-free mode checks -listxml and both build
+    # artifacts, without creating output directories or starting dino.
+    # It intentionally does not report private source paths or ELF hashes.
+    if verify_build_only:
+        _require_session_aware_build(binary, tree)
+        return {
+            'status': 'ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED',
+            'game_executed': False,
+            'capture_verified': False,
+            'linked_probe_runtime_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
+    # A dry-run checklist for the first local capture. This invokes the
+    # driver's -listxml path, not original game emulation or archive reads.
+    # The found game-entry name/size is deliberately excluded from output.
+    if check_launch_readiness:
+        _require_session_aware_build(binary, tree)
+        entry = require_private_dino_entry(roms)
+        return {
+            'status': 'PRIVATE_DINO_LAUNCH_PREFLIGHT_ONLY',
+            'compiled_session_probe_elf_checked': True,
+            'private_rom_entry_observed': entry['game_set_entry_observed'],
+            'rom_file_bytes_read': False,
+            'rom_integrity_verified': False,
+            'rom_set_completeness_verified': False,
+            'game_executed': False,
+            'capture_verified': False,
+            'linked_probe_runtime_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
+    # Verify *privately held* real game assets with the official MAME
+    # frontend without ever starting an emulated game. Python also
+    # locally computes byte digests for stability; these stay in memory.
+    # MAME's verbose output stays in a 0600 local log.
+    if verify_private_romset_only:
+        _require_session_aware_build(binary, tree)
+        rom_before = snapshot_private_dino_rom_content(roms)
+        _run_private_mame_rom_verification(binary, roms, private, timeout_seconds)
+        require_stable_private_dino_rom_content(roms, rom_before)
+        return {
+            'status': 'PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED',
+            'diagnostic_only': True,
+            'mame_verifyroms_exit_zero': True,
+            'game_set_entry_observed': True,
+            'private_rom_metadata_stable_after_audit': True,
+            'private_rom_content_sha256_stable_after_audit': True,
+            'rom_bytes_read_by_python': True,
+            'mame_reads_private_roms_locally': True,
+            'rom_authenticity_independently_verified': False,
+            'original_game_authenticity_verified': False,
+            'game_executed': False,
+            'capture_verified': False,
+            'linked_probe_runtime_verified': False,
+            'frame_sync_verified': False,
+            'pixel_parity_eligible': False,
+        }
+
     # Real upstream driver and instrumented ELF identity. This only runs
     # -listxml, not any arcade game, and never loads ROM bytes.
-    identity = inspect_binary(binary, tree)
-    if (identity.get('driver') != 'dino' or
-            identity.get('compiled_instrumented_latch_v2_format') is not True):
-        raise ValueError('MAME identity/compiled V2 probe verification failed')
+    _require_session_aware_build(binary, tree)
 
+    # Only an explicitly requested same-invocation audit can gate the real
+    # MAME capture. Existing verify logs are never used as proof: they could
+    # describe older ROM contents or a different executable. Audit before
+    # allocating the game session token or creating any capture files.
+    rom_before = None
+    if verify_private_romset_before_capture:
+        rom_before = snapshot_private_dino_rom_content(roms)
+        _run_private_mame_rom_verification(binary, roms, private, timeout_seconds)
+        # If the game set was modified during the audit, no game session
+        # token or capture directory is ever created.
+        require_stable_private_dino_rom_content(roms, rom_before)
+
+    # The sole launcher-issued random label is passed to both Lua and C++
+    # as process environment, never printed, logged or saved as a nonce.
+    session_id = secrets.token_hex(16)
+    launch_env = os.environ.copy()
+    launch_env['CPS1_DINO_CAPTURE_SESSION'] = session_id
+    # Never allow an inherited environment variable to change the
+    # default interactive session into an automatic exit.
+    launch_env.pop('CPS1_DINO_AUTO_EXIT_AFTER_CAPTURE', None)
+    if auto_exit_after_capture:
+        launch_env['CPS1_DINO_AUTO_EXIT_AFTER_CAPTURE'] = '1'
     capture_dir = private / CAPTURE_DIR_NAME
     # Never create outputs until the real build identity passed.
     capture_dir.mkdir(mode=0o700, exist_ok=False)
     argv = [
         str(binary), 'dino', '-rompath', str(roms),
-        '-autoboot_script', str(LUA_SCRIPT),
+        '-autoboot_script', str(LUA_SCRIPT), '-noreadconfig',
     ]
     # Capture potential private ROM filenames and local MAME messages to
     # a PRIVATE log rather than CI or console. No shell or network used.
@@ -128,7 +332,8 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         with os.fdopen(fd, 'wb') as log:
             proc = subprocess.run(
                 argv, cwd=private, stdout=log, stderr=subprocess.STDOUT,
-                stdin=None, timeout=timeout_seconds, check=False,
+                stdin=None, env=launch_env,
+                timeout=timeout_seconds, check=False,
             )
     except subprocess.TimeoutExpired as exc:
         raise ValueError('Local MAME session timed out; private files retained') from exc
@@ -136,6 +341,12 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         raise ValueError('Unable to execute local MAME; private files retained') from exc
     if proc.returncode != 0:
         raise ValueError('Local MAME exited unsuccessfully; check private log locally')
+    auto_exit_log_observation = (
+        private_mame_auto_exit_log_observation(private)
+        if auto_exit_after_capture else None)
+    if rom_before is not None:
+        # Gameplay must not mutate or substitute the just-audited set.
+        require_stable_private_dino_rom_content(roms, rom_before)
 
     # First require the complete local 54-file Lua/C++ capture set.
     # This stays entirely in process memory and stores no original-game
@@ -187,12 +398,40 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
             result, activity, FIRST_FRAME, FRAME_STEP, FRAME_COUNT)
         result['reference_activity'] = activity
         result['multistream_interval_evidence'] = intervals
+        result['capture_session_binding'] = require_private_capture_session(
+            capture_dir, session_id, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+        # A second, independent metadata recalculation must agree with the
+        # nominal callback counts, interval annotations and RGB/OBJ fields.
+        # This does not establish physical frame ordering or real gameplay.
+        result['private_nominal_interval_consistency'] = (
+            private_nominal_interval_consistency(
+                result, intervals, FIRST_FRAME, FRAME_STEP, FRAME_COUNT))
         result['private_capture_source_stability'] = require_stable_private_capture(
             capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+        # Interpret only validated counts and fixed guidance codes. Never
+        # include original RGB/OBJ, source paths or random session tokens.
+        result['private_capture_triage'] = private_capture_triage(
+            activity, intervals, result['capture_session_binding'],
+            result['private_nominal_interval_consistency'],
+            result['private_capture_source_stability'], frame_count=FRAME_COUNT)
+        auto_exit_reconciliation = (
+            reconcile_auto_exit_with_capture(
+                auto_exit_log_observation, strict_audit_passed=True)
+            if auto_exit_after_capture else None)
         result['private_capture_completion'] = {
             'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
             'full_check_sequence_completed': True,
             'diagnostic_only': True,
+            'local_mame_verifyroms_exit_zero_before_capture': (
+                verify_private_romset_before_capture),
+            'private_rom_entry_metadata_stable_during_capture': (
+                verify_private_romset_before_capture),
+            'private_rom_content_sha256_stable_during_capture': (
+                verify_private_romset_before_capture),
+            'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
+            'auto_exit_after_capture_requested': auto_exit_after_capture,
+            'auto_exit_log_observation': auto_exit_log_observation,
+            'auto_exit_post_run_reconciliation': auto_exit_reconciliation,
             'nominal_frame_count': FRAME_COUNT,
             'crc32_lua_components_checked': FRAME_COUNT * 5,
             'v2_bound_obj_samples': FRAME_COUNT,
@@ -213,6 +452,10 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         # publishing. This is not a filesystem lock or proof of origin.
         require_stable_private_capture(
             capture_dir, snapshot, FIRST_FRAME, FRAME_COUNT, FRAME_STEP)
+        if rom_before is not None:
+            # Recheck immediately before atomically publishing the private
+            # success report; no late mutation may be reported as stable.
+            require_stable_private_dino_rom_content(roms, rom_before)
         # Unlike os.replace(), hard-link creation refuses a concurrent
         # existing target; the finalized report can never be clobbered.
         os.link(complete, report)
@@ -221,10 +464,23 @@ def execute_private_capture(mame, mame_source_tree, rom_dir, workspace,
         'status': 'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY',
         'reference_activity': activity,
         'multistream_interval_evidence': intervals,
+        'capture_session_binding': result['capture_session_binding'],
+        'private_nominal_interval_consistency': result['private_nominal_interval_consistency'],
+        'private_capture_triage': result['private_capture_triage'],
         'nominal_frame_count': FRAME_COUNT,
         'crc32_lua_components_checked': FRAME_COUNT * 5,
         'bound_cpp_obj_samples': FRAME_COUNT,
         'game_executed': True,
+        'local_mame_verifyroms_exit_zero_before_capture': (
+            verify_private_romset_before_capture),
+        'private_rom_entry_metadata_stable_during_capture': (
+            verify_private_romset_before_capture),
+        'private_rom_content_sha256_stable_during_capture': (
+            verify_private_romset_before_capture),
+        'private_rom_bytes_read_by_python': verify_private_romset_before_capture,
+        'auto_exit_after_capture_requested': auto_exit_after_capture,
+        'auto_exit_log_observation': auto_exit_log_observation,
+        'auto_exit_post_run_reconciliation': auto_exit_reconciliation,
         'original_game_authenticity_verified': False,
         'obj_latch_age_verified': False,
         'frame_sync_verified': False,
@@ -241,22 +497,70 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mame', type=Path, required=True)
     p.add_argument('--mame-tree', type=Path, required=True)
-    p.add_argument('--rom-dir', type=Path, required=True)
-    p.add_argument('--workspace', type=Path, required=True)
+    p.add_argument('--rom-dir', type=Path,
+                   help='Required for game capture and filesystem-only preflight')
+    p.add_argument('--workspace', type=Path,
+                   help='Required for game capture and filesystem-only preflight')
     p.add_argument('--timeout-seconds', type=int, default=1800)
-    p.add_argument('--preflight-only', action='store_true',
-                   help='Only validate isolated paths; no ROM reading or MAME execution')
+    p.add_argument(
+        '--diagnose-failed-capture', action='store_true',
+        help='On failed game launch, show only safe filename/size coverage counts')
+    p.add_argument(
+        '--auto-exit-after-capture', action='store_true',
+        help='Opt-in Lua scheduled MAME exit one frame after the six-frame capture')
+    preflight_options = p.add_mutually_exclusive_group()
+    preflight_options.add_argument(
+        '--preflight-only', action='store_true',
+        help='Validate isolated paths only; no MAME process or ROM reading')
+    preflight_options.add_argument(
+        '--verify-build-only', action='store_true',
+        help='Verify ROM-free driver/ELF with only --mame and --mame-tree')
+    preflight_options.add_argument(
+        '--check-launch-readiness', action='store_true',
+        help='ROM-free build and private dino entry metadata; requires all paths')
+    preflight_options.add_argument(
+        '--verify-private-romset-only', action='store_true',
+        help='Run private MAME -verifyroms dino, no emulation; saves 0600 local log')
+    p.add_argument(
+        '--verify-private-romset-before-capture', action='store_true',
+        help='Audit original dino ROMs using local MAME, then capture only if audit passes')
     args = p.parse_args(argv)
     try:
+        if args.diagnose_failed_capture and (
+                args.preflight_only or args.verify_build_only or
+                args.check_launch_readiness or args.verify_private_romset_only):
+            raise ValueError('Invalid private diagnostics and preflight mode combination')
         result = execute_private_capture(
             args.mame, args.mame_tree, args.rom_dir, args.workspace,
             timeout_seconds=args.timeout_seconds,
-            preflight_only=args.preflight_only)
+            preflight_only=args.preflight_only,
+            verify_build_only=args.verify_build_only,
+            check_launch_readiness=args.check_launch_readiness,
+            verify_private_romset_only=args.verify_private_romset_only,
+            verify_private_romset_before_capture=(
+                args.verify_private_romset_before_capture),
+            auto_exit_after_capture=args.auto_exit_after_capture)
         print(json.dumps(result, indent=2))
         return 0
-    except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:
-        # All raised messages are deliberately generic (no private file paths).
-        print('Private MAME capture refused:', exc, file=sys.stderr)
+    except Exception as exc:
+        # FileNotFoundError/OSError and even third-party ValueErrors can
+        # disclose absolute private ROM/capture paths in str(exc).
+        # Avoid printing exception text or a traceback to the console.
+        # Keep local output files for investigation when they exist.
+        if args.diagnose_failed_capture:
+            # One self-contained safe JSON object only: no filesystem
+            # errors, filenames, ROM bytes or capture raw values on stderr.
+            failure = safe_capture_failure_report(
+                exc, args.workspace, include_progress=True)
+            if args.auto_exit_after_capture:
+                evidence = private_mame_auto_exit_log_observation(args.workspace)
+                failure['auto_exit_log_observation'] = evidence
+                failure['auto_exit_post_run_reconciliation'] = (
+                    reconcile_auto_exit_with_capture(
+                        evidence, failure_progress=failure.get('capture_progress')))
+            print(json.dumps(failure), file=sys.stderr)
+        else:
+            write_private_failure(exc, sys.stderr)
         return 2
 
 

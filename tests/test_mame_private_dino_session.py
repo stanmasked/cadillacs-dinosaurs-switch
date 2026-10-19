@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from tools.mame_obj_latch_evidence import obj_fnv1a64
 from tools.mame_private_dino_session import (
-    CAPTURE_DIR_NAME, LOG_NAME, REPORT_NAME,
+    CAPTURE_DIR_NAME, LOG_NAME, REPORT_NAME, VERIFY_LOG_NAME,
     PROJECT_ROOT, execute_private_capture, main, preflight,
 )
 from test_mame_obj_cli_end_to_end import make_capture
@@ -38,14 +38,20 @@ class PrivateDinoSessionTests(unittest.TestCase):
         return {
             'driver': 'dino',
             'compiled_instrumented_latch_v2_format': True,
+            'compiled_session_label_probe_marker': True,
+            'compiled_session_environment_probe_marker': True,
+            'linked_dino_executable_probe_markers': True,
             'listxml_validated': True,
         }
 
     def run_local(self, *, process=None):
+        def fake_runner(args, **kwargs):
+            self.synthetic_session_id = kwargs['env']['CPS1_DINO_CAPTURE_SESSION']
+            return process(args, **kwargs)
         with patch('tools.mame_private_dino_session.inspect_binary',
                    side_effect=self.compiled_dino_identity), \
              patch('tools.mame_private_dino_session.subprocess.run',
-                   side_effect=process) as runner:
+                   side_effect=fake_runner) as runner:
             result = execute_private_capture(
                 self.mame, self.build, self.roms, self.workspace,
                 timeout_seconds=120)
@@ -57,7 +63,13 @@ class PrivateDinoSessionTests(unittest.TestCase):
         for i in range(6):
             stem = f'frame-{900 + i*2:08d}'
             obj = (root / f'{stem}.buffered-obj-be.bin').read_bytes()
+            stamp = self.synthetic_session_id
+            manifest_path = root / f'{stem}.manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            manifest['capture_session'] = stamp
+            manifest_path.write_text(json.dumps(manifest))
             line = (f'CPS1_DINO_LATCH_V2 {20+i*2} {obj_fnv1a64(obj)}\n'
+                    f'CPS1_DINO_SESSION {stamp}\n'
                     if version == 2 else f'CPS1_DINO_LATCH_V1 {20+i*2}\n')
             (root / f'{stem}.obj-latch-count.txt').write_text(line)
         return subprocess.CompletedProcess(args, 0)
@@ -74,6 +86,312 @@ class PrivateDinoSessionTests(unittest.TestCase):
         build.assert_not_called()
         run.assert_not_called()
 
+    def test_build_only_verifies_real_identity_without_game_or_writes(self):
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity) as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            report = execute_private_capture(
+                self.mame, self.build, self.roms, self.workspace,
+                verify_build_only=True)
+        identity.assert_called_once_with(self.mame.resolve(), self.build.resolve())
+        game.assert_not_called()
+        self.assertEqual(report['status'],
+                         'ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED')
+        self.assertFalse(report['game_executed'])
+        self.assertFalse(report['capture_verified'])
+        self.assertFalse(report['linked_probe_runtime_verified'])
+        self.assertFalse(report['frame_sync_verified'])
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_without_rom_or_workspace_is_rom_free(self):
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity) as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            report = execute_private_capture(
+                self.mame, self.build, verify_build_only=True)
+        identity.assert_called_once_with(self.mame.resolve(), self.build.resolve())
+        game.assert_not_called()
+        self.assertEqual(report['status'],
+                         'ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED')
+        self.assertFalse(report['game_executed'])
+        self.assertFalse(report['capture_verified'])
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_missing_optional_paths_and_game_modes_fail_closed(self):
+        with patch('tools.mame_private_dino_session.inspect_binary') as verify, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            for options in (
+                {'verify_build_only': True, 'rom_dir': self.roms},
+                {'verify_build_only': True, 'workspace': self.workspace},
+                {'preflight_only': True},
+                {},
+            ):
+                with self.subTest(options=options):
+                    values = dict(options)
+                    verify_only = values.pop('verify_build_only', False)
+                    preflight_mode = values.pop('preflight_only', False)
+                    with self.assertRaisesRegex(ValueError, 'requires both'):
+                        execute_private_capture(
+                            self.mame, self.build, **values,
+                            verify_build_only=verify_only,
+                            preflight_only=preflight_mode)
+            verify.assert_not_called()
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_requires_real_non_symlinked_build_outside_repo(self):
+        link = self.root / 'linked-mame'
+        link.symlink_to(self.mame)
+        with self.assertRaisesRegex(ValueError, 'symlink'):
+            execute_private_capture(link, self.build, verify_build_only=True)
+        with patch('tools.mame_private_dino_session.PROJECT_ROOT', self.root):
+            with self.assertRaisesRegex(ValueError, 'outside the project'):
+                execute_private_capture(self.mame, self.build,
+                                        verify_build_only=True)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_rejects_missing_driver_or_probe_gate_without_writes(self):
+        required = ('driver', 'listxml_validated',
+                    'compiled_instrumented_latch_v2_format',
+                    'compiled_session_label_probe_marker',
+                    'compiled_session_environment_probe_marker',
+                    'linked_dino_executable_probe_markers')
+        for key in required:
+            bad = dict(self.compiled_dino_identity())
+            bad[key] = 'not-dino' if key == 'driver' else False
+            with self.subTest(key=key):
+                with patch('tools.mame_private_dino_session.inspect_binary',
+                           return_value=bad), \
+                     patch('tools.mame_private_dino_session.subprocess.run') as game:
+                    with self.assertRaisesRegex(ValueError, 'verification failed'):
+                        execute_private_capture(
+                            self.mame, self.build, self.roms, self.workspace,
+                            verify_build_only=True)
+                    game.assert_not_called()
+                self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_build_only_rejects_invalid_flags_and_mutually_exclusive_modes(self):
+        for kwargs in ({'verify_build_only': 'true'},
+                       {'verify_build_only': True, 'preflight_only': True}):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, 'boolean|preflight mode'):
+                    execute_private_capture(
+                        self.mame, self.build, self.roms, self.workspace, **kwargs)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_first_run_readiness_checks_mame_rom_entry_without_execution(self):
+        (self.roms / 'dino.zip').write_bytes(b'synthetic-not-rom')
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity) as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            report = execute_private_capture(
+                self.mame, self.build, self.roms, self.workspace,
+                check_launch_readiness=True)
+        identity.assert_called_once_with(self.mame.resolve(), self.build.resolve())
+        game.assert_not_called()
+        self.assertEqual(report['status'], 'PRIVATE_DINO_LAUNCH_PREFLIGHT_ONLY')
+        self.assertTrue(report['private_rom_entry_observed'])
+        self.assertTrue(report['compiled_session_probe_elf_checked'])
+        self.assertFalse(report['rom_file_bytes_read'])
+        self.assertFalse(report['rom_integrity_verified'])
+        self.assertFalse(report['capture_verified'])
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_first_run_readiness_missing_rom_entry_fails_before_game(self):
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'No private dino'):
+                execute_private_capture(self.mame, self.build, self.roms,
+                                        self.workspace, check_launch_readiness=True)
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_first_run_readiness_refuses_unlinked_binary_before_asset_probe(self):
+        identity = dict(self.compiled_dino_identity())
+        identity['linked_dino_executable_probe_markers'] = False
+        (self.roms / 'dino.zip').write_bytes(b'fake')
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   return_value=identity), \
+             patch('tools.mame_private_dino_session.require_private_dino_entry') as rom, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'verification failed'):
+                execute_private_capture(self.mame, self.build, self.roms,
+                                        self.workspace, check_launch_readiness=True)
+            rom.assert_not_called()
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_first_run_readiness_flags_mutually_exclusive_and_bounded(self):
+        for kwargs in (
+            {'check_launch_readiness': True, 'preflight_only': True},
+            {'check_launch_readiness': True, 'verify_build_only': True},
+            {'check_launch_readiness': 'yes'},
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, 'boolean|preflight mode'):
+                    execute_private_capture(
+                        self.mame, self.build, self.roms, self.workspace, **kwargs)
+        with self.assertRaisesRegex(ValueError, 'requires both'):
+            execute_private_capture(
+                self.mame, self.build, check_launch_readiness=True)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_private_mame_verifyroms_is_local_only_and_never_starts_dino(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY_NOT_ROM')
+        observed = {}
+
+        def fake_mame(args, **kwargs):
+            observed['args'] = args
+            observed['kwargs'] = kwargs
+            # Content emitted by MAME itself must stay in the private log.
+            kwargs['stdout'].write(b'PRIVATE_DINO_ROM_FILENAME\n')
+            return subprocess.CompletedProcess(args, 0)
+
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity) as build, \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=fake_mame) as run:
+            result = execute_private_capture(
+                self.mame, self.build, self.roms, self.workspace,
+                verify_private_romset_only=True)
+        build.assert_called_once()
+        run.assert_called_once()
+        self.assertEqual(result['status'], 'PRIVATE_MAME_VERIFYROMS_EXIT_ZERO_UNATTESTED')
+        self.assertTrue(result['mame_verifyroms_exit_zero'])
+        self.assertTrue(result['private_rom_metadata_stable_after_audit'])
+        self.assertTrue(result['private_rom_content_sha256_stable_after_audit'])
+        self.assertTrue(result['rom_bytes_read_by_python'])
+        self.assertFalse(result['game_executed'])
+        self.assertFalse(result['capture_verified'])
+        self.assertFalse(result['original_game_authenticity_verified'])
+        self.assertFalse(result['frame_sync_verified'])
+        self.assertEqual(observed['args'][1:3], ['dino', '-verifyroms'])
+        self.assertEqual(observed['args'][3:5], ['-rompath', str(self.roms)])
+        self.assertIn('-noreadconfig', observed['args'])
+        self.assertEqual(observed['kwargs']['stdin'], subprocess.DEVNULL)
+        self.assertEqual(observed['kwargs']['cwd'], self.workspace.resolve())
+        self.assertNotIn('CPS1_DINO_CAPTURE_SESSION', observed['kwargs']['env'])
+        log = self.workspace / VERIFY_LOG_NAME
+        self.assertEqual(log.read_bytes(), b'PRIVATE_DINO_ROM_FILENAME\n')
+        if os.name == 'posix':
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+        self.assertFalse((self.workspace / LOG_NAME).exists())
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        # No output clobber: normal full capture can still use this same
+        # private workspace after the standalone ROM verification.
+        preflight(self.mame, self.build, self.roms, self.workspace)
+
+    def test_private_mame_verifyroms_nonzero_is_not_success(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=lambda args, **kwargs:
+                       subprocess.CompletedProcess(args, 2)):
+            with self.assertRaisesRegex(ValueError, 'ROM verification failed'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+        self.assertTrue((self.workspace / VERIFY_LOG_NAME).exists())
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+
+    def test_private_mame_verifyroms_timeout_keeps_local_log(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        def fake_timeout(args, **kwargs):
+            raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=fake_timeout):
+            with self.assertRaisesRegex(ValueError, 'verification timed out'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True, timeout_seconds=60)
+        self.assertTrue((self.workspace / VERIFY_LOG_NAME).exists())
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+
+    def test_private_mame_verifyroms_unsafe_inputs_fail_before_outputs(self):
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'No private dino'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        bad = dict(self.compiled_dino_identity())
+        bad['linked_dino_executable_probe_markers'] = False
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   return_value=bad), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'verification failed'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_private_mame_verifyroms_does_not_overwrite_existing_log(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        log = self.workspace / VERIFY_LOG_NAME
+        log.write_bytes(b'DO_NOT_OVERWRITE')
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'verification log already exists'):
+                execute_private_capture(
+                    self.mame, self.build, self.roms, self.workspace,
+                    verify_private_romset_only=True)
+            game.assert_not_called()
+        self.assertEqual(log.read_bytes(), b'DO_NOT_OVERWRITE')
+
+    def test_private_mame_verifyroms_rejects_incompatible_mode_flags(self):
+        for options in (
+            {'verify_private_romset_only': 'yes'},
+            {'verify_private_romset_only': True, 'preflight_only': True},
+            {'verify_private_romset_only': True, 'verify_build_only': True},
+            {'verify_private_romset_only': True, 'check_launch_readiness': True},
+        ):
+            with self.subTest(options=options):
+                with self.assertRaisesRegex(ValueError, 'boolean|preflight mode'):
+                    execute_private_capture(
+                        self.mame, self.build, self.roms, self.workspace, **options)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_private_rom_verify_failure_redacts_original_mame_messages(self):
+        (self.roms / 'dino.zip').write_bytes(b'SYNTHETIC_ONLY')
+        stdout, stderr = io.StringIO(), io.StringIO()
+        def fake_failure(args, **kwargs):
+            kwargs['stdout'].write(b'PRIVATE_ROM_FILE /original/secret/path.zip\n')
+            return subprocess.CompletedProcess(args, 5)
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run',
+                   side_effect=fake_failure), \
+             contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--verify-private-romset-only',
+            ])
+        self.assertEqual(code, 2)
+        out = json.loads(stderr.getvalue())
+        self.assertEqual(out['reason_code'], 'PRIVATE_MAME_ROMSET_AUDIT_FAILED')
+        self.assertNotIn('PRIVATE_ROM_FILE', stderr.getvalue())
+        self.assertNotIn('/original/secret', stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), '')
+        self.assertIn(b'PRIVATE_ROM_FILE',
+                      (self.workspace / VERIFY_LOG_NAME).read_bytes())
+        self.assertFalse((self.workspace / CAPTURE_DIR_NAME).exists())
+
     def test_workspace_inside_source_or_rom_or_project_is_rejected(self):
         for path in (self.build, self.roms, PROJECT_ROOT,
                      self.build / 'subfolder'):
@@ -86,6 +404,45 @@ class PrivateDinoSessionTests(unittest.TestCase):
     def test_rom_directory_inside_public_project_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'outside the project'):
             preflight(self.mame, self.build, PROJECT_ROOT, self.workspace)
+
+    def test_rom_directory_nested_in_mame_build_is_rejected_without_output(self):
+        nested = self.build / 'private-roms'
+        nested.mkdir()
+        with patch('tools.mame_private_dino_session.inspect_binary') as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'separate from MAME build'):
+                execute_private_capture(
+                    self.mame, self.build, nested, self.workspace,
+                    preflight_only=True)
+            identity.assert_not_called()
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_mame_source_tree_inside_rom_dir_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'separate from MAME build'):
+            preflight(self.mame, self.build, self.root, self.workspace)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_public_checkout_must_not_contain_modified_mame_executable(self):
+        public = self.root / 'simulated-public-checkout'
+        public.mkdir()
+        mame = public / 'dino'
+        mame.write_bytes(b'ROM-free fake MAME binary')
+        mame.chmod(0o755)
+        with patch('tools.mame_private_dino_session.PROJECT_ROOT', public), \
+             patch('tools.mame_private_dino_session.inspect_binary') as identity, \
+             patch('tools.mame_private_dino_session.subprocess.run') as game:
+            with self.assertRaisesRegex(ValueError, 'executable must stay outside'):
+                execute_private_capture(mame, self.build,
+                                        verify_build_only=True)
+            identity.assert_not_called()
+            game.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_rom_tree_containing_mame_executable_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'separate from MAME build'):
+            preflight(self.mame, self.build, self.root, self.workspace)
+        self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_existing_capture_report_or_log_never_overwritten(self):
         for name in (CAPTURE_DIR_NAME, REPORT_NAME, LOG_NAME):
@@ -161,6 +518,12 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(report['crc32_lua_components_checked'], 30)
         self.assertEqual(report['bound_cpp_obj_samples'], 6)
         self.assertTrue(report['game_executed'])
+        self.assertTrue(
+            report['capture_session_binding']['shared_session_label_consistent'])
+        self.assertEqual(
+            report['capture_session_binding']['lua_manifest_session_samples'], 6)
+        self.assertEqual(
+            report['capture_session_binding']['cpp_latch_session_samples'], 6)
         self.assertFalse(report['original_game_authenticity_verified'])
         self.assertFalse(report['obj_latch_age_verified'])
         self.assertFalse(report['pixel_parity_eligible'])
@@ -180,6 +543,18 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertIn('NO_OBJ_CHANGES_OBSERVED', intervals['observational_cautions'])
         self.assertFalse(intervals['active_gameplay_verified'])
         self.assertFalse(intervals['frame_sync_verified'])
+        consistency = report['private_nominal_interval_consistency']
+        self.assertEqual(consistency['status'],
+                         'PRIVATE_NOMINAL_COUNTER_CONSISTENCY_ONLY')
+        self.assertEqual(consistency['nominal_frame_samples_checked'], 6)
+        self.assertEqual(consistency['nominal_intervals_checked'], 5)
+        self.assertTrue(consistency['cumulative_latch_deltas_match'])
+        self.assertFalse(consistency['frame_sync_verified'])
+        triage = report['private_capture_triage']
+        self.assertEqual(triage['status'], 'LOW_INFORMATION_FOR_PRIVATE_CAPTURE_TRIAGE')
+        self.assertIn('INSPECT_PRIVATE_OBJ_ACTIVITY',
+                      triage['next_local_investigation_codes'])
+        self.assertFalse(triage['active_gameplay_verified'])
         self.assertTrue((self.workspace / LOG_NAME).is_file())
         if os.name == 'posix':
             self.assertEqual((self.workspace / LOG_NAME).stat().st_mode & 0o777, 0o600)
@@ -188,6 +563,11 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertEqual(
             raw['obj_latch_count_evidence']['obj_byte_fingerprint_verified_count'], 6)
         self.assertFalse(raw['frame_sync_verified'])
+        self.assertTrue(raw['capture_session_binding']['shared_session_label_consistent'])
+        self.assertEqual(raw['private_nominal_interval_consistency']['nominal_intervals_checked'], 5)
+        self.assertEqual(raw['private_capture_triage']['nominal_frame_count'], 6)
+        self.assertFalse(raw['private_capture_triage']['frame_sync_verified'])
+        self.assertNotIn(self.synthetic_session_id, json.dumps(raw))
         self.assertEqual(
             raw['private_capture_completion']['status'],
             'PRIVATE_CAPTURE_INTEGRITY_VERIFIED_ONLY')
@@ -214,6 +594,23 @@ class PrivateDinoSessionTests(unittest.TestCase):
                 execute_private_capture(
                     self.mame, self.build, self.roms, self.workspace)
         self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_pre_session_or_unlinked_build_rejected_before_game_or_outputs(self):
+        valid = self.compiled_dino_identity()
+        for key in ('compiled_session_label_probe_marker',
+                    'compiled_session_environment_probe_marker',
+                    'linked_dino_executable_probe_markers'):
+            identity = dict(valid)
+            identity[key] = False
+            with self.subTest(key=key):
+                with patch('tools.mame_private_dino_session.inspect_binary',
+                           return_value=identity), \
+                     patch('tools.mame_private_dino_session.subprocess.run') as game:
+                    with self.assertRaisesRegex(ValueError, 'verification failed'):
+                        execute_private_capture(
+                            self.mame, self.build, self.roms, self.workspace)
+                    game.assert_not_called()
+                self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_successful_process_without_complete_capture_fails_closed(self):
         with self.assertRaisesRegex(ValueError, 'missing or unexpected files'):
@@ -243,6 +640,28 @@ class PrivateDinoSessionTests(unittest.TestCase):
         self.assertFalse((self.workspace / REPORT_NAME).exists())
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
+
+    def test_late_private_triage_failure_prevents_report_publication(self):
+        with patch('tools.mame_private_dino_session.private_capture_triage',
+                   side_effect=ValueError('synthetic triage contradiction')):
+            with self.assertRaisesRegex(ValueError, 'triage contradiction'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+        self.assertTrue((self.workspace / CAPTURE_DIR_NAME).is_dir())
+
+    def test_late_counter_crosscheck_failure_cannot_publish_report(self):
+        with patch('tools.mame_private_dino_session.private_nominal_interval_consistency',
+                   side_effect=ValueError('synthetic counter mismatch')):
+            with self.assertRaisesRegex(ValueError, 'counter mismatch'):
+                self.run_local(process=lambda args, **kw:
+                               self.populate_fake_private_capture(args))
+        self.assertFalse((self.workspace / REPORT_NAME).exists())
+        self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
+                             for p in self.workspace.iterdir()))
+        self.assertTrue((self.workspace / CAPTURE_DIR_NAME).is_dir())
 
     def test_rgb_check_failure_does_not_publish_partial_report(self):
         with patch('tools.mame_private_dino_session.reference_activity_diagnostic',
@@ -352,6 +771,106 @@ class PrivateDinoSessionTests(unittest.TestCase):
             b'PRIVATE_EXISTING_REPORT')
         self.assertFalse(any(p.name.startswith('.dino-audit-pending-')
                              for p in self.workspace.iterdir()))
+
+    def test_cli_build_only_is_rom_free_private_and_report_free(self):
+        output = io.StringIO()
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game, \
+             contextlib.redirect_stdout(output):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--verify-build-only',
+            ])
+        self.assertEqual(code, 0)
+        game.assert_not_called()
+        self.assertIn('ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED', output.getvalue())
+        self.assertNotIn(str(self.roms), output.getvalue())
+        self.assertNotIn(str(self.workspace), output.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_build_only_requires_no_rom_paths_or_workspace(self):
+        output = io.StringIO()
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game, \
+             contextlib.redirect_stdout(output):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--verify-build-only',
+            ])
+        self.assertEqual(code, 0)
+        game.assert_not_called()
+        self.assertIn('ROM_FREE_SESSION_AWARE_MAME_BUILD_VERIFIED',
+                      output.getvalue())
+        self.assertNotIn(str(self.build), output.getvalue())
+        self.assertNotIn(str(self.roms), output.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_launch_readiness_uses_only_private_metadata(self):
+        (self.roms / 'dino.zip').write_bytes(b'synthetic-not-rom')
+        output = io.StringIO()
+        with patch('tools.mame_private_dino_session.inspect_binary',
+                   side_effect=self.compiled_dino_identity), \
+             patch('tools.mame_private_dino_session.subprocess.run') as game, \
+             contextlib.redirect_stdout(output):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--check-launch-readiness',
+            ])
+        self.assertEqual(code, 0)
+        game.assert_not_called()
+        self.assertIn('PRIVATE_DINO_LAUNCH_PREFLIGHT_ONLY', output.getvalue())
+        self.assertNotIn('dino.zip', output.getvalue())
+        self.assertNotIn(str(self.roms), output.getvalue())
+        self.assertNotIn(str(self.workspace), output.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_filesystem_failure_never_prints_private_path_or_traceback(self):
+        err = io.StringIO()
+        hidden = str(self.roms / 'dino.zip')
+        with patch('tools.mame_private_dino_session.preflight',
+                   side_effect=FileNotFoundError(2, 'Missing', hidden)), \
+             contextlib.redirect_stderr(err):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--rom-dir', str(self.roms),
+                '--workspace', str(self.workspace),
+                '--preflight-only',
+            ])
+        self.assertEqual(code, 2)
+        output = json.loads(err.getvalue())
+        self.assertEqual(output['status'], 'PRIVATE_MAME_CAPTURE_REFUSED')
+        self.assertEqual(output['reason_code'], 'PRIVATE_FILESYSTEM_ERROR')
+        self.assertNotIn(hidden, err.getvalue())
+        self.assertNotIn(str(self.roms), err.getvalue())
+        self.assertNotIn('Traceback', err.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_cli_unknown_failure_never_prints_private_exception_data(self):
+        err = io.StringIO()
+        with patch('tools.mame_private_dino_session.preflight_mame_build',
+                   side_effect=RuntimeError('private original dino session secret')), \
+             contextlib.redirect_stderr(err):
+            code = main([
+                '--mame', str(self.mame),
+                '--mame-tree', str(self.build),
+                '--verify-build-only',
+            ])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(err.getvalue())['reason_code'],
+                         'UNEXPECTED_PRIVATE_LAUNCH_FAILURE')
+        self.assertNotIn('private original dino session secret', err.getvalue())
+        self.assertNotIn('Traceback', err.getvalue())
+        self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_cli_preflight_hides_absolute_private_rom_path(self):
         text = io.StringIO()
