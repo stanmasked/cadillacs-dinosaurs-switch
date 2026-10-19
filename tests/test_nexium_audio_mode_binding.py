@@ -200,7 +200,12 @@ class GuestAudioModeBindingTests(unittest.TestCase):
         self.assertIn('["baseline","extra-poll"]',workflow)
         self.assertIn('github.event_name == \'workflow_dispatch\'',workflow)
         self.assertIn("'[\"baseline\"]'",workflow)
-        self.assertEqual(workflow.count('DINO_AUDIO_MODE: ${{ matrix.audio_mode }}'),3)
+        # Build, NRO integrity, actual guest execution and post-run binding
+        # must all carry the same matrix-selected audio mode explicitly.
+        self.assertEqual(workflow.count('DINO_AUDIO_MODE: ${{ matrix.audio_mode }}'),4)
+        self.assertIn('      - name: Attempt actual ARM64 homebrew guest execution\n'
+                      '        env:\n'
+                      '          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}',workflow)
         self.assertIn('name: dino-nexium-selftest-nro-${{ matrix.audio_mode }}',workflow)
         self.assertIn(
             'name: dino-ne-xium-actual-nro-guest-evidence-${{ matrix.audio_mode }}',
