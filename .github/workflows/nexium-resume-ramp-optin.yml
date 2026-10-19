@@ -13,6 +13,8 @@ on:
       - 'tools/verify_nexium_guest_resume_ramp.py'
       - 'tests/test_nexium_guest_resume_ramp.py'
       - 'tests/test_dino_pcm_resume_ramp.py'
+      - 'tools/dino_pcm_resume_edge_benchmark.py'
+      - 'tests/test_dino_pcm_resume_edge_benchmark.py'
       - '.github/workflows/nexium-resume-ramp-optin.yml'
 
 permissions:
@@ -34,6 +36,21 @@ jobs:
           set -eu
           python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_ramp.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_resume_ramp.py' -v
+          # Compile actual native C against invented PCM; prove negative
+          # counterexample where a ramp damages an already continuous edge.
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_edge_benchmark.py' -v
+          python3 tools/dino_pcm_resume_edge_benchmark.py \
+            --out dino-rom-free-resume-edge-benchmark.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('dino-rom-free-resume-edge-benchmark.json').read_text())
+          assert d['status']=='ACTUAL_C_PCM_ATTACK_HAS_CONDITION_DEPENDENT_EDGE_TRADEOFF'
+          assert d['profiles'][0]['boundary_discontinuity_improved']
+          assert d['profiles'][1]['boundary_discontinuity_worsened']
+          assert not d['production_enablement_recommended']
+          print('Synthetic signed-int16 ramp tradeoff includes a harmful edge')
+          PY
       - name: Independently build ordinary NRO then explicit opt-in NRO
         run: |
           set -eu
@@ -72,6 +89,7 @@ jobs:
           path: |
             cadillacs-dinosaurs-switch.nro
             optin-nro.sha256
+            dino-rom-free-resume-edge-benchmark.json
             ordinary-nro.sha256
             dino-guest-audio-mode.txt
           retention-days: 7
