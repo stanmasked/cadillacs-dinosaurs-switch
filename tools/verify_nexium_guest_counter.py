@@ -8,16 +8,17 @@ emulated SD after the real NRO runs and verify the existing replay witness.
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 
 COLUMNS=['phase','tick','player_hp','enemy_hp','windup','stun',
-         'cooldown','event_mask','pcm_nonzero']
+         'cooldown','event_mask','pcm_nonzero','pcm_fnv64']
 EXPECTED=[
-    ['RESET',0,5,3,0,0,0,0,0],
-    ['ARMED',1,5,3,12,0,0,1,0],
-    ['COUNTER',2,5,3,0,9,48,2048,1],
-    ['RECOVERY',3,5,3,0,8,47,0,0],
-    ['WRONG_FACING',2,4,3,0,0,48,384,0],
+    ['RESET',0,5,3,0,0,0,0,0,'CBF29CE484222325'],
+    ['ARMED',1,5,3,12,0,0,1,0,'CBF29CE484222325'],
+    ['COUNTER',2,5,3,0,9,48,2048,1,'1169E164EDF5FD7D'],
+    ['RECOVERY',3,5,3,0,8,47,0,0,'CBF29CE484222325'],
+    ['WRONG_FACING',2,4,3,0,0,48,384,0,'CBF29CE484222325'],
 ]
 
 
@@ -43,20 +44,24 @@ def verify(path):
         if row['phase']!=expected[0]:
             raise ValueError('out of order guest counter events')
         parsed=[]
-        for field in COLUMNS[1:]:
+        for field in COLUMNS[1:-1]:
             value=row[field]
             if not value or not value.isascii() or not value.isdecimal() or (
                     len(value)>1 and value.startswith('0')):
                 raise ValueError('noncanonical counter integer')
             parsed.append(int(value))
-        if parsed!=expected[1:]:
+        if parsed!=expected[1:-1]:
             raise ValueError('counter C state or PCM output incorrect')
+        pcm_hash=row['pcm_fnv64']
+        if not re.fullmatch(r'[0-9A-F]{16}',pcm_hash) or pcm_hash!=expected[-1]:
+            raise ValueError('counter PCM differs from native golden samples')
     return {
         'schema':'dino-nexium-guest-counter-v1',
         'status':'ROM_FREE_COUNTER_TRACE_VALIDATED',
         'guest_ticks_for_positive_counter':2,
         'counter_event_bit':2048,
         'counter_pcm_nonzero':True,
+        'counter_pcm_fnv64':'1169E164EDF5FD7D',
         'wrong_facing_counter_rejected':True,
         'requires_trusted_guest_file_extraction':True,
         'guest_hid_zr_verified':False,
