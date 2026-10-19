@@ -619,6 +619,13 @@ int main(int argc, char **argv) {
     uint32_t guest_audio_stress_start=0;
     uint32_t guest_audio_stress_next=DINO_GUEST_AUDIO_STRESS_PERIOD;
     bool guest_audio_stress_done=false;
+#if defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+    /* Snapshot only, no disk writes during measured 900 game ticks. */
+    uint32_t guest_resume_start_count=0,guest_resume_end_count=0;
+    uint32_t guest_resume_start_full=0,guest_resume_end_full=0;
+    uint32_t guest_resume_initial_pending=0,guest_resume_final_pending=0;
+    bool guest_resume_report_ready=false,guest_resume_report_written=false;
+#endif
     DinoGuestBatchStats guest_batch={0};
     uint32_t guest_frame_id=0;
     if (arena_active) {
@@ -972,6 +979,15 @@ int main(int argc, char **argv) {
                             guest_frame_clock_started=true;
                             guest_frame_clock_done=false;
                             guest_frame_clock_flushed=false;
+#if defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+                            guest_resume_start_count=
+                                dino_switch_sound_guest_resume_ramp_applications();
+                            guest_resume_start_full=at_start.full_queue_skips;
+                            guest_resume_initial_pending=
+                                dino_switch_sound_guest_resume_ramp_pending();
+                            guest_resume_report_ready=false;
+                            guest_resume_report_written=false;
+#endif
                         }
                     } else {
                         uint32_t elapsed=arena.ticks-guest_audio_stress_start;
@@ -983,6 +999,18 @@ int main(int argc, char **argv) {
                                 elapsed,&arena,&guest_batch);
                             if (elapsed==DINO_GUEST_AUDIO_STRESS_TICKS) {
                                 guest_audio_stress_done=true;
+#if defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+                                /* Capture stop state at the exact 900th
+                                 * simulation tick; serialize after render. */
+                                DinoSoundDiagnostics resume_end;
+                                dino_switch_sound_diagnostics(&resume_end);
+                                guest_resume_end_full=resume_end.full_queue_skips;
+                                guest_resume_end_count=
+                                    dino_switch_sound_guest_resume_ramp_applications();
+                                guest_resume_final_pending=
+                                    dino_switch_sound_guest_resume_ramp_pending();
+                                guest_resume_report_ready=true;
+#endif
                                 fclose(guest_audio_stress);
                                 guest_audio_stress=NULL;
                                 guest_ack_tick_collecting=false;
@@ -1112,6 +1140,31 @@ int main(int argc, char **argv) {
                 guest_frame_clock_started=false;
             }
         }
+#if defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+        if (guest_resume_report_ready && !guest_resume_report_written) {
+            /* Exclusive opt-in guest only; after 900 audio ticks, not
+             * in the measured sample-render hot path. */
+            const char *const resume_path=
+                "sdmc:/cadillacs-guest-resume-ramp.csv";
+            FILE *resume_output=fopen(resume_path,"w");
+            if (resume_output) {
+                const bool start_ok=fputs(
+                    "sampled_ticks,applied_start,applied_end,"
+                    "full_skips_start,full_skips_end,"
+                    "pending_at_start,pending_at_end\n",
+                    resume_output)>=0;
+                const bool end_ok=fprintf(resume_output,
+                    "%u,%u,%u,%u,%u,%u,%u\n",
+                    900u,guest_resume_start_count,guest_resume_end_count,
+                    guest_resume_start_full,guest_resume_end_full,
+                    guest_resume_initial_pending,guest_resume_final_pending)>=0;
+                const int closed=fclose(resume_output);
+                if (!start_ok || !end_ok || closed!=0)
+                    (void)remove(resume_path);
+            }
+            guest_resume_report_written=true;
+        }
+#endif
         if (guest_witness && arena_active) {
             if (!guest_first_frame && arena.ticks>0) {
                 /* This proves guest code reached framebufferEnd, not
