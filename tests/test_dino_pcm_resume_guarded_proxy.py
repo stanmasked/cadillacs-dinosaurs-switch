@@ -132,7 +132,7 @@ class PurePCMResumeGuardTests(unittest.TestCase):
     def test_real_c_matches_independent_oracle_on_seeded_stereo_cases(self):
         rng=random.Random(223)
         choices=(-32768,-30000,-24000,-10000,-1,0,1,10000,24000,30000,32767)
-        for n in range(120):
+        for n in range(600):
             previous=(rng.choice(choices),rng.choice(choices))
             samples=[]
             style=n%4
@@ -149,6 +149,24 @@ class PurePCMResumeGuardTests(unittest.TestCase):
             with self.subTest(n=n):
                 self.assertEqual(self.actual_gate(previous,samples),
                                  reference(previous,samples))
+
+    def test_multiple_attack_lengths_and_full_scale_extremes_match_oracle(self):
+        # The production experiment always chooses 96, but the portable
+        # helper explicitly accepts general bounded lengths. Validate
+        # both off-by-one and entire-block windows in native C.
+        rng=random.Random(2026223)
+        choices=(-32768,-32767,-24000,-1,0,1,24000,32767)
+        for attack in (1,2,3,95,96,97,799,800):
+            for sample_index in range(14):
+                previous=(rng.choice(choices),rng.choice(choices))
+                if sample_index%2:
+                    samples=list((rng.choice(choices),rng.choice(choices)))*FRAMES
+                else:
+                    samples=[rng.choice(choices) for _ in range(FRAMES*2)]
+                with self.subTest(attack=attack,trial=sample_index):
+                    self.assertEqual(
+                        self.actual_gate(previous,samples,attack=attack),
+                        reference(previous,samples,attack=attack))
 
     def test_proxy_source_is_independent_from_production_sound_adapter(self):
         adapter=(ROOT/"source/dino_switch_sound.c").read_text()
