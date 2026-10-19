@@ -65,7 +65,7 @@ jobs:
           # Never silently omit the Clang build on our official CI host.
           command -v gcc
           command -v clang
-          python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
+          DINO_REQUIRE_UBSAN=1 python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
       - name: Render independently authored practice-room witness
         run: |
           mkdir -p rom-free-preview
