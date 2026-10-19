@@ -23,6 +23,12 @@ uint32_t dino_switch_sound_guest_mid_batch_enabled(void);
 uint32_t dino_switch_sound_guest_mid_batch_calls(void);
 uint32_t dino_switch_sound_guest_mid_batch_releases(void);
 #endif
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+/* Read-only counts for a separate opt-in guest NRO proof. They are
+ * diagnostic, not an audible-quality metric or service timestamp. */
+uint32_t dino_switch_sound_guest_resume_ramp_applications(void);
+uint32_t dino_switch_sound_guest_resume_ramp_pending(void);
+#endif
 
 /* Read-only on-device diagnostics, not a measurement of actual latency.
  * They intentionally contain no audio PCM, private file paths or ROM data. */
