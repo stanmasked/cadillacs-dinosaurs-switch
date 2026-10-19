@@ -263,6 +263,24 @@ python3 tools/verify_nexium_audio_stress.py \
     --controller "$out/guest-controller.csv" \
     --out "$out/guest-audio-stress-evidence.json"
 
+# Stage 208: guest-selftest-only per-tick ACK observation log. This is
+# when polling *noticed* a page return, never a service or speaker timestamp.
+# Require this log and match all 900 ticks against the verified aggregate
+# guest stress report. Do not silently substitute synthetic observations.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-audio-ack-ticks.csv' -print \
+    > "$out/audio-ack-tick-locations.txt"
+if [ -s "$out/audio-ack-tick-locations.txt" ]; then
+    IFS= read -r ack_tick_path < "$out/audio-ack-tick-locations.txt"
+    cp "$ack_tick_path" "$out/guest-audio-ack-ticks.csv"
+fi
+python3 tools/verify_nexium_audio_ack_tick_trace.py \
+    --trace "$out/guest-audio-ack-ticks.csv" \
+    --report "$out/guest-audio-stress-evidence.json" \
+    --mode "$DINO_AUDIO_MODE" \
+    --out "$out/guest-audio-ack-tick-evidence.json"
+
+
 # Accept the software-only host-window sample bound ONLY after the
 # guest's ordered HID witness is verified. The result is explicitly
 # NOT an actual controller, hardware display or audio latency.
