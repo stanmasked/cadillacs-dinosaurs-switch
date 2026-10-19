@@ -800,8 +800,9 @@ int main(int argc, char **argv) {
                     dino_arena_reset(&test_counter);
                     test_counter.x=220;
                     dino_arena_step(&test_counter,0u,DINO_ARENA_TOGGLE_SPAR);
-                    const uint32_t ready_tick=test_counter.ticks;
-                    const uint32_t ready_windup=test_counter.dummy_windup;
+                    const DinoArena ready_counter=test_counter;
+                    /* Serialize real C state from both sides of the
+                     * actual HID-driven combat tick, not literal values. */
                     dino_arena_step(&test_counter,0u,
                                     step_pressed&DINO_ARENA_COUNTER);
                     const char *const path="sdmc:/cadillacs-counter-hid.csv";
@@ -809,8 +810,15 @@ int main(int argc, char **argv) {
                     if (proof) {
                         fprintf(proof,"phase,tick,player_hp,enemy_hp,windup,"
                                 "stun,cooldown,event_mask,hid_edge\n");
-                        fprintf(proof,"READY,%u,5,3,%u,0,0,1,0\n",
-                                (unsigned)ready_tick,(unsigned)ready_windup);
+                        fprintf(proof,
+                                "READY,%u,%u,%u,%u,%u,%u,%u,0\n",
+                                (unsigned)ready_counter.ticks,
+                                (unsigned)ready_counter.player_hp,
+                                (unsigned)ready_counter.dummy_hp,
+                                (unsigned)ready_counter.dummy_windup,
+                                (unsigned)ready_counter.dummy_hitstun,
+                                (unsigned)ready_counter.dummy_cooldown,
+                                (unsigned)ready_counter.events);
                         fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1\n",
                                 (unsigned)test_counter.ticks,
                                 (unsigned)test_counter.player_hp,
