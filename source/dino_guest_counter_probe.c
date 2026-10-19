@@ -20,6 +20,32 @@ static int record(FILE *out, const char *phase, const DinoArena *a,
                    (unsigned long long)pcm_hash)>0;
 }
 
+/* Probe illegal presses on the EXACT impact tick, where an accidental
+ * last-tick countdown/landing eligibility bug could grant free defense.
+ * The scripted counter edge must not cancel the enemy swing or damage.
+ * Diagnostic PCM is intentionally not rendered for these negative rows. */
+static int boundary_case(FILE *out, const char *phase, unsigned scenario) {
+    DinoArena a;
+    uint32_t pressed=DINO_ARENA_COUNTER;
+    dino_arena_reset(&a);
+    a.x=220;
+    dino_arena_step(&a,0u,DINO_ARENA_TOGGLE_SPAR);
+    a.dummy_windup=1u;
+    switch (scenario) {
+    case 0u: a.player_hitstun=1u; break;
+    case 1u: a.attack_frames=1u; break;
+    case 2u: a.z=1; a.vz=-2; break;
+    case 3u:
+        a.attack_cooldown=10u;
+        pressed|=DINO_ARENA_ATTACK;
+        break;
+    case 4u: pressed|=DINO_ARENA_JUMP; break;
+    default: return 0;
+    }
+    dino_arena_step(&a,0u,pressed);
+    return record(out,phase,&a,0u,DINO_PCM_WITNESS_INIT);
+}
+
 int dino_guest_counter_probe(FILE *out) {
     if (!out) return 0;
     DinoArena a;
@@ -58,5 +84,13 @@ int dino_guest_counter_probe(FILE *out) {
     a.dummy_windup=1u;
     dino_arena_step(&a,0u,DINO_ARENA_COUNTER);
     if (!record(out,"WRONG_FACING",&a,0u,DINO_PCM_WITNESS_INIT)) return 0;
+
+    /* All five cases must reject counter even though windup expires
+     * THIS SAME tick. The actual enemy impact still resolves normally. */
+    if (!boundary_case(out,"LAST_HITSTUN",0u) ||
+        !boundary_case(out,"LAST_ATTACK",1u) ||
+        !boundary_case(out,"LANDING",2u) ||
+        !boundary_case(out,"ATTACK_CHORD",3u) ||
+        !boundary_case(out,"JUMP_CHORD",4u)) return 0;
     return !ferror(out);
 }
