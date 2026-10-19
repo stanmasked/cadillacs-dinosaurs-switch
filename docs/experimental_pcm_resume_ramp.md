@@ -22,6 +22,13 @@ output-only ramp then scales the first **96 stereo frames** (2 ms at
 are byte-identical. The marker clears, and there is no effect on further
 ticks unless another full-queue skip happens.
 
+The pending transition is represented by the portable
+`DinoPcmResumeRampState` state machine: repeated queue-full drops coalesce
+into one pending attack, and the first subsequent **successful** admission
+consumes it exactly once. An invalid buffer does not consume pending state.
+The state resets with the adapter's audio lifecycle. The number of
+applications is a saturating diagnostic counter, not a quality metric.
+
 The ramp neither resubmits stale PCM nor modifies the queue's depth,
 libnx `audout` polling cadence, game timer, catch-up steps, input, ROM
 assets, latency compensation, or the synthesis state. It adds no frames
