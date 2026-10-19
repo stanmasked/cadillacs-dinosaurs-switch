@@ -115,8 +115,7 @@ def benchmark():
         "ramp_frames":edge.ATTACK,
         "sample_rate_hz":edge.RATE,
         "source":"two_actual_native_C_functions_and_independent_Python_oracle",
-        "input_audio":"six_deterministic_roman_free_synthetic_cases".replace(
-            "roman","rom"),
+        "input_audio":"six_deterministic_rom_free_synthetic_cases",
         "profiles":records,
         "guard_off_by_default":True,
         "production_enabled":False,
