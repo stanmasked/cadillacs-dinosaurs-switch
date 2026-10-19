@@ -85,6 +85,11 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
             a->player_hits_taken=0;
         }
     }
+    /* A counter may start only if the player was truly actionable at the
+     * BEGINNING of the 60 Hz tick. Countdown/landing below cannot turn a
+     * still-stunned, still-attacking or airborne ZR/H press into a success. */
+    const int counter_ready_at_tick_start=
+        !a->player_hitstun && !a->attack_frames && a->z==0 && a->vz==0;
     const int stunned=a->dummy_hitstun>0;
     if (a->dummy_hitstun) --a->dummy_hitstun;
     if (a->attack_frames) --a->attack_frames;
@@ -185,8 +190,7 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if ((pressed&DINO_ARENA_COUNTER) &&
         !(pressed&(DINO_ARENA_ATTACK|DINO_ARENA_JUMP)) &&
         a->sparring && a->player_hp && a->dummy_hp &&
-        !a->player_hitstun && !a->attack_frames &&
-        a->z==0 && a->vz==0 &&
+        counter_ready_at_tick_start &&
         a->dummy_windup && !stunned && !a->dummy_hitstun &&
         distance(a->x,a->dummy_x)<=44 &&
         distance(a->y,a->dummy_y)<=14 &&
