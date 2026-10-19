@@ -98,6 +98,32 @@ def attack_max_step(previous,values):
     return result
 
 
+def boundary_channel_tradeoff(previous_sample, first_unshaped,
+                              first_shaped):
+    """Exact per-channel two-point geometry, not psychoacoustics.
+
+    A fixed attack changes first sample A to R. At previous sample P,
+    compare |R-P| versus |A-P| without floats. The equal-distance
+    crossover is (A+R)/2, reported as numerator over denominator=2.
+    Sign of the difference gives which side is hurt by the attack.
+    """
+    if any(type(x) is not int or not -32768 <= x <= 32767
+           for x in (previous_sample,first_unshaped,first_shaped)):
+        raise ValueError("invalid signed stereo sample for crossover")
+    original_jump=abs(first_unshaped-previous_sample)
+    shaped_jump=abs(first_shaped-previous_sample)
+    return {
+        "unshaped_boundary_jump":original_jump,
+        "shaped_boundary_jump":shaped_jump,
+        "delta_shaped_minus_unshaped":shaped_jump-original_jump,
+        "crossover_previous_sample_numerator":first_unshaped+first_shaped,
+        "crossover_previous_sample_denominator":2,
+        "improved":shaped_jump<original_jump,
+        "worsened":shaped_jump>original_jump,
+        "equal":shaped_jump==original_jump,
+    }
+
+
 def score(previous,original,shaped,case):
     if (case not in TEST_CASES or len(previous)!=STEREO or
         len(original)!=STEREO*FRAMES or len(shaped)!=STEREO*FRAMES):
@@ -123,6 +149,9 @@ def score(previous,original,shaped,case):
         "boundary_max_abs_sample_step_before":before,
         "boundary_max_abs_sample_step_after":after,
         "boundary_step_delta_after_minus_before":after-before,
+        "per_channel_boundary_tradeoff":[
+            boundary_channel_tradeoff(
+                previous[ch],original[ch],shaped[ch]) for ch in (0,1)],
         "max_sample_step_within_attack_including_boundary_before":
             attack_max_step(previous,original),
         "max_sample_step_within_attack_including_boundary_after":
