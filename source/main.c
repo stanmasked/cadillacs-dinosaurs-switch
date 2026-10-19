@@ -614,6 +614,7 @@ int main(int argc, char **argv) {
     bool guest_controller_active=false, guest_controller_done=false;
     uint32_t guest_controller_flags=0;
     bool guest_counter_hid_done=false; /* stage 234, after audio stress */
+    bool guest_counter_zr_edge_pending=false;
     /* An independent, ordered game-tick trace of actual HID effects.
      * Tick values are guest simulation time, NOT host input latency. */
     FILE *guest_hid_timeline=NULL;
@@ -670,6 +671,14 @@ int main(int argc, char **argv) {
         padUpdate(&pad);
         const u64 down=padGetButtonsDown(&pad);
         const u64 held=padGetButtons(&pad);
+#ifdef DINO_EMULATOR_SELFTEST
+        /* A pad edge may arrive in a zero-game-tick render iteration.
+         * Retain its origin until the 60-Hz step consumes the buffered
+         * DINO_ARENA_COUNTER action; do not require same-frame timing. */
+        if (guest_audio_stress_done && guest_controller_done &&
+            (down&HidNpadButton_ZR))
+            guest_counter_zr_edge_pending=true;
+#endif
         u64 now=armGetSystemTick();
         u64 elapsed_ns=armTicksToNs(now-last_tick);
         last_tick=now;
@@ -783,8 +792,9 @@ int main(int argc, char **argv) {
                  * game, controller sequence or historical audio witnesses. */
                 if (guest_audio_stress_done && guest_controller_done &&
                     !demo_active && !guest_counter_hid_done &&
-                    (down&HidNpadButton_ZR) &&
+                    guest_counter_zr_edge_pending &&
                     (step_pressed&DINO_ARENA_COUNTER)) {
+                    guest_counter_zr_edge_pending=false;
                     guest_counter_hid_done=true;
                     DinoArena test_counter;
                     dino_arena_reset(&test_counter);
@@ -798,10 +808,10 @@ int main(int argc, char **argv) {
                     FILE *proof=fopen(path,"w");
                     if (proof) {
                         fprintf(proof,"phase,tick,player_hp,enemy_hp,windup,"
-                                "stun,cooldown,event_mask,hid_edge\\n");
-                        fprintf(proof,"READY,%u,5,3,%u,0,0,1,0\\n",
+                                "stun,cooldown,event_mask,hid_edge\n");
+                        fprintf(proof,"READY,%u,5,3,%u,0,0,1,0\n",
                                 (unsigned)ready_tick,(unsigned)ready_windup);
-                        fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1\\n",
+                        fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1\n",
                                 (unsigned)test_counter.ticks,
                                 (unsigned)test_counter.player_hp,
                                 (unsigned)test_counter.dummy_hp,
