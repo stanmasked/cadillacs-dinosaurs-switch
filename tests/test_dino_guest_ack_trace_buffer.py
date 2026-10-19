@@ -20,11 +20,6 @@ HARNESS=r'''
 #include <string.h>
 
 static DinoGuestAckTrace trace;
-static const char *header=
-    "tick,frame_id,batch_size,batch_position,released,mid_released,"
-    "mid_calls,submitted,skipped,pre_poll_full,pre_poll_recovered,"
-    "pending,audio_errors\n";
-
 int main(int argc, char **argv) {
     if (argc != 2) return 10;
     dino_guest_ack_trace_reset(&trace);
