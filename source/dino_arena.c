@@ -48,6 +48,12 @@ uint8_t dino_arena_pose_phase(const DinoArena *a) {
     return a ? (uint8_t)((a->ticks/6u)&1u) : 0u;
 }
 
+uint8_t dino_arena_counter_feedback_tick(uint8_t remaining,
+                                         uint32_t events) {
+    if (events&DINO_EVT_COUNTER) return 6u;
+    return remaining ? (uint8_t)(remaining-1u) : 0u;
+}
+
 void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if (!a) return;
     held &= (DINO_ARENA_LEFT|DINO_ARENA_RIGHT|
