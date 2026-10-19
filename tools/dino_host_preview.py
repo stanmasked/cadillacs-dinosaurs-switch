@@ -22,7 +22,7 @@ import time
 ROOT=Path(__file__).resolve().parents[1]
 WIDTH,HEIGHT=384,224
 PIXELS=WIDTH*HEIGHT*3
-LEFT,RIGHT,UP,DOWN,ATTACK,JUMP,SPAR=(1,2,4,8,16,32,64)
+LEFT,RIGHT,UP,DOWN,ATTACK,JUMP,SPAR,COUNTER=(1,2,4,8,16,32,64,128)
 
 
 class Status(ctypes.Structure):
@@ -165,7 +165,7 @@ class KeyboardInput:
         'left':LEFT,'a':LEFT,'right':RIGHT,'d':RIGHT,
         'up':UP,'w':UP,'down':DOWN,'s':DOWN,
     }
-    ACTIONS={'j':ATTACK,'k':JUMP,'l':SPAR}
+    ACTIONS={'j':ATTACK,'k':JUMP,'l':SPAR,'h':COUNTER}
 
     def __init__(self):
         self.held=set()
@@ -279,7 +279,7 @@ def interactive():
     canvas.pack()
     status_line=tk.StringVar()
     tk.Label(root,textvariable=status_line,font=('monospace',10)).pack()
-    tk.Label(root,text='Arrows/WASD: move  J: attack  K: jump  L: spar  R: reset  Esc: exit').pack()
+    tk.Label(root,text='Arrows/WASD: move  J: attack  K: jump  L: spar  H: counter  R: reset  Esc: exit').pack()
     inputs=KeyboardInput()
     scheduler=FixedTickScheduler()
     last_ns=time.monotonic_ns()
