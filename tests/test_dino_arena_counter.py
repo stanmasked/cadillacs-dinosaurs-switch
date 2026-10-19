@@ -89,6 +89,42 @@ class ArenaCounterGameplayTests(unittest.TestCase):
         self.assertEqual(a.player_hp,5)
         self.assertEqual(a.dummy_windup,0)
 
+    def test_hitstun_last_tick_is_not_counter_actionable(self):
+        a=self.ready()
+        a.player_hitstun=1
+        # A last-tick press is illegal even though the countdown hits zero
+        # before combat resolution. A *new* edge next tick is valid.
+        self.step(a,pressed=COUNTER)
+        self.assertFalse(a.events&COUNTER_EVENT)
+        self.assertEqual((a.player_hitstun,a.dummy_windup),(0,5))
+        self.assertEqual(a.dummy_hitstun,0)
+        self.step(a,pressed=COUNTER)
+        self.assertEqual(a.events,COUNTER_EVENT)
+        self.assertEqual(a.dummy_windup,0)
+
+    def test_attack_animation_last_tick_is_not_counter_actionable(self):
+        a=self.ready()
+        a.attack_frames=1
+        self.step(a,pressed=COUNTER)
+        self.assertFalse(a.events&COUNTER_EVENT)
+        self.assertEqual((a.attack_frames,a.dummy_windup),(0,5))
+        self.assertEqual(a.dummy_hitstun,0)
+        self.step(a,pressed=COUNTER)
+        self.assertEqual(a.events,COUNTER_EVENT)
+        self.assertEqual((a.player_hp,a.dummy_hp),(5,3))
+
+    def test_landing_tick_cannot_convert_airborne_press_to_counter(self):
+        a=self.ready()
+        a.z=1
+        a.vz=-2
+        self.step(a,pressed=COUNTER)
+        self.assertFalse(a.events&COUNTER_EVENT)
+        self.assertEqual((a.z,a.vz,a.dummy_windup),(0,0,5))
+        self.assertEqual(a.dummy_hitstun,0)
+        self.step(a,pressed=COUNTER)
+        self.assertEqual(a.events,COUNTER_EVENT)
+        self.assertEqual((a.player_hp,a.dummy_hp),(5,3))
+
     def test_counter_is_single_tick_not_passive_invulnerability(self):
         a=self.ready()
         self.step(a,pressed=COUNTER)
