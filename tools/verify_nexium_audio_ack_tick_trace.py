@@ -139,6 +139,13 @@ def compare_trace(rows,report,mode):
             polls=offset('checkpoint_guest_mid_batch_extra_poll_intervals')
             mode_row=offset('checkpoint_mode_intervals')
             total=offset('checkpoint_release_poll_intervals')
+            for entry in (position_report,release,recovery,polls,mode_row,total):
+                if (type(entry) is not dict or
+                        type(entry.get('tick_start')) is not int or
+                        type(entry.get('tick_end')) is not int or
+                        entry['tick_start']!=tick-150 or
+                        entry['tick_end']!=tick):
+                    raise ValueError('guest ACK checkpoint misalignment')
             for label,steps,skips,pages in (
                 ('single',mode_row['single_tick_render_steps'],
                  mode_row['skips_in_single_tick_render_frames'],
@@ -191,11 +198,9 @@ def compare_trace(rows,report,mode):
         # Guest counters (not total submitted/released) include pre-stress
         # pages: reconcile the *delta* rather than the lifetime totals.
         if name in ('submitted','released'):
-            start=report['queue_pending_at_stress_start']
-            end=report['queue_pending_at_stress_end']
-            # Stress report exposes deltas through the 150-tick windows.
-            observed_expected=sum(w['submitted'] if name=='submitted'
-                else w['released'] for w in windows)
+            # These report counts are stress-period deltas, excluding the
+            # two or fewer pending pages that predate the START checkpoint.
+            observed_expected=expected
         else:
             observed_expected=expected
         if stats[name]!=observed_expected:
