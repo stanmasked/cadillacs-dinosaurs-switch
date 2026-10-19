@@ -2,6 +2,9 @@
 #include "dino_sfx.h"
 #include "dino_pcm_witness.h"
 #include "dino_audio_queue.h"
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+#include "dino_pcm_resume_ramp.h"
+#endif
 #include <switch.h>
 
 enum { AUDIO_SLOTS=4, AUDIO_CAPACITY=4096 };
@@ -27,6 +30,11 @@ static uint32_t s_skip_full, s_skip_inactive, s_skip_unexpected;
 static uint32_t s_pre_poll_full, s_pre_poll_recovered;
 static uint32_t s_current_skip_streak, s_max_skip_streak;
 static uint64_t s_pcm_witness=DINO_PCM_WITNESS_INIT;
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+/* Test-only one-shot continuity attack after queue-full PCM discard. */
+static bool s_resume_ramp_after_full_skip;
+static uint32_t s_resume_ramp_applications;
+#endif
 #if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
 static uint32_t s_mid_batch_poll_calls,s_mid_batch_poll_releases;
 #endif
@@ -41,6 +49,9 @@ void dino_switch_sound_close(void) {
         s_initialized=false;
     }
     dino_audio_queue_reset(&s_queue);
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+    s_resume_ramp_after_full_skip=false;
+#endif
 }
 
 bool dino_switch_sound_open(void) {
@@ -72,6 +83,10 @@ bool dino_switch_sound_open(void) {
     s_skip_unexpected=0;
     s_current_skip_streak=0;
     s_max_skip_streak=0;
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+    s_resume_ramp_after_full_skip=false;
+    s_resume_ramp_applications=0;
+#endif
 #if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_MID_BATCH_POLL)
     s_mid_batch_poll_calls=s_mid_batch_poll_releases=0;
 #endif
@@ -176,8 +191,12 @@ void dino_switch_sound_step(uint32_t events) {
         /* Do not change page policy or reorder PCM: diagnostic only. */
         dino_audio_queue_skip(&s_queue);
         if (!s_started) ++s_skip_inactive;
-        else if (s_queue.pending>=DINO_AUDIO_QUEUE_MAX_PENDING)
+        else if (s_queue.pending>=DINO_AUDIO_QUEUE_MAX_PENDING) {
             ++s_skip_full;
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+            s_resume_ramp_after_full_skip=true;
+#endif
+        }
         else ++s_skip_unexpected;
         ++s_current_skip_streak;
         if (s_current_skip_streak>s_max_skip_streak)
@@ -192,6 +211,17 @@ void dino_switch_sound_step(uint32_t events) {
     s_pcm_witness=dino_pcm_witness_feed(
         s_pcm_witness,output,DINO_SFX_TICK_FRAMES);
     if (slot>=0) {
+#if defined(DINO_EMULATOR_SELFTEST) && defined(DINO_AUDIO_EXPERIMENT_RESUME_RAMP)
+        /* Synthesized PCM witness was already fed BEFORE this optional
+         * output-only edge treatment; no stale PCM is ever resubmitted.
+         * Ordinary homebrew never compiles this branch. */
+        if (s_resume_ramp_after_full_skip) {
+            if (dino_pcm_resume_ramp_apply(output,DINO_SFX_TICK_FRAMES,
+                                          DINO_PCM_RESUME_RAMP_FRAMES))
+                ++s_resume_ramp_applications;
+            s_resume_ramp_after_full_skip=false;
+        }
+#endif
         /* Flush the full 0x1000 page before handing it to audout.
          * Exactly 3200 bytes contain the active stereo PCM frame. */
         armDCacheFlush(s_pcm[slot],AUDIO_CAPACITY);
