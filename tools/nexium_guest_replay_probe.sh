@@ -280,6 +280,38 @@ python3 tools/verify_nexium_audio_ack_tick_trace.py \
     --mode "$DINO_AUDIO_MODE" \
     --out "$out/guest-audio-ack-tick-evidence.json"
 
+# Selftest-only bounded RAM clock witness: this CSV is dumped AFTER the
+# 900 game ticks, with the loop's ALREADY capped armTicksToNs interval.
+# A fake or incomplete clock trace cannot silently satisfy this gate.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-guest-frame-clock.csv' -print \
+    > "$out/guest-frame-clock-locations.txt"
+if [ -s "$out/guest-frame-clock-locations.txt" ]; then
+    IFS= read -r guest_clock_path < "$out/guest-frame-clock-locations.txt"
+    cp "$guest_clock_path" "$out/guest-frame-clock.csv"
+fi
+python3 - "$out/guest-frame-clock.csv" \
+    "$out/guest-audio-ack-ticks.csv" \
+    "$out/guest-audio-stress-evidence.json" \
+    "$DINO_AUDIO_MODE" \
+    "$out/guest-frame-clock-evidence.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+from tools import verify_nexium_guest_frame_clock as clock
+
+result=clock.verify_one(*sys.argv[1:5])
+with Path(sys.argv[5]).open('x',encoding='ascii') as out:
+    out.write(json.dumps(result,sort_keys=True)+'\n')
+print(json.dumps({
+    'status':result['status'],
+    'mode':result['mode'],
+    'frame_rows':result['frame_rows'],
+    'guest_nro_sha256_attested':False,
+},sort_keys=True))
+PY
+
+
 
 # Accept the software-only host-window sample bound ONLY after the
 # guest's ordered HID witness is verified. The result is explicitly
