@@ -57,10 +57,15 @@ jobs:
       - name: Verify host C gameplay and shared Switch replay contract
         run: |
           python3 -m unittest discover -s tests -p 'test_dino_host_preview.py' -v
-          python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_replay.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_replay_witness.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_pcm_witness.py' -v
+      - name: Verify counter against GCC, Clang and UBSan
+        run: |
+          # Never silently omit the Clang build on our official CI host.
+          command -v gcc
+          command -v clang
+          python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
       - name: Render independently authored practice-room witness
         run: |
           mkdir -p rom-free-preview
