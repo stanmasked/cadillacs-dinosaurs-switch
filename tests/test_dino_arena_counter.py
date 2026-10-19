@@ -40,6 +40,9 @@ class ArenaCounterGameplayTests(unittest.TestCase):
             raise AssertionError(proc.stderr)
         cls.lib=ctypes.CDLL(str(path))
         cls.lib.dino_arena_reset.argtypes=[ctypes.POINTER(Arena)]
+        cls.lib.dino_arena_counter_feedback_tick.argtypes=[
+            ctypes.c_uint8,ctypes.c_uint32]
+        cls.lib.dino_arena_counter_feedback_tick.restype=ctypes.c_uint8
         cls.lib.dino_arena_step.argtypes=[
             ctypes.POINTER(Arena),ctypes.c_uint32,ctypes.c_uint32]
 
@@ -275,12 +278,49 @@ class ArenaCounterGameplayTests(unittest.TestCase):
         finally:
             game.close()
 
+    def test_caption_latch_is_six_simulation_ticks_and_pure(self):
+        from ctypes import string_at,addressof,sizeof
+        a=self.ready()
+        before=string_at(addressof(a),sizeof(a))
+        tick=self.lib.dino_arena_counter_feedback_tick
+        self.assertEqual(tick(0,0),0)
+        self.assertEqual(tick(0,COUNTER_EVENT),6)
+        self.assertEqual(string_at(addressof(a),sizeof(a)),before)
+        remaining=6
+        for expected in (5,4,3,2,1,0):
+            remaining=tick(remaining,0)
+            self.assertEqual(remaining,expected)
+        self.assertEqual(tick(0,1<<10),0)
+        self.assertEqual(tick(2,COUNTER_EVENT),6)
+
+    def test_desktop_counter_caption_expires_without_new_event(self):
+        from tools import dino_host_preview as host
+        game=host.HostArena()
+        try:
+            self.assertEqual(game.counter_feedback_ticks,0)
+            for _ in range(65):game.step(host.RIGHT)
+            game.step(0,host.SPAR)
+            game.step(0,host.COUNTER)
+            self.assertEqual(game.status().events,COUNTER_EVENT)
+            self.assertEqual(game.counter_feedback_ticks,6)
+            for expected in (5,4,3,2,1,0):
+                game.step()
+                self.assertEqual(game.counter_feedback_ticks,expected)
+            self.assertEqual(game.status().player_hp,5)
+            game.reset()
+            self.assertEqual(game.counter_feedback_ticks,0)
+        finally:
+            game.close()
+
     def test_switch_button_and_event_feedback_are_wired_only_on_counter(self):
         source=(ROOT/'source/main.c').read_text(encoding='utf-8')
         self.assertIn(
             'if (down & HidNpadButton_ZR) pending_actions|=DINO_ARENA_COUNTER;',
             source)
-        self.assertIn('if (arena->events&DINO_EVT_COUNTER)',source)
+        self.assertIn('if (counter_feedback_ticks)',source)
+        self.assertIn('counter_feedback_ticks=dino_arena_counter_feedback_tick(',
+                      source)
+        self.assertIn('counter_feedback_ticks=0;',source)
         self.assertIn('"COUNTER!"',source)
         self.assertIn(
             '"DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT"',
