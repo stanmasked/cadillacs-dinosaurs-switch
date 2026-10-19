@@ -20,6 +20,7 @@
 #ifdef DINO_EMULATOR_SELFTEST
 #include "dino_guest_ack_trace.h"
 #include "dino_guest_frame_clock.h"
+#include "dino_guest_counter_probe.h"
 #endif
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
@@ -637,6 +638,16 @@ int main(int argc, char **argv) {
     uint32_t guest_frame_id=0;
     if (arena_active) {
         (void)fsdevMountSdmc();
+        /* Stage 229: guest-executed, scripted ROM-free counter proof.
+         * This writes only synthetic diagnostic state, before the main
+         * 180-tick replay; never record raw pad values or ROM contents.
+         * Its result is independently checked by a fail-closed host
+         * verifier, rather than being equated with physical ZR input. */
+        FILE *counter_guest=fopen("sdmc:/cadillacs-counter-guest.csv","w");
+        if (counter_guest) {
+            (void)dino_guest_counter_probe(counter_guest);
+            (void)fclose(counter_guest);
+        }
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
         if (guest_witness) {
             fputs("event,ticks,player_x,player_hp,hits,state_fnv64,"
