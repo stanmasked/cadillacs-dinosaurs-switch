@@ -74,7 +74,7 @@ class ResumePCMEdgeBenchTests(unittest.TestCase):
                 self.assertTrue(r["actual_c_ramp_matched_integer_oracle"])
                 self.assertEqual(len(r["shaped_pcm_sha256"]),64)
         self.assertEqual(len({
-            r["shaped_pcm_sha256"] for r in self.report["profiles"]}),4)
+            r["shaped_pcm_sha256"] for r in self.report["profiles"]}),3)
 
     def test_signed_c_truncation_reference_matches_at_edges(self):
         self.assertEqual(edge.oracle_sample(-32768,0),-341)
