@@ -11,9 +11,9 @@ from unittest.mock import patch
 from tools import verify_nexium_guest_counter_hid as verifier
 from tools import nexium_counter_hid_press as host_zr
 
-HEADER='phase,tick,player_hp,enemy_hp,windup,stun,cooldown,event_mask,hid_edge\n'
-READY='READY,1,5,3,12,0,0,1,0\n'
-SUCCESS='HID_COUNTER,2,5,3,0,9,48,2048,1\n'
+HEADER='phase,tick,player_hp,enemy_hp,windup,stun,cooldown,event_mask,hid_edge,pcm_nonzero,pcm_fnv64\n'
+READY='READY,1,5,3,12,0,0,1,0,0,CBF29CE484222325\n'
+SUCCESS='HID_COUNTER,2,5,3,0,9,48,2048,1,1,1169E164EDF5FD7D\n'
 
 
 class GuestHidCounterVerifierTests(unittest.TestCase):
@@ -28,6 +28,8 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
             self.assertFalse(result['physical_controller_hardware_verified'])
             self.assertFalse(result['natural_combat_counter_window_verified'])
             self.assertFalse(result['audio_output_verified'])
+            self.assertTrue(result['synthetic_pcm_verified'])
+            self.assertEqual(result['counter_pcm_fnv64'],'1169E164EDF5FD7D')
 
     def test_verifier_rejects_missing_and_symlinked_evidence(self):
         with tempfile.TemporaryDirectory() as d:
@@ -40,11 +42,15 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
 
     def test_rejects_attempt_without_guest_counter_game_event(self):
         for bad in (
-            SUCCESS.replace(',2048,1',',0,1'),
-            SUCCESS.replace(',2048,1',',2048,0'),
+            SUCCESS.replace(',2048,1,1,',',0,1,1,'),
+            SUCCESS.replace(',2048,1,1,',',2048,0,1,'),
             SUCCESS.replace(',9,48,',',9,47,'),
             SUCCESS.replace(',5,3,',',4,3,'),
             SUCCESS.replace('HID_COUNTER','READY'),
+            SUCCESS.replace(',2048,1,1,',',2048,1,0,'),
+            SUCCESS.replace('1169E164EDF5FD7D','1169E164EDF5FD7C'),
+            SUCCESS.replace('1169E164EDF5FD7D','1169e164edf5fd7d'),
+            SUCCESS.replace('1169E164EDF5FD7D','CBF29CE484222325'),
         ):
             with self.subTest(bad=bad):
                 with tempfile.TemporaryDirectory() as d:
