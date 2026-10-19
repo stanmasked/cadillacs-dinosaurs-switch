@@ -79,7 +79,7 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             witness=root/'cadillacs-audio-stress.csv'
-            witness.write_text('event,elapsed_ticks,...\\nSTRESS_DONE,900,1\\n',
+            witness.write_text('event,elapsed_ticks,'+'x'*95+'\n'+'STRESS_DONE,900,1\n',
                                encoding='ascii')
             self.assertTrue(host_zr.stress_complete([root]))
             with patch.object(host_zr.subprocess,'run') as run, \
@@ -101,7 +101,7 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
             run.assert_not_called()
             # A symlinked fake completion must never arm the host press.
             external=root/'outside.csv'
-            external.write_text('STRESS_DONE,900,1\\n',encoding='ascii')
+            external.write_text('STRESS_DONE,900,1\n',encoding='ascii')
             (root/'cadillacs-audio-stress.csv').symlink_to(external)
             self.assertFalse(host_zr.stress_complete([root]))
 
