@@ -6,13 +6,71 @@ CSV can show that libnx actually consumed a ZR edge and produced the
 original counter combat event. No ROM, private paths or key logs retained.
 """
 import argparse
+import csv
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
 
+if __package__:
+    from tools import verify_nexium_audio_stress as stress_schema
+else:
+    import verify_nexium_audio_stress as stress_schema
+
 STRESS='cadillacs-audio-stress.csv'
+HEX16=re.compile(r'[0-9A-F]{16}\\Z')
+
+
+def is_complete_guest_stress(path):
+    """Preflight only: accept a full 7-row NRO-written stress trace.
+
+    This does NOT replace the separate deep numeric stress verifier,
+    guest timeline binding, provenance checks or audout validation.
+    Reject files still being written before attempting host key T.
+    """
+    if path.is_symlink() or not path.is_file():
+        return False
+    if not 128 <= path.stat().st_size <= 4096:
+        return False
+    with path.open(encoding='ascii',newline='') as stream:
+        reader=csv.DictReader(stream)
+        if reader.fieldnames != stress_schema.COLUMNS:
+            return False
+        rows=list(reader)
+    if len(rows)!=7:
+        return False
+    start_tick=None
+    for index,row in enumerate(rows):
+        if None in row or any(value is None for value in row.values()):
+            return False
+        if row['event']!=stress_schema.EVENTS[index]:
+            return False
+        numeric_columns=(name for name in stress_schema.COLUMNS[1:]
+                         if name!='pcm_fnv64')
+        if any(not row[name].isascii() or not row[name].isdecimal() or
+               (len(row[name])>1 and row[name].startswith('0')) or
+               int(row[name])>0xffffffff for name in numeric_columns):
+            return False
+        if not HEX16.fullmatch(row['pcm_fnv64']):
+            return False
+        elapsed=int(row['elapsed_ticks'])
+        arena=int(row['arena_ticks'])
+        if elapsed != stress_schema.CHECKPOINTS[index]:
+            return False
+        if index==0:
+            start_tick=arena
+        elif arena!=start_tick+elapsed:
+            return False
+        if (int(row['audio_ticks']) != int(rows[0]['audio_ticks'])+elapsed or
+                int(row['pcm_ticks']) != int(rows[0]['pcm_ticks'])+elapsed):
+            return False
+        if (row['active']!='1' or row['queue_valid']!='1' or
+                int(row['pending'])>2 or
+                int(row['submitted'])-int(row['released'])!=int(row['pending'])):
+            return False
+    return True
 
 
 def stress_complete(roots):
@@ -35,14 +93,9 @@ def stress_complete(roots):
             if path.is_symlink() or not path.is_file():
                 continue
             try:
-                if not 100 <= path.stat().st_size <= 65536:
-                    continue
-                with path.open(encoding='ascii',errors='strict') as stream:
-                    tail=stream.read()[-8192:]
-                if any(line.startswith('STRESS_DONE,900,')
-                       for line in tail.splitlines()):
+                if is_complete_guest_stress(path):
                     return True
-            except (OSError,UnicodeError):
+            except (OSError,UnicodeError,csv.Error,ValueError):
                 continue
     return False
 
