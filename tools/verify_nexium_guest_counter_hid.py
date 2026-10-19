@@ -12,13 +12,14 @@ Validation of a fabricated fixture alone is NOT NeXium evidence.
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 
 FIELDS=['phase','tick','player_hp','enemy_hp','windup','stun',
-        'cooldown','event_mask','hid_edge']
+        'cooldown','event_mask','hid_edge','pcm_nonzero','pcm_fnv64']
 EXPECTED=[
-    ['READY',1,5,3,12,0,0,1,0],
-    ['HID_COUNTER',2,5,3,0,9,48,2048,1],
+    ['READY',1,5,3,12,0,0,1,0,'CBF29CE484222325'],
+    ['HID_COUNTER',2,5,3,0,9,48,2048,1,1,'1169E164EDF5FD7D'],
 ]
 
 
@@ -44,19 +45,25 @@ def verify(path):
         if row['phase']!=expected[0]:
             raise ValueError('counter HID phases out of order')
         parsed=[]
-        for field in FIELDS[1:]:
+        for field in FIELDS[1:-1]:
             v=row[field]
             if not v or not v.isascii() or not v.isdecimal() or (
                     len(v)>1 and v.startswith('0')):
                 raise ValueError('noncanonical counter HID integer')
             parsed.append(int(v))
-        if parsed!=expected[1:]:
-            raise ValueError('counter HID gameplay or key edge mismatch')
+        if parsed!=expected[1:-1]:
+            raise ValueError('counter HID gameplay, key edge or PCM presence mismatch')
+        hash_text=row['pcm_fnv64']
+        if (not re.fullmatch(r'[0-9A-F]{16}',hash_text) or
+                hash_text!=expected[-1]):
+            raise ValueError('counter HID PCM differs from native C golden')
     return {
         'schema':'dino-nexium-counter-real-hid-v1',
         'status':'GUEST_LIBNX_ZR_EDGE_AND_COUNTER_EFFECT_WITNESSED',
         'recorded_after_guest_audio_stress':True,
         'guest_zr_edge_in_normal_60hz_step':True,
+        'synthetic_pcm_verified':True,
+        'counter_pcm_fnv64':'1169E164EDF5FD7D',
         'controlled_ready_training_arena_only':True,
         'physical_controller_hardware_verified':False,
         'natural_combat_counter_window_verified':False,
