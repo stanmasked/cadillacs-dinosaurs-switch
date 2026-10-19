@@ -79,6 +79,16 @@ class ArenaCounterGameplayTests(unittest.TestCase):
         self.assertEqual(a.successful_hits,0)
         self.assertEqual(a.ticks,1)
 
+    def test_last_windup_tick_counter_prevents_imminent_damage(self):
+        a=self.ready()
+        a.dummy_windup=1
+        self.step(a,pressed=COUNTER)
+        self.assertEqual(a.events,COUNTER_EVENT)
+        self.assertFalse(a.events&ENEMY_SWING)
+        self.assertFalse(a.events&PLAYER_HIT)
+        self.assertEqual(a.player_hp,5)
+        self.assertEqual(a.dummy_windup,0)
+
     def test_counter_is_single_tick_not_passive_invulnerability(self):
         a=self.ready()
         self.step(a,pressed=COUNTER)
@@ -177,6 +187,41 @@ class ArenaCounterGameplayTests(unittest.TestCase):
                              string_at(addressof(b),sizeof(b)))
             self.assertFalse(a.events&COUNTER_EVENT)
         self.assertEqual(a.ticks,700)
+
+    def test_desktop_h_action_is_true_key_edge(self):
+        from tools import dino_host_preview as host
+        controls=host.KeyboardInput()
+        controls.key_down('h')
+        self.assertEqual(controls.tick_input(),(0,COUNTER))
+        controls.key_down('h')  # key-repeat must not trigger again
+        self.assertEqual(controls.tick_input(),(0,0))
+        controls.key_up('h')
+        controls.key_down('H')
+        self.assertEqual(controls.tick_input(),(0,COUNTER))
+
+    def test_native_desktop_bridge_dispatches_real_c_counter(self):
+        from tools import dino_host_preview as host
+        game=host.HostArena()
+        try:
+            for _ in range(65):game.step(host.RIGHT)
+            game.step(0,host.SPAR)
+            self.assertEqual(game.status().sparring,1)
+            game.step(0,host.COUNTER)
+            self.assertEqual(game.status().events,COUNTER_EVENT)
+            self.assertEqual(game.status().player_hp,5)
+        finally:
+            game.close()
+
+    def test_switch_button_and_event_feedback_are_wired_only_on_counter(self):
+        source=(ROOT/'source/main.c').read_text(encoding='utf-8')
+        self.assertIn(
+            'if (down & HidNpadButton_ZR) pending_actions|=DINO_ARENA_COUNTER;',
+            source)
+        self.assertIn('if (arena->events&DINO_EVT_COUNTER)',source)
+        self.assertIn('"COUNTER!"',source)
+        self.assertIn(
+            '"DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT"',
+            source)
 
     def test_adversarial_random_inputs_never_overflow_bounds(self):
         r=random.Random(225)
