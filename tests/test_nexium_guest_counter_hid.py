@@ -3,6 +3,7 @@
 Static CSV fixtures validate the fail-closed grammar ONLY. They are
 not evidence that NeXium delivered a real controller event.
 """
+import csv
 import tempfile
 from pathlib import Path
 import unittest
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 from tools import verify_nexium_guest_counter_hid as verifier
 from tools import nexium_counter_hid_press as host_zr
+from tools import verify_nexium_audio_stress as stress_schema
 
 HEADER='phase,tick,player_hp,enemy_hp,windup,stun,cooldown,event_mask,hid_edge,pcm_nonzero,pcm_fnv64\n'
 READY='READY,1,5,3,12,0,0,1,0,0,CBF29CE484222325\n'
@@ -17,6 +19,28 @@ SUCCESS='HID_COUNTER,2,5,3,0,9,48,2048,1,1,1169E164EDF5FD7D\n'
 
 
 class GuestHidCounterVerifierTests(unittest.TestCase):
+    @staticmethod
+    def write_complete_stress(path):
+        # This is a synthetic parser fixture, not a recorded NRO run.
+        with path.open('w',encoding='ascii',newline='') as stream:
+            writer=csv.DictWriter(stream,fieldnames=stress_schema.COLUMNS)
+            writer.writeheader()
+            for index,elapsed in enumerate(stress_schema.CHECKPOINTS):
+                row={name:'0' for name in stress_schema.COLUMNS}
+                row.update({
+                    'event':stress_schema.EVENTS[index],
+                    'elapsed_ticks':str(elapsed),
+                    'arena_ticks':str(230+elapsed),
+                    'audio_ticks':str(240+elapsed),
+                    'pcm_ticks':str(240+elapsed),
+                    'active':'1','queue_valid':'1',
+                    'pending':'1',
+                    'submitted':str(20+index),
+                    'released':str(19+index),
+                    'pcm_fnv64':f'{index+1:016X}',
+                })
+                writer.writerow(row)
+
     def test_valid_fixture_parses_but_never_claims_hardware(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'fake.csv'
@@ -110,8 +134,7 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             witness=root/'cadillacs-audio-stress.csv'
-            witness.write_text('event,elapsed_ticks,'+'x'*95+'\n'+'STRESS_DONE,900,1\n',
-                               encoding='ascii')
+            self.write_complete_stress(witness)
             self.assertTrue(host_zr.stress_complete([root]))
             with patch.object(host_zr.subprocess,'run') as run, \
                  patch.object(host_zr.time,'sleep'):
@@ -135,6 +158,59 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
             external.write_text('STRESS_DONE,900,1\n',encoding='ascii')
             (root/'cadillacs-audio-stress.csv').symlink_to(external)
             self.assertFalse(host_zr.stress_complete([root]))
+
+    def test_partial_or_malformed_stress_never_arms_host_zr(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            file=root/'cadillacs-audio-stress.csv'
+            self.write_complete_stress(file)
+            complete=file.read_text(encoding='ascii')
+            self.assertTrue(host_zr.stress_complete([root]))
+            for bad in (
+                complete.replace('STRESS_DONE,900,','CHECKPOINT,900,'),
+                complete.replace('CHECKPOINT,750,','CHECKPOINT,749,'),
+                complete.replace('CHECKPOINT,750,','CHECKPOINT,750,')+
+                    complete.splitlines()[-1]+'\n',
+                '\n'.join(complete.splitlines()[:-1])+'\n',
+                complete.replace('elapsed_ticks','elapsed_fake'),
+                complete.replace('GUEST_NOT_PRESENT','X'),
+                complete.replace('STRESS_DONE,900,','STRESS_DONE,900,',
+                                 1).replace('STRESS_DONE,900,','STRESS_DONE,0900,'),
+            ):
+                if bad==complete:
+                    continue
+                with self.subTest(sample=bad[-65:]):
+                    file.write_text(bad,encoding='ascii')
+                    self.assertFalse(host_zr.stress_complete([root]))
+            file.write_text('STRESS_DONE,900,1\n',encoding='ascii')
+            self.assertFalse(host_zr.stress_complete([root]))
+
+    def test_stress_clock_and_queue_corruption_refuse_key_attempt(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            file=root/'cadillacs-audio-stress.csv'
+            self.write_complete_stress(file)
+            good=file.read_text(encoding='ascii')
+            with file.open(encoding='ascii',newline='') as stream:
+                original=list(csv.DictReader(stream))
+            for key,value in (
+                ('arena_ticks','3000'),
+                ('audio_ticks','2999'),
+                ('pcm_ticks','9999'),
+                ('queue_valid','0'),
+                ('pending','2'),
+                ('pcm_fnv64','NOT_A_HEX_DIGEST'),
+            ):
+                with self.subTest(key=key):
+                    rows=[dict(item) for item in original]
+                    rows[-1][key]=value
+                    with file.open('w',encoding='ascii',newline='') as stream:
+                        writer=csv.DictWriter(stream,fieldnames=stress_schema.COLUMNS)
+                        writer.writeheader()
+                        writer.writerows(rows)
+                    self.assertFalse(host_zr.stress_complete([root]))
+            file.write_text(good,encoding='ascii')
+            self.assertTrue(host_zr.stress_complete([root]))
 
     def test_real_input_source_is_separate_from_scripted_guest_probe(self):
         source=Path('source/main.c').read_text(encoding='utf-8')
