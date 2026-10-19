@@ -18,7 +18,7 @@ from pathlib import Path
 FIELDS=['phase','tick','player_hp','enemy_hp','windup','stun',
         'cooldown','event_mask','hid_edge','pcm_nonzero','pcm_fnv64']
 EXPECTED=[
-    ['READY',1,5,3,12,0,0,1,0,'CBF29CE484222325'],
+    ['READY',1,5,3,12,0,0,1,0,0,'CBF29CE484222325'],
     ['HID_COUNTER',2,5,3,0,9,48,2048,1,1,'1169E164EDF5FD7D'],
 ]
 
