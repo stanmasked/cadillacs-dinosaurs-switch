@@ -4,6 +4,7 @@ Host test fixtures do NOT prove execution inside the NeXium emulator;
 the GitHub guest job is responsible for collecting the actual NRO file.
 """
 import csv
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -212,6 +213,8 @@ class GuestCounterNativeTests(unittest.TestCase):
             '-o',str(binary),
         ],cwd=ROOT,capture_output=True,text=True)
         if proc.returncode:
+            if os.environ.get('DINO_REQUIRE_UBSAN')=='1':
+                self.fail('Required CI UBSan compile failed: '+proc.stderr)
             self.skipTest('UBSan unavailable on this host GCC')
         trace=Path(self.tmp.name)/'guest-ubsan.csv'
         result=subprocess.run([str(binary),str(trace)],cwd=ROOT,
