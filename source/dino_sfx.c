@@ -25,6 +25,10 @@ static const SoundDef sounds[] = {
     {DINO_EVT_PLAYER_SWING, 260,  5, 1150,  -36, WAVE_NOISE,    3},
     {DINO_EVT_DODGE,        710,  8, 1050,    0, WAVE_TRIANGLE, 3},
     {DINO_EVT_DUMMY_SWING,  196,  7, 1300,   36, WAVE_NOISE,    3},
+    /* Original Stage 227 counter confirmation: one short pitched cue.
+     * It is never triggered during the legacy demo (no counter input).
+     * Moderate priority keeps existing damage/KO cues dominant. */
+    {DINO_EVT_COUNTER,      820,  6, 1350,    0, WAVE_TRIANGLE, 4},
     {DINO_EVT_DUMMY_HIT,    132, 10, 1700,   44, WAVE_NOISE,    5},
     {DINO_EVT_PLAYER_HIT,   114, 12, 1900,  -44, WAVE_NOISE,    6},
     {DINO_EVT_FINISHER,     108, 14, 2100,   16, WAVE_TRIANGLE, 7},
