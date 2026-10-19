@@ -725,3 +725,23 @@ or a naturally encountered counter opportunity. The complete
 180-tick replay and the existing 900-tick guest audout health
 window are unchanged; the extra synth buffer is local to the
 optional post-stress guest diagnostic and never submitted to audout.
+
+## Stage 236 — fix verified guest ZR PCM verifier failure
+
+Stage 235 Python CI (commit `91fcccb0`) exposed one false-negative
+test: the new guest `READY` record has **11 columns** after the
+addition of `pcm_nonzero` and `pcm_fnv64`, but its expected-list
+entry had only 10 values. This rejected an otherwise valid fixture;
+it was not evidence of a live Switch gameplay failure.
+
+The verifier now requires `hid_edge=0`, `pcm_nonzero=0`, and
+`pcm_fnv64=CBF29CE484222325` in the `READY` row, alongside the
+unchanged 11-field `HID_COUNTER` expectation. Two additional
+regressions check column counts and reject missing/corrupt ready
+audio fields. A separate literal schema/fixture comparison passed;
+GitHub Actions and real NeXium guest results remain independent
+and must be confirmed on the new commit.
+
+Only diagnostic validation and tests are affected. Core gameplay,
+Switch ROM-free audio synth, 180-tick replay and original game data
+are unchanged.
