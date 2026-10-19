@@ -64,7 +64,7 @@ class GuestCounterNativeTests(unittest.TestCase):
         self.assertEqual(result['counter_pcm_fnv64'],'1169E164EDF5FD7D')
         self.assertTrue(result['wrong_facing_counter_rejected'])
         self.assertFalse(result['guest_hid_zr_verified'])
-        self.assertEqual(path.read_text(encoding='ascii').count('\n'),11)
+        self.assertEqual(path.read_text(encoding='ascii').count('\n'),14)
         self.assertEqual(result['invalid_impact_tick_counters_rejected'],5)
 
     def test_two_native_executions_are_byte_identical(self):
@@ -115,11 +115,59 @@ class GuestCounterNativeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 counter.verify(path)
 
+    def test_guest_counter_recovery_and_second_edge_pcm_roundtrip(self):
+        path=self.run_probe('recovery-roundtrip.csv')
+        with path.open(encoding='ascii',newline='') as stream:
+            rows={row['phase']:row for row in csv.DictReader(stream)}
+        self.assertEqual(len(rows),13)
+        expected={
+            'RECOVERY':(3,8,47,0,0),
+            'EARLY_REPEAT':(4,7,46,0,0),
+            'REARMED':(50,0,0,12,0),
+            'SECOND_COUNTER':(51,9,48,0,2048),
+        }
+        for phase,(tick,stun,cooldown,windup,mask) in expected.items():
+            with self.subTest(phase=phase):
+                row=rows[phase]
+                self.assertEqual(
+                    tuple(int(row[k]) for k in
+                          ('tick','stun','cooldown','windup','event_mask')),
+                    (tick,stun,cooldown,windup,mask))
+                self.assertEqual((row['player_hp'],row['enemy_hp']),
+                                 ('5','3'))
+        self.assertEqual(rows['COUNTER']['pcm_fnv64'],
+                         rows['SECOND_COUNTER']['pcm_fnv64'])
+        self.assertEqual(rows['COUNTER']['pcm_nonzero'],'1')
+        self.assertEqual(rows['SECOND_COUNTER']['pcm_nonzero'],'1')
+        summary=counter.verify(path)
+        self.assertEqual(summary['counter_cooldown_rearmed_after_ticks'],48)
+        self.assertTrue(summary['second_counter_pcm_matches_first'])
+
+    def test_guest_verifier_rejects_early_repeat_or_late_rearm(self):
+        path=self.run_probe('corrupt-roundtrip.csv')
+        original=path.read_text(encoding='ascii')
+        changes=(
+            ('EARLY_REPEAT,4,5,3,0,7,46,0,0,',
+             'EARLY_REPEAT,4,5,3,0,7,46,2048,0,'),
+            ('REARMED,50,5,3,12,0,0,0,0,',
+             'REARMED,50,5,3,0,0,0,0,0,'),
+            ('SECOND_COUNTER,51,5,3,0,9,48,2048,1,',
+             'SECOND_COUNTER,51,5,3,0,9,48,2048,0,'),
+            ('SECOND_COUNTER,51,5,3,0,9,48,2048,1,',
+             'SECOND_COUNTER,51,5,3,0,9,47,2048,1,'),
+        )
+        for old,new in changes:
+            self.assertIn(old,original)
+            with self.subTest(corruption=old.split(',')[0]):
+                path.write_text(original.replace(old,new),encoding='ascii')
+                with self.assertRaises(ValueError):
+                    counter.verify(path)
+
     def test_exact_impact_boundary_cases_reject_counter_and_apply_damage(self):
         path=self.run_probe('boundary-live.csv')
         with path.open(encoding='ascii',newline='') as src:
             records=list(csv.DictReader(src))
-        self.assertEqual(len(records),10)
+        self.assertEqual(len(records),13)
         expect={
             'LAST_HITSTUN':384,
             'LAST_ATTACK':384,
