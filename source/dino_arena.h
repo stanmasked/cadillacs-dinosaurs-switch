@@ -16,7 +16,8 @@ enum {
     DINO_ARENA_DOWN = 8u,
     DINO_ARENA_ATTACK = 16u,
     DINO_ARENA_JUMP = 32u,
-    DINO_ARENA_TOGGLE_SPAR = 64u /* explicitly invented training AI */
+    DINO_ARENA_TOGGLE_SPAR = 64u, /* explicitly invented training AI */
+    DINO_ARENA_COUNTER = 128u /* edge-triggered defensive counter, spar only */
 };
 
 typedef struct {
@@ -56,7 +57,8 @@ enum {
     DINO_EVT_DUMMY_SWING=1u<<7,
     DINO_EVT_PLAYER_HIT=1u<<8,
     DINO_EVT_PLAYER_KO=1u<<9,
-    DINO_EVT_DODGE=1u<<10
+    DINO_EVT_DODGE=1u<<10,
+    DINO_EVT_COUNTER=1u<<11 /* successful interrupt during enemy windup */
 };
 
 /* Visual state is derived from 60 Hz simulation, not from art or MAME.
