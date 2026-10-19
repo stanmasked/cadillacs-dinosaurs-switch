@@ -174,11 +174,14 @@ def generate(out_dir):
     for name in FILE_NAMES:
         buf=pcm_bytes(streams[name])
         file=path/name
-        with wave.open(str(file),"xb") as wav:
-            wav.setnchannels(CHANNELS)
-            wav.setsampwidth(2)
-            wav.setframerate(RATE)
-            wav.writeframes(buf)
+        # Keep exclusive-create semantics: wave.open itself only accepts
+        # the standard "wb" mode, so provide an already-exclusive handle.
+        with file.open("xb") as destination:
+            with wave.open(destination,"wb") as wav:
+                wav.setnchannels(CHANNELS)
+                wav.setsampwidth(2)
+                wav.setframerate(RATE)
+                wav.writeframes(buf)
         output.append({
             "file_name":name,
             "sha256_pcm_le":hashlib.sha256(buf).hexdigest(),
