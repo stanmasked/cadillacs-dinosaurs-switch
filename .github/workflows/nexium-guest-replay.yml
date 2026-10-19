@@ -83,6 +83,9 @@ on:
       - 'tests/test_nexium_guest_frame_interval_pcm_bins.py'
       - 'tools/nexium_guest_audio_pressure_witness.py'
       - 'tests/test_nexium_guest_audio_pressure_witness.py'
+      - 'source/dino_pcm_resume_ramp.c'
+      - 'source/dino_pcm_resume_ramp.h'
+      - 'tests/test_dino_pcm_resume_ramp.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -154,6 +157,9 @@ on:
       - 'tests/test_nexium_guest_frame_interval_pcm_bins.py'
       - 'tools/nexium_guest_audio_pressure_witness.py'
       - 'tests/test_nexium_guest_audio_pressure_witness.py'
+      - 'source/dino_pcm_resume_ramp.c'
+      - 'source/dino_pcm_resume_ramp.h'
+      - 'tests/test_dino_pcm_resume_ramp.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -559,6 +565,9 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-guest-queue-pressure-witness.json
+          # Optional DSP candidate is compiled/tested but never enabled in
+          # the normal NRO or either current real guest A/B configuration.
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_ramp.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
