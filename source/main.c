@@ -270,7 +270,8 @@ static const char *arena_pose_name(DinoArenaPose pose) {
 static void arena_frame(uint32_t *frame, unsigned pitch,
                         const DinoArena *arena, bool have_gfx,
                         uint32_t demo_ticks, bool demo_active,
-                        bool demo_complete, uint64_t demo_witness) {
+                        bool demo_complete, uint64_t demo_witness,
+                        uint8_t counter_feedback_ticks) {
     const DinoArenaPose player=dino_arena_player_pose(arena);
     const DinoArenaPose enemy=dino_arena_dummy_pose(arena);
     const unsigned phase=dino_arena_pose_phase(arena);
@@ -412,9 +413,10 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
              (unsigned)arena->successful_hits,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
-    /* Counter feedback appears ONLY on the one-shot new action event.
-     * All historic demo frames remain pixel-identical without it. */
-    if (arena->events&DINO_EVT_COUNTER)
+    /* A successful counter remains legible for six simulated ticks,
+     * even when multiple game ticks precede one framebuffer refresh.
+     * The legacy replay never emits this event and remains identical. */
+    if (counter_feedback_ticks)
         label(frame,pitch,800,670,"COUNTER!",1,rgb(91,235,201));
     label(frame,pitch,52,698,
           "DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT",
@@ -595,6 +597,7 @@ int main(int argc, char **argv) {
      * Only the ROM-free arena requires synthesized training audio. */
     if (arena_active) (void)dino_switch_sound_open();
     uint32_t pending_actions=0;
+    uint8_t counter_feedback_ticks=0; /* presentation only, not DinoArena */
     uint32_t demo_ticks=0;
     uint64_t demo_witness=DINO_WITNESS_INIT;
     bool demo_active=false, demo_complete=false;
@@ -668,6 +671,7 @@ int main(int argc, char **argv) {
             arena_active=!arena_active;
             arena_clock_carry=0;
             pending_actions=0;
+            counter_feedback_ticks=0;
             demo_active=false;
             demo_complete=false;
             demo_ticks=0;
@@ -687,6 +691,7 @@ int main(int argc, char **argv) {
                 demo_active=true;
                 demo_complete=false;
                 pending_actions=0;
+                counter_feedback_ticks=0;
                 arena_clock_carry=0;
                 /* The desktop witness starts from a reset SFX timeline.
                  * Make NRO replay audio equally reproducible, including
@@ -728,6 +733,7 @@ int main(int argc, char **argv) {
                 demo_complete=false;
                 arena_clock_carry=0;
                 pending_actions=0;
+                counter_feedback_ticks=0;
             }
             uint32_t held_arena=0;
             if (held & HidNpadButton_Left) held_arena|=DINO_ARENA_LEFT;
@@ -754,6 +760,8 @@ int main(int argc, char **argv) {
                         break; /* invalid trace never runs unknown input */
                 }
                 dino_arena_step(&arena,step_held,step_pressed);
+                counter_feedback_ticks=dino_arena_counter_feedback_tick(
+                    counter_feedback_ticks,arena.events);
 #ifdef DINO_EMULATOR_SELFTEST
                 if (guest_controller_active && !demo_active) {
                     /* A second witness records the ordered effect timeline.
@@ -1053,6 +1061,7 @@ int main(int argc, char **argv) {
         } else {
             arena_clock_carry=0;
             pending_actions=0;
+            counter_feedback_ticks=0;
         }
         if (!arena_active && (down & HidNpadButton_X) && scene_rgba)
             show_scene=!show_scene;
@@ -1111,7 +1120,8 @@ int main(int argc, char **argv) {
         if (!frame) break;
         if (arena_active)
             arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL,
-                        demo_ticks,demo_active,demo_complete,demo_witness);
+                        demo_ticks,demo_active,demo_complete,demo_witness,
+                        counter_feedback_ticks);
         else if (show_scene && scene_rgba)
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
