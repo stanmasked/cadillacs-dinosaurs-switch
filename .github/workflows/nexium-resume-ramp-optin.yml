@@ -20,6 +20,8 @@ on:
       - 'tools/dino_pcm_resume_guarded_proxy_report.py'
       - 'tests/test_dino_pcm_resume_guarded_proxy.py'
       - 'tests/test_dino_pcm_resume_guarded_proxy_report.py'
+      - 'tools/dino_pcm_resume_listening_preview.py'
+      - 'tests/test_dino_pcm_resume_listening_preview.py'
       - '.github/workflows/nexium-resume-ramp-optin.yml'
 
 permissions:
@@ -79,6 +81,43 @@ jobs:
           assert not r['physical_switch_speaker_audio_verified']
           print('Guards reject channel-worsening PCM proxy cases')
           PY
+      - name: Test and render three ROM-free WAV listening comparisons
+        run: |
+          set -eu
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_listening_preview.py' -v
+          mkdir -p synthetic-listening-preview
+          python3 tools/dino_pcm_resume_listening_preview.py \
+            --out-dir synthetic-listening-preview
+          python3 - <<'PY'
+          import json
+          import wave
+          from pathlib import Path
+          root=Path('synthetic-listening-preview')
+          report=json.loads((root/'listening-preview-manifest.json').read_text())
+          assert report['status']=='SYNTHETIC_WAV_C_FIXED_VS_GUARDED_PCM_ATTACK'
+          a,b=report['episodes']
+          assert a['guarded_proxy_selected']
+          assert not b['guarded_proxy_selected']
+          assert a['raw_boundary_steps'][0]>a['fixed_ramp_boundary_steps'][0]
+          assert b['raw_boundary_steps'][0]<b['fixed_ramp_boundary_steps'][0]
+          assert not report['production_enablement_recommended']
+          for name in ('raw.wav','fixed_ramp.wav','guarded_proxy.wav'):
+              with wave.open(str(root/name),'rb') as wav:
+                  assert wav.getnchannels()==2
+                  assert wav.getsampwidth()==2
+                  assert wav.getframerate()==48000
+          print('Three host-native, entirely synthetic stereo WAV examples verified')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dino-rom-free-resume-listening-preview
+          path: |
+            synthetic-listening-preview/raw.wav
+            synthetic-listening-preview/fixed_ramp.wav
+            synthetic-listening-preview/guarded_proxy.wav
+            synthetic-listening-preview/listening-preview-manifest.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Independently build ordinary NRO then explicit opt-in NRO
         run: |
           set -eu
