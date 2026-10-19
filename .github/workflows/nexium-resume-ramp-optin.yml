@@ -15,6 +15,11 @@ on:
       - 'tests/test_dino_pcm_resume_ramp.py'
       - 'tools/dino_pcm_resume_edge_benchmark.py'
       - 'tests/test_dino_pcm_resume_edge_benchmark.py'
+      - 'source/dino_pcm_resume_guarded_proxy.c'
+      - 'source/dino_pcm_resume_guarded_proxy.h'
+      - 'tools/dino_pcm_resume_guarded_proxy_report.py'
+      - 'tests/test_dino_pcm_resume_guarded_proxy.py'
+      - 'tests/test_dino_pcm_resume_guarded_proxy_report.py'
       - '.github/workflows/nexium-resume-ramp-optin.yml'
 
 permissions:
@@ -50,6 +55,25 @@ jobs:
           assert d['profiles'][1]['boundary_discontinuity_worsened']
           assert not d['production_enablement_recommended']
           print('Synthetic signed-int16 ramp tradeoff includes a harmful edge')
+          PY
+          # Candidate decision is mathematical only and remains completely
+          # disconnected from both normal Switch and opt-in guest PCM.
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_guarded_proxy.py' -v
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_guarded_proxy_report.py' -v
+          python3 tools/dino_pcm_resume_guarded_proxy_report.py \
+            --out dino-rom-free-guarded-pcm-proxy-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('dino-rom-free-guarded-pcm-proxy-report.json').read_text())
+          cases={item['scenario']:item for item in r['profiles']}
+          assert r['status']=='C_GATE_REJECTS_WORSE_WINDOW_STEP_PROXY_CASES'
+          assert cases['silence_to_loud']['guarded_proxy_would_run']
+          assert not cases['already_continuous']['guarded_proxy_would_run']
+          assert not cases['one_channel_worsens']['guarded_proxy_would_run']
+          assert not r['production_enablement_recommended']
+          assert not r['physical_switch_speaker_audio_verified']
+          print('Guards reject channel-worsening PCM proxy cases')
           PY
       - name: Independently build ordinary NRO then explicit opt-in NRO
         run: |
@@ -90,6 +114,7 @@ jobs:
             cadillacs-dinosaurs-switch.nro
             optin-nro.sha256
             dino-rom-free-resume-edge-benchmark.json
+            dino-rom-free-guarded-pcm-proxy-report.json
             ordinary-nro.sha256
             dino-guest-audio-mode.txt
           retention-days: 7
