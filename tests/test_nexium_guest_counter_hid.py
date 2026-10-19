@@ -6,8 +6,10 @@ not evidence that NeXium delivered a real controller event.
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from tools import verify_nexium_guest_counter_hid as verifier
+from tools import nexium_counter_hid_press as host_zr
 
 HEADER='phase,tick,player_hp,enemy_hp,windup,stun,cooldown,event_mask,hid_edge\n'
 READY='READY,1,5,3,12,0,0,1,0\n'
@@ -72,6 +74,36 @@ class GuestHidCounterVerifierTests(unittest.TestCase):
                 '--report',str(Path(d)/'absent.csv'),
                 '--out',str(out)]),0)
             self.assertIn('INCONCLUSIVE_',out.read_text(encoding='ascii'))
+
+    def test_host_t_mapping_attempt_only_after_stress_done(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            witness=root/'cadillacs-audio-stress.csv'
+            witness.write_text('event,elapsed_ticks,...\\nSTRESS_DONE,900,1\\n',
+                               encoding='ascii')
+            self.assertTrue(host_zr.stress_complete([root]))
+            with patch.object(host_zr.subprocess,'run') as run, \
+                 patch.object(host_zr.time,'sleep'):
+                result=host_zr.probe('12345',[root],timeout_seconds=0.5)
+            self.assertEqual(result['status'],'HOST_ZR_KEY_ATTEMPT_AFTER_STRESS')
+            keys=[call.args[0] for call in run.call_args_list]
+            self.assertIn(['xdotool','keydown','t'],keys)
+            self.assertIn(['xdotool','keyup','t'],keys)
+            self.assertFalse(result['guest_hid_counter_verified'])
+
+    def test_host_no_stress_never_sends_zr(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            with patch.object(host_zr.subprocess,'run') as run:
+                result=host_zr.probe('12345',[root],timeout_seconds=0)
+            self.assertEqual(result['status'],
+                             'INCONCLUSIVE_NO_COMPLETED_GUEST_STRESS')
+            run.assert_not_called()
+            # A symlinked fake completion must never arm the host press.
+            external=root/'outside.csv'
+            external.write_text('STRESS_DONE,900,1\\n',encoding='ascii')
+            (root/'cadillacs-audio-stress.csv').symlink_to(external)
+            self.assertFalse(host_zr.stress_complete([root]))
 
     def test_real_input_source_is_separate_from_scripted_guest_probe(self):
         source=Path('source/main.c').read_text(encoding='utf-8')
