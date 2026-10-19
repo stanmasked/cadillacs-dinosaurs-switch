@@ -1,0 +1,150 @@
+name: Opt-in guest PCM resume-ramp NeXium proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'source/dino_pcm_resume_ramp.c'
+      - 'source/dino_pcm_resume_ramp.h'
+      - 'source/dino_switch_sound.c'
+      - 'source/dino_switch_sound.h'
+      - 'source/main.c'
+      - 'tools/nexium_guest_replay_probe.sh'
+      - 'tools/verify_nexium_guest_resume_ramp.py'
+      - 'tests/test_nexium_guest_resume_ramp.py'
+      - 'tests/test_dino_pcm_resume_ramp.py'
+      - '.github/workflows/nexium-resume-ramp-optin.yml'
+
+permissions:
+  contents: read
+
+# This workflow does NOT change the standard NRO, baseline/extra-poll
+# NeXium A/B builds or normal two-page PCM queue. One explicit opt-in
+# experimental guest is linked and run in complete isolation.
+jobs:
+  build-optin-resume-ramp-nro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test fixed-point ROM-free ramp before linking NRO
+        run: |
+          set -eu
+          python3 -m unittest discover -s tests -p 'test_dino_pcm_resume_ramp.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_resume_ramp.py' -v
+      - name: Independently build ordinary NRO then explicit opt-in NRO
+        run: |
+          set -eu
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          make -j2
+          mkdir -p ordinary
+          cp cadillacs-dinosaurs-switch.nro ordinary/normal.nro
+          make clean
+          make -j2 DEFINES="-DDINO_EMULATOR_SELFTEST -DDINO_AUDIO_EXPERIMENT_RESUME_RAMP"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import struct
+          ordinary=Path('ordinary/normal.nro').read_bytes()
+          chosen=Path('cadillacs-dinosaurs-switch.nro').read_bytes()
+          for sample in (ordinary,chosen):
+              assert sample[0x10:0x14]==b'NRO0'
+              assert 0x80<=struct.unpack_from('<I',sample,0x18)[0]<=len(sample)
+          # The opt-in code writes this literal after the 900th tick.
+          marker=b'cadillacs-guest-resume-ramp.csv'
+          assert marker not in ordinary, 'ordinary production NRO includes opt-in guest writer'
+          assert marker in chosen, 'experimental NRO missing guest ramp evidence writer'
+          assert hashlib.sha256(ordinary).digest()!=hashlib.sha256(chosen).digest()
+          assert b'cadillacs-arena-selftest.csv' in chosen
+          print('Ordinary NRO lacks opt-in marker; explicit guest build includes it')
+          PY
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" cadillacs-dinosaurs-switch.elf > optin-symbols.txt
+          grep -q 'dino_pcm_resume_ramp_before_submit' optin-symbols.txt
+          grep -q 'dino_switch_sound_guest_resume_ramp_applications' optin-symbols.txt
+          sha256sum cadillacs-dinosaurs-switch.nro > optin-nro.sha256
+          sha256sum ordinary/normal.nro > ordinary-nro.sha256
+          echo baseline > dino-guest-audio-mode.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dino-explicit-resume-ramp-nro
+          path: |
+            cadillacs-dinosaurs-switch.nro
+            optin-nro.sha256
+            ordinary-nro.sha256
+            dino-guest-audio-mode.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  run-optin-resume-ramp-guest:
+    needs: build-optin-resume-ramp-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    env:
+      DINO_AUDIO_MODE: baseline
+      DINO_GUEST_RESUME_RAMP_REQUIRE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dino-explicit-resume-ramp-nro
+          path: emulator-input
+      - name: Validate opt-in NRO identity and fail-closed verifier
+        run: |
+          set -euo pipefail
+          test "$(cat emulator-input/dino-guest-audio-mode.txt)" = baseline
+          (cd emulator-input && sha256sum -c optin-nro.sha256)
+          bash -n tools/nexium_guest_replay_probe.sh
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_resume_ramp.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+      - name: Install NeXium software-render dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0 \
+            pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Launch actual ARM64 opt-in guest and attest its ramp state
+        run: |
+          bash tools/nexium_guest_replay_probe.sh \
+            emulator-input/cadillacs-dinosaurs-switch.nro \
+            emulator-evidence
+          python3 tools/verify_nexium_guest_resume_ramp.py \
+            --ramp emulator-evidence/guest-resume-ramp.csv \
+            --trace emulator-evidence/guest-audio-ack-ticks.csv \
+            --report emulator-evidence/guest-audio-stress-evidence.json \
+            --nro emulator-input/cadillacs-dinosaurs-switch.nro \
+            --out optin-guest-resume-ramp-attestation.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('optin-guest-resume-ramp-attestation.json').read_text())
+          assert a['status']=='REAL_GUEST_OPTIN_PCM_RAMP_EXACT_ADMISSION_STATE_WITNESSED'
+          # Require actual exercises, never an idle guest presented as tested.
+          assert a['full_queue_pcm_skips']>0, 'no queue-full sample in guest test'
+          assert a['ramp_applications_inside_window']>0, 'opt-in guest never applied ramp'
+          assert not a['speaker_click_reduction_verified']
+          assert not a['physical_switch_audio_latency_verified']
+          print('Genuine guest one-shot ramp state aligned to NRO SHA and 900 PCM events')
+          PY
+      - name: Preserve guest-attested ROM-free evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-explicit-resume-ramp-real-guest-witness
+          path: |
+            emulator-evidence/result.txt
+            emulator-evidence/metadata.txt
+            emulator-evidence/emulator-hash-check.txt
+            emulator-evidence/guest-audio-stress-evidence.json
+            emulator-evidence/guest-audio-ack-ticks.csv
+            emulator-evidence/guest-audio-ack-tick-evidence.json
+            emulator-evidence/guest-frame-clock-evidence.json
+            emulator-evidence/guest-resume-ramp.csv
+            emulator-evidence/guest-resume-ramp-evidence.json
+            optin-guest-resume-ramp-attestation.json
+          if-no-files-found: warn
+          retention-days: 7
