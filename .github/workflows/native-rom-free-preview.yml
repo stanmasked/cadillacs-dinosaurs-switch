@@ -7,6 +7,9 @@ on:
       - feature/mame-capture-crossprobe-session-id
     paths:
       - 'source/dino_arena.*'
+      - 'source/dino_guest_counter_probe.*'
+      - 'tests/test_dino_guest_counter.py'
+      - 'tools/verify_nexium_guest_counter.py'
       - 'source/dino_sfx.*'
       - 'source/dino_replay.*'
       - 'source/dino_replay_witness.*'
@@ -21,6 +24,9 @@ on:
   pull_request:
     paths:
       - 'source/dino_arena.*'
+      - 'source/dino_guest_counter_probe.*'
+      - 'tests/test_dino_guest_counter.py'
+      - 'tools/verify_nexium_guest_counter.py'
       - 'source/dino_sfx.*'
       - 'source/dino_replay.*'
       - 'source/dino_replay_witness.*'
@@ -51,6 +57,7 @@ jobs:
       - name: Verify host C gameplay and shared Switch replay contract
         run: |
           python3 -m unittest discover -s tests -p 'test_dino_host_preview.py' -v
+          python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_replay.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_replay_witness.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_pcm_witness.py' -v
