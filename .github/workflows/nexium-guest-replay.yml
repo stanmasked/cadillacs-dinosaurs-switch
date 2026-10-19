@@ -58,6 +58,8 @@ on:
       - 'tests/test_nexium_audio_occupancy_service.py'
       - 'tools/verify_nexium_guest_ack_observability.py'
       - 'tests/test_nexium_guest_ack_observability.py'
+      - 'tools/verify_nexium_audio_ack_tick_trace.py'
+      - 'tests/test_nexium_audio_ack_tick_trace.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -104,6 +106,8 @@ on:
       - 'tests/test_nexium_audio_occupancy_service.py'
       - 'tools/verify_nexium_guest_ack_observability.py'
       - 'tests/test_nexium_guest_ack_observability.py'
+      - 'tools/verify_nexium_audio_ack_tick_trace.py'
+      - 'tests/test_nexium_audio_ack_tick_trace.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -218,6 +222,8 @@ jobs:
             libegl1 libgles2 libgl1 libpulse0 \
             pulseaudio pulseaudio-utils libasound2-plugins
       - name: Attempt actual ARM64 homebrew guest execution
+        env:
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
         run: |
           bash tools/nexium_guest_replay_probe.sh \
             emulator-input/cadillacs-dinosaurs-switch.nro \
@@ -257,6 +263,8 @@ jobs:
             emulator-evidence/guest-audio-stress-evidence.json
             emulator-evidence/guest-audio-mode-binding.json
             emulator-evidence/guest-audio-stress.csv
+            emulator-evidence/guest-audio-ack-ticks.csv
+            emulator-evidence/guest-audio-ack-tick-evidence.json
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn
           retention-days: 7
@@ -354,6 +362,25 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out bound-guest-ack-observability.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_ack_tick_trace.py' -v
+          python3 tools/verify_nexium_audio_ack_tick_trace.py \
+            --trace paired/baseline/guest-audio-ack-ticks.csv \
+            --report paired/baseline/guest-audio-stress-evidence.json \
+            --mode baseline --out paired-baseline-ack-tick-evidence.json
+          python3 tools/verify_nexium_audio_ack_tick_trace.py \
+            --trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --report paired/extra-poll/guest-audio-stress-evidence.json \
+            --mode extra-poll --out paired-extra-ack-tick-evidence.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          for group,name in [('baseline','paired-baseline-ack-tick-evidence.json'),
+                             ('extra-poll','paired-extra-ack-tick-evidence.json')]:
+              recorded=Path('paired')/group/'guest-audio-ack-tick-evidence.json'
+              fresh=Path(name)
+              assert json.loads(recorded.read_text())==json.loads(fresh.read_text())
+          print('Both actual guest per-tick ACK logs independently reverified')
+          PY
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
@@ -391,5 +418,7 @@ jobs:
             controlled-host-depth-tradeoff.json
             controlled-host-occupancy-feedback.json
             bound-guest-ack-observability.json
+            paired-baseline-ack-tick-evidence.json
+            paired-extra-ack-tick-evidence.json
           if-no-files-found: warn
           retention-days: 7
