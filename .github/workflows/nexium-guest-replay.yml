@@ -73,6 +73,10 @@ on:
       - 'tests/test_nexium_guest_frame_topology.py'
       - 'tools/nexium_guest_frame_gap_burst_audit.py'
       - 'tests/test_nexium_guest_frame_gap_burst_audit.py'
+      - 'source/dino_guest_frame_clock.c'
+      - 'source/dino_guest_frame_clock.h'
+      - 'tools/verify_nexium_guest_frame_clock.py'
+      - 'tests/test_nexium_guest_frame_clock.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -134,6 +138,10 @@ on:
       - 'tests/test_nexium_guest_frame_topology.py'
       - 'tools/nexium_guest_frame_gap_burst_audit.py'
       - 'tests/test_nexium_guest_frame_gap_burst_audit.py'
+      - 'source/dino_guest_frame_clock.c'
+      - 'source/dino_guest_frame_clock.h'
+      - 'tools/verify_nexium_guest_frame_clock.py'
+      - 'tests/test_nexium_guest_frame_clock.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -291,6 +299,8 @@ jobs:
             emulator-evidence/guest-audio-stress.csv
             emulator-evidence/guest-audio-ack-ticks.csv
             emulator-evidence/guest-audio-ack-tick-evidence.json
+            emulator-evidence/guest-frame-clock.csv
+            emulator-evidence/guest-frame-clock-evidence.json
             emulator-evidence/xdg-config/NeXium/logs/*.log
           if-no-files-found: warn
           retention-days: 7
@@ -474,6 +484,32 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-guest-frame-gap-bursts.json
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_frame_clock.py' -v
+          python3 tools/verify_nexium_guest_frame_clock.py \
+            --baseline-clock paired/baseline/guest-frame-clock.csv \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-clock paired/extra-poll/guest-frame-clock.csv \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-frame-clock.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          from tools import verify_nexium_guest_frame_clock as v
+          for mode in ('baseline','extra-poll'):
+              recorded=json.loads((Path('paired')/mode/'guest-frame-clock-evidence.json').read_text())
+              fresh=v.verify_one(
+                  Path('paired')/mode/'guest-frame-clock.csv',
+                  Path('paired')/mode/'guest-audio-ack-ticks.csv',
+                  Path('paired')/mode/'guest-audio-stress-evidence.json',mode)
+              assert recorded==fresh
+          print('Both real guest frame clocks independently reverified before NRO-bound comparison')
+          PY
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
@@ -519,5 +555,6 @@ jobs:
             paired-guest-frame-phase-skip-decomposition.json
             paired-guest-frame-topology.json
             paired-guest-frame-gap-bursts.json
+            paired-guest-frame-clock.json
           if-no-files-found: warn
           retention-days: 7
