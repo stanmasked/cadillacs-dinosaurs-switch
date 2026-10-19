@@ -211,6 +211,20 @@ python3 tools/verify_nexium_guest_replay.py \
     --report "$out/guest-replay.csv" \
     --out "$out/result.txt"
 
+# Stage 229: an independent scripted counter + original synthesized
+# PCM proof written by the REAL guest NRO before the 180-tick replay.
+# This is NOT an HID ZR press and MUST NOT be reported as one.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-counter-guest.csv' -print \
+    > "$out/counter-guest-locations.txt"
+if [ -s "$out/counter-guest-locations.txt" ]; then
+    IFS= read -r counter_path < "$out/counter-guest-locations.txt"
+    cp "$counter_path" "$out/guest-counter.csv"
+fi
+python3 tools/verify_nexium_guest_counter.py \
+    --report "$out/guest-counter.csv" \
+    --out "$out/guest-counter-evidence.json"
+
 # No host-sink audio classification is published unless the guest's
 # independently verified replay and native audio adapter counters passed.
 python3 tools/verify_nexium_host_audio.py \
