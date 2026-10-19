@@ -313,6 +313,30 @@ PY
 
 
 
+# Explicit opt-in only: re-verify actual guest-ramp state *after* its
+# recorded 900 simulation ticks. This must never run for normal baseline
+# or extra-poll NRO jobs. No return file => no success, not a fake zero.
+if [ "$DINO_GUEST_RESUME_RAMP_REQUIRE" = 1 ]; then
+    if [ "$DINO_AUDIO_MODE" != baseline ]; then
+        echo "opt-in ramp evidence requires baseline audio poll mode" >&2
+        exit 1
+    fi
+    find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+        -type f -name 'cadillacs-guest-resume-ramp.csv' -print \
+        > "$out/resume-ramp-locations.txt"
+    if [ -s "$out/resume-ramp-locations.txt" ]; then
+        IFS= read -r resume_path < "$out/resume-ramp-locations.txt"
+        cp "$resume_path" "$out/guest-resume-ramp.csv"
+    fi
+    python3 tools/verify_nexium_guest_resume_ramp.py \
+        --ramp "$out/guest-resume-ramp.csv" \
+        --trace "$out/guest-audio-ack-ticks.csv" \
+        --report "$out/guest-audio-stress-evidence.json" \
+        --nro "$nro" \
+        --out "$out/guest-resume-ramp-evidence.json"
+fi
+
+
 # Accept the software-only host-window sample bound ONLY after the
 # guest's ordered HID witness is verified. The result is explicitly
 # NOT an actual controller, hardware display or audio latency.
