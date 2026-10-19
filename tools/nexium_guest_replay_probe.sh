@@ -179,10 +179,17 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             sleep 0.3
             xdotool keydown v; sleep 0.25; xdotool keyup v
           fi
+          # Optional Stage 234 external T/ZR after guest stress finishes.
+          # A host key attempt alone never establishes in-guest delivery.
+          python3 tools/nexium_counter_hid_press.py \
+            --window "$window" \
+            --root "$HOME" --root "$XDG_CONFIG_HOME" \
+            --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
+            --out "$7" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -276,6 +283,18 @@ python3 tools/verify_nexium_audio_stress.py \
     --timeline "$out/guest-hid-timeline.csv" \
     --controller "$out/guest-controller.csv" \
     --out "$out/guest-audio-stress-evidence.json"
+
+# Optional real libnx ZR edge. Only the NRO can write this guest CSV.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-counter-hid.csv' -print \
+    > "$out/counter-hid-locations.txt"
+if [ -s "$out/counter-hid-locations.txt" ]; then
+    IFS= read -r counter_hid_path < "$out/counter-hid-locations.txt"
+    cp "$counter_hid_path" "$out/guest-counter-hid.csv"
+fi
+python3 tools/verify_nexium_guest_counter_hid.py \
+    --report "$out/guest-counter-hid.csv" \
+    --out "$out/guest-counter-hid-evidence.json"
 
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.
