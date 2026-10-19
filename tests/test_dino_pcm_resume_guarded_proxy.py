@@ -140,6 +140,12 @@ class PurePCMResumeGuardTests(unittest.TestCase):
         makefile=(ROOT/"Makefile").read_text()
         self.assertNotIn("dino_pcm_resume_guarded_proxy",adapter)
         self.assertNotIn("DINO_AUDIO_EXPERIMENT_GUARDED",makefile)
+        # Makefile picks up ALL source/*.c files automatically. Enforce
+        # tool-only placement rather than relying merely on no call sites.
+        self.assertIn("wildcard $(dir)/*.c",makefile)
+        self.assertFalse((ROOT/"source/dino_pcm_resume_guarded_proxy.c").exists())
+        self.assertFalse((ROOT/"source/dino_pcm_resume_guarded_proxy.h").exists())
+        self.assertTrue((ROOT/"tools/native/dino_pcm_resume_guarded_proxy.c").is_file())
         self.assertIn("NOT known to be the most recently PLAYED",header)
         for forbidden in ("audout","armGetSystemTick","sdmc:",
                           "dino_switch_sound_step("):
