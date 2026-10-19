@@ -3,6 +3,7 @@
 Host test fixtures do NOT prove execution inside the NeXium emulator;
 the GitHub guest job is responsible for collecting the actual NRO file.
 """
+import csv
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,7 +63,8 @@ class GuestCounterNativeTests(unittest.TestCase):
         self.assertEqual(result['counter_pcm_fnv64'],'1169E164EDF5FD7D')
         self.assertTrue(result['wrong_facing_counter_rejected'])
         self.assertFalse(result['guest_hid_zr_verified'])
-        self.assertEqual(path.read_text(encoding='ascii').count('\n'),6)
+        self.assertEqual(path.read_text(encoding='ascii').count('\n'),11)
+        self.assertEqual(result['invalid_impact_tick_counters_rejected'],5)
 
     def test_two_native_executions_are_byte_identical(self):
         a=self.run_probe('repeat1.csv')
@@ -111,6 +113,54 @@ class GuestCounterNativeTests(unittest.TestCase):
             path.write_text(contents,encoding='ascii')
             with self.assertRaises(ValueError):
                 counter.verify(path)
+
+    def test_exact_impact_boundary_cases_reject_counter_and_apply_damage(self):
+        path=self.run_probe('boundary-live.csv')
+        with path.open(encoding='ascii',newline='') as src:
+            records=list(csv.DictReader(src))
+        self.assertEqual(len(records),10)
+        expect={
+            'LAST_HITSTUN':384,
+            'LAST_ATTACK':384,
+            'LANDING':388,   # includes a legitimate landing event
+            'ATTACK_CHORD':384,
+            'JUMP_CHORD':386, # includes legitimate jump-start event
+        }
+        for record in records:
+            name=record['phase']
+            if name not in expect:
+                continue
+            with self.subTest(phase=name):
+                self.assertEqual(int(record['event_mask']),expect[name])
+                self.assertEqual(int(record['event_mask']) & 2048,0)
+                self.assertEqual(int(record['player_hp']),4)
+                self.assertEqual(int(record['enemy_hp']),3)
+                self.assertEqual(int(record['windup']),0)
+                self.assertEqual(int(record['stun']),0)
+                self.assertEqual(int(record['cooldown']),48)
+                self.assertEqual(record['pcm_nonzero'],'0')
+        self.assertEqual(counter.verify(path)['status'],
+                         'ROM_FREE_COUNTER_TRACE_VALIDATED')
+
+    def test_corrupted_last_tick_counter_proof_is_refused(self):
+        path=self.run_probe('bad-boundary.csv')
+        original=path.read_text(encoding='ascii')
+        mutations=(
+            ('LAST_HITSTUN,2,4,3,0,0,48,384,0,',
+             'LAST_HITSTUN,2,5,3,0,9,48,2048,0,'),
+            ('LANDING,2,4,3,0,0,48,388,0,',
+             'LANDING,2,4,3,0,0,48,384,0,'),
+            ('ATTACK_CHORD,2,4,3,0,0,48,384,0,',
+             'ATTACK_CHORD,2,4,3,0,0,48,2048,0,'),
+            ('JUMP_CHORD,2,4,3,0,0,48,386,0,',
+             'JUMP_CHORD,2,4,3,0,0,48,388,0,'),
+        )
+        for old,new in mutations:
+            self.assertIn(old,original)
+            with self.subTest(field=old.split(',')[0]):
+                path.write_text(original.replace(old,new),encoding='ascii')
+                with self.assertRaises(ValueError):
+                    counter.verify(path)
 
     def test_missing_and_symlinked_csv_never_pass(self):
         with self.assertRaises(ValueError):
