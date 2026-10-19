@@ -178,9 +178,11 @@ def make_report(base_clock, base_trace, base_report, base_binding, base_nro,
     try:
         from tools import verify_nexium_guest_frame_clock as witness
         from tools import verify_nexium_audio_ack_tick_trace as ack
+        from tools import nexium_guest_clock_phase_invariant as phase
     except ImportError:
         import verify_nexium_guest_frame_clock as witness
         import verify_nexium_audio_ack_tick_trace as ack
+        import nexium_guest_clock_phase_invariant as phase
     attested = witness.make_report(
         base_clock, base_trace, base_report, base_binding, base_nro,
         extra_clock, extra_trace, extra_report, extra_binding, extra_nro)
@@ -196,6 +198,9 @@ def make_report(base_clock, base_trace, base_report, base_binding, base_nro,
             hashlib.sha256(raw_guest).hexdigest() !=
                 original['guest_ack_csv_sha256']):
             raise ValueError('guest CSV digest changed since NRO attestation')
+        phase_result = phase.verify_phase(frames)
+        if phase_result['observed_stress_game_ticks'] != 900:
+            raise ValueError('guest clock has no valid 900-tick 60Hz phase')
         data = summarize(frames, guests)
         if (data['total']['pcm_skipped'] + data['total']['pcm_submitted'] != 900 or
             data['total']['ack_pages'] != sum(r['released'] for r in guests) or
