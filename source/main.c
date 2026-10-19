@@ -21,6 +21,8 @@
 #include "dino_guest_ack_trace.h"
 #include "dino_guest_frame_clock.h"
 #include "dino_guest_counter_probe.h"
+#include "dino_sfx.h"
+#include "dino_pcm_witness.h"
 #endif
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
@@ -801,32 +803,50 @@ int main(int argc, char **argv) {
                     test_counter.x=220;
                     dino_arena_step(&test_counter,0u,DINO_ARENA_TOGGLE_SPAR);
                     const DinoArena ready_counter=test_counter;
-                    /* Serialize real C state from both sides of the
-                     * actual HID-driven combat tick, not literal values. */
+                    /* The edge is real libnx HID, the ready training scene
+                     * is deliberately controlled and independent. Compute
+                     * the complete first 800-frame synthesized PCM digest
+                     * using the same portable C engine, not a preset hash. */
                     dino_arena_step(&test_counter,0u,
                                     step_pressed&DINO_ARENA_COUNTER);
+                    DinoSfx counter_sfx;
+                    int16_t counter_pcm[DINO_SFX_TICK_FRAMES*2u];
+                    dino_sfx_reset(&counter_sfx);
+                    dino_sfx_events(&counter_sfx,test_counter.events);
+                    dino_sfx_render_tick(&counter_sfx,counter_pcm,
+                                         DINO_SFX_TICK_FRAMES);
+                    unsigned counter_pcm_nonzero=0u;
+                    for (unsigned j=0u;j<2u*DINO_SFX_TICK_FRAMES;++j)
+                        if (counter_pcm[j]) { counter_pcm_nonzero=1u; break; }
+                    const uint64_t counter_pcm_hash=dino_pcm_witness_feed(
+                        DINO_PCM_WITNESS_INIT,counter_pcm,DINO_SFX_TICK_FRAMES);
                     const char *const path="sdmc:/cadillacs-counter-hid.csv";
                     FILE *proof=fopen(path,"w");
                     if (proof) {
                         fprintf(proof,"phase,tick,player_hp,enemy_hp,windup,"
-                                "stun,cooldown,event_mask,hid_edge\n");
+                                "stun,cooldown,event_mask,hid_edge,"
+                                "pcm_nonzero,pcm_fnv64\n");
                         fprintf(proof,
-                                "READY,%u,%u,%u,%u,%u,%u,%u,0\n",
+                                "READY,%u,%u,%u,%u,%u,%u,%u,0,0,%016llX\n",
                                 (unsigned)ready_counter.ticks,
                                 (unsigned)ready_counter.player_hp,
                                 (unsigned)ready_counter.dummy_hp,
                                 (unsigned)ready_counter.dummy_windup,
                                 (unsigned)ready_counter.dummy_hitstun,
                                 (unsigned)ready_counter.dummy_cooldown,
-                                (unsigned)ready_counter.events);
-                        fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1\n",
+                                (unsigned)ready_counter.events,
+                                (unsigned long long)DINO_PCM_WITNESS_INIT);
+                        fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1,"
+                                "%u,%016llX\n",
                                 (unsigned)test_counter.ticks,
                                 (unsigned)test_counter.player_hp,
                                 (unsigned)test_counter.dummy_hp,
                                 (unsigned)test_counter.dummy_windup,
                                 (unsigned)test_counter.dummy_hitstun,
                                 (unsigned)test_counter.dummy_cooldown,
-                                (unsigned)test_counter.events);
+                                (unsigned)test_counter.events,
+                                counter_pcm_nonzero,
+                                (unsigned long long)counter_pcm_hash);
                         (void)fclose(proof);
                     }
                 }
