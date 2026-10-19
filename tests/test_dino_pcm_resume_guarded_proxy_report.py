@@ -19,13 +19,13 @@ class GuardedPCMReportTests(unittest.TestCase):
         cls.data=report.benchmark()
         cls.profiles={x["scenario"]:x for x in cls.data["profiles"]}
 
-    def test_all_six_synthetic_inputs_and_actual_c_oracle_agree(self):
-        self.assertEqual(len(self.profiles),6)
+    def test_all_seven_synthetic_inputs_and_actual_c_oracle_agree(self):
+        self.assertEqual(len(self.profiles),7)
         self.assertEqual(self.data["sample_rate_hz"],48000)
         self.assertEqual(self.data["ramp_frames"],96)
         self.assertEqual(self.data["pcm_frame_count"],800)
         self.assertEqual(self.data["input_audio"],
-                         "six_deterministic_rom_free_synthetic_cases")
+                         "seven_deterministic_rom_free_synthetic_cases")
         self.assertEqual(self.data["status"],
                          "C_GATE_REJECTS_WORSE_WINDOW_STEP_PROXY_CASES")
         self.assertFalse(self.data["production_enabled"])
@@ -57,6 +57,17 @@ class GuardedPCMReportTests(unittest.TestCase):
             r["raw_window_peak_by_stereo_channel"][1])
         self.assertEqual(r["guard_selected_window_peak_by_stereo_channel"],
                          r["raw_window_peak_by_stereo_channel"])
+
+    def test_window_peak_improvement_does_not_permit_new_boundary_pop(self):
+        profile=self.profiles["peak_better_boundary_worse"]
+        self.assertFalse(profile["guarded_proxy_would_run"])
+        self.assertEqual(profile["raw_first_boundary_by_stereo_channel"],[0,0])
+        self.assertEqual(profile["fixed_ramp_first_boundary_by_stereo_channel"],
+                         [19792,19792])
+        self.assertLess(profile["fixed_ramp_window_peak_by_stereo_channel"][0],
+                        profile["raw_window_peak_by_stereo_channel"][0])
+        self.assertEqual(profile["guard_selected_first_boundary_by_stereo_channel"],
+                         [0,0])
 
     def test_idle_silence_is_not_attributed_to_necessary_audio_processing(self):
         self.assertFalse(self.profiles["zero_signal"]["guarded_proxy_would_run"])
