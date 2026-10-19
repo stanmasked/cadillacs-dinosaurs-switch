@@ -607,3 +607,27 @@ ROM-free training opponent. They are **not** native HID/ZR controller
 delivery evidence, console latency measurements or Capcom gameplay.
 They do not alter the live counter rules, ABI layout or historical
 180-tick replay/audio checksums.
+
+## Stage 232 — compiler/optimizer and UBSan portability gate
+
+The Stage 229–231 ROM-free guest-counter probe is now compiled and
+executed on the native host with multiple **independent compiler
+configurations**: GCC `-O0`, GCC `-O2` (reference), GCC `-O3`,
+and Clang `-O2`. The compiled programs must serialize exactly the
+same 10-row guest diagnostic bytes, including the `1169E164EDF5FD7D`
+first-block counter PCM checksum and the five rejected last-impact
+counter cases. A further `-fsanitize=undefined` host executable must
+exit cleanly with the identical trace.
+
+The native CI workflow explicitly requires Clang to be installed so
+compiler diversity cannot silently disappear in GitHub Actions. This
+step exercises the *same* C arena, integer PCM synth, FNV64 hasher and
+counter guest-probe used in the self-test NRO. It catches compiler
+sensitivity and undefined behavior early without importing any original
+arcade asset. It is **host compiler parity**, not proof of successful
+Switch console input or physical audio output.
+
+All changes are test/workflow-only: the interactive arena, counter rules,
+guest witness schema, ABI, and historical 180-tick replay/PCM fingerprints
+remain unchanged. The NeXium guest job must separately confirm that the
+ARM64 build reproduces the golden 10-row report.
