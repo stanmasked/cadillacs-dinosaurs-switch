@@ -21,4 +21,21 @@
  */
 bool dino_pcm_resume_ramp_apply(int16_t *stereo, size_t frames,
                                 size_t attack_frames);
+
+/* Portable one-shot admission state. Separates the sample math from the
+ * actual full-queue -> next successful admission transition so this edge
+ * behavior can be native-tested without linking the Switch audio service.
+ * State is only used behind both selftest and resume-ramp compile flags. */
+typedef struct {
+    bool pending;
+    uint32_t applied;
+} DinoPcmResumeRampState;
+
+void dino_pcm_resume_ramp_reset(DinoPcmResumeRampState *state);
+void dino_pcm_resume_ramp_note_full_skip(DinoPcmResumeRampState *state);
+/* Returns true only when a pending one-shot was actually applied.
+ * Invalid sample arguments do not clear the pending flag or modify data. */
+bool dino_pcm_resume_ramp_before_submit(DinoPcmResumeRampState *state,
+                                        int16_t *stereo, size_t frames,
+                                        size_t attack_frames);
 #endif
