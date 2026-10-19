@@ -547,3 +547,29 @@ ARM64 game and synth code only once its NeXium CI completes
 successfully. This scripted diagnostic does **not** claim that ZR was
 delivered by HID, that an on-console button was pressed, or that a
 physical speaker reproduced the cue. Those require separate evidence.
+
+## Stage 230 — exact cross-architecture counter PCM fingerprint
+
+The independent guest counter/PCM diagnostic from Stage 229 now records
+the **full 64-bit FNV-1a checksum** of its first 800-frame, 48-kHz
+interleaved stereo PCM block, rather than merely checking that at least
+one PCM sample was nonzero. The shared portable
+`dino_pcm_witness_feed()` function converts signed 16-bit samples
+into explicit little-endian bytes before hashing, independent of host
+or guest byte order. For the unchanged original 820-Hz counter cue,
+the golden native C fingerprint is `1169E164EDF5FD7D`.
+
+The verifier requires that exact uppercase 16-digit digest on the
+`COUNTER` row, with pristine FNV seed `CBF29CE484222325` on rows
+without generated PCM. A one-bit change in the reported digest, an
+all-zeros/audio-silent substitute, or a lowercase/noncanonical
+encoding fails the check. GCC tests compile the same arena, sound
+engine, PCM hasher and guest probe that are linked into the NRO,
+and include targeted tampering cases.
+
+This is a **deterministic software PCM** comparison, not evidence that
+audout submitted or played the signal. It does not claim genuine ZR
+HID timing, hardware audio latency or source-game audio replication.
+Regular training input, `DinoArena` ABI, the established 180-tick
+replay and its historical PCM witness are unchanged. Stage 230
+requires a new end-to-end GitHub Actions / NeXium run.
