@@ -412,8 +412,12 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
              (unsigned)arena->successful_hits,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
+    /* Counter feedback appears ONLY on the one-shot new action event.
+     * All historic demo frames remain pixel-identical without it. */
+    if (arena->events&DINO_EVT_COUNTER)
+        label(frame,pitch,800,670,"COUNTER!",1,rgb(91,235,201));
     label(frame,pitch,52,698,
-          "DPAD MOVE  A HIT  B JUMP  X SPAR  ZR COUNTER  Y RESET  - DEMO  + EXIT",
+          "DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT",
           1,rgb(182,207,219));
     if (have_gfx)
         label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,
