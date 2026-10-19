@@ -573,3 +573,37 @@ HID timing, hardware audio latency or source-game audio replication.
 Regular training input, `DinoArena` ABI, the established 180-tick
 replay and its historical PCM witness are unchanged. Stage 230
 requires a new end-to-end GitHub Actions / NeXium run.
+
+## Stage 231 — exact-impact counter eligibility at 60 Hz tick boundaries
+
+The independently executed ARM64 guest diagnostic now appends five
+negative-control rows to its Stage 229/230 five-row trace. It forces the
+enemy windup to one remaining tick and attempts to counter in the same
+tick as a forbidden player state is about to change:
+
+- `LAST_HITSTUN`: final frame of player hit-stun.
+- `LAST_ATTACK`: final frame of the existing attack animation.
+- `LANDING`: a jump reaches ground level during that same update.
+- `ATTACK_CHORD`: attack + counter are pressed simultaneously (with
+  attack held on cooldown).
+- `JUMP_CHORD`: jump + counter are pressed simultaneously.
+
+In every case, **the defensive counter must be rejected**, the enemy's
+telegraphed strike must still complete and deal its normal one HP of
+damage, and the opponent enters the normal 48-tick strike cooldown.
+The landing and jump-chord scenarios preserve their legitimate land
+and jump-start event flags respectively, rather than masking them.
+
+The 10-row guest CSV is checked in exact order against strict
+expected event masks, health, cooldown, hit-stun, and PCM fields. The
+same native C probe runs under GCC and as part of the real NeXium NRO;
+new tests reject forged positive counter events, missing landing/jump
+events and invalidly retained HP. This catches edge bugs where a
+timer decrement or same-tick landing accidentally enables a ZR/H
+counter too early.
+
+These tests are scripted and run only against an originally invented
+ROM-free training opponent. They are **not** native HID/ZR controller
+delivery evidence, console latency measurements or Capcom gameplay.
+They do not alter the live counter rules, ABI layout or historical
+180-tick replay/audio checksums.
