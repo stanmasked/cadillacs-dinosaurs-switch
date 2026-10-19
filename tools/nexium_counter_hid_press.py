@@ -20,7 +20,7 @@ else:
     import verify_nexium_audio_stress as stress_schema
 
 STRESS='cadillacs-audio-stress.csv'
-HEX16=re.compile(r'[0-9A-F]{16}\\Z')
+HEX16=re.compile(r'[0-9A-F]{16}\Z')
 
 
 def is_complete_guest_stress(path):
