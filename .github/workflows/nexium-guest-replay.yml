@@ -60,6 +60,8 @@ on:
       - 'tests/test_nexium_guest_ack_observability.py'
       - 'tools/verify_nexium_audio_ack_tick_trace.py'
       - 'tests/test_nexium_audio_ack_tick_trace.py'
+      - 'tools/compare_nexium_guest_ack_discovery.py'
+      - 'tests/test_nexium_guest_ack_discovery_profile.py'
       - '.github/workflows/nexium-guest-replay.yml'
   pull_request:
     paths:
@@ -108,6 +110,8 @@ on:
       - 'tests/test_nexium_guest_ack_observability.py'
       - 'tools/verify_nexium_audio_ack_tick_trace.py'
       - 'tests/test_nexium_audio_ack_tick_trace.py'
+      - 'tools/compare_nexium_guest_ack_discovery.py'
+      - 'tests/test_nexium_guest_ack_discovery_profile.py'
       - '.github/workflows/nexium-guest-replay.yml'
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
@@ -381,6 +385,17 @@ jobs:
               assert json.loads(recorded.read_text())==json.loads(fresh.read_text())
           print('Both actual guest per-tick ACK logs independently reverified')
           PY
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_discovery_profile.py' -v
+          python3 tools/compare_nexium_guest_ack_discovery.py \
+            --baseline-trace paired/baseline/guest-audio-ack-ticks.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --experimental-trace paired/extra-poll/guest-audio-ack-ticks.csv \
+            --experimental-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-guest-ack-discovery-profile.json
           python3 -m unittest discover -s tests -p 'test_nexium_audio_provenance_manifest.py' -v
           python3 tools/verify_nexium_audio_provenance_manifest.py \
             --host-plan controlled-host-audout-plan.json \
@@ -420,5 +435,6 @@ jobs:
             bound-guest-ack-observability.json
             paired-baseline-ack-tick-evidence.json
             paired-extra-ack-tick-evidence.json
+            paired-guest-ack-discovery-profile.json
           if-no-files-found: warn
           retention-days: 7
