@@ -510,3 +510,40 @@ duration, deterministic reset, non-counter event rejection, unchanged
 arena state and desktop integration. Switch build and emulator guest
 confirmation remain distinct checks; these host tests do not prove
 physical controller latency.
+
+## Stage 229 — executable guest counter + PCM witness, not HID proof
+
+The `DINO_EMULATOR_SELFTEST` NRO now runs a second, independent,
+**ROM-free, scripted** mini-scenario on ARM64, before its normal
+180-tick arena replay. This uses a separate local `DinoArena` and
+`DinoSfx`, leaving the interactive arena, audio device queue and
+historical replay hashes unchanged.
+
+It reports five rows in `sdmc:/cadillacs-counter-guest.csv`:
+
+- `RESET`: empty local arena, no events.
+- `ARMED`: actual 60-Hz C tick activates sparring, opening a 12-tick
+  attack windup.
+- `COUNTER`: next real C tick successfully interrupts the windup,
+  preserves HP, applies 9 ticks of enemy stun and 48 ticks of cooldown;
+  the same synthesized SFX produces nonzero 48-kHz PCM.
+- `RECOVERY`: one later tick decreases enemy stun and cooldown, while
+  the one-tick counter event clears.
+- `WRONG_FACING`: a reset negative control faces away, cannot counter
+  on the last windup tick and receives the ordinary telegraphed hit.
+
+A strict Python verifier rejects absent, symlinked, oversized, malformed,
+reordered, duplicated or altered CSV rows, including simulated evidence
+that the counter dealt damage, generated no PCM, or blocked an invalid
+back-facing hit. The NeXium runner collects the file from the actual
+emulated SD only **after** the separately checked 180-tick guest trace,
+and archives the independent pass/fail result. Six native tests compile
+and run the *same* counter-probe C file on the host; these host-generated
+fixtures themselves are **not** guest evidence.
+
+The new witness never reads the original ROM, saves user inputs, or
+changes the default gameplay/demo. It exercises actual Nintendo Switch
+ARM64 game and synth code only once its NeXium CI completes
+successfully. This scripted diagnostic does **not** claim that ZR was
+delivered by HID, that an on-console button was pressed, or that a
+physical speaker reproduced the cue. Those require separate evidence.
