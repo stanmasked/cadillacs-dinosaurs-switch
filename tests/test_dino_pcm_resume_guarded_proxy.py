@@ -48,8 +48,8 @@ class PurePCMResumeGuardTests(unittest.TestCase):
         cls.directory=tempfile.TemporaryDirectory(prefix="dino-guarded-proxy-")
         path=Path(cls.directory.name)/"gate.so"
         command=["gcc","-std=c11","-O2","-Wall","-Wextra","-Werror",
-                 "-shared","-fPIC","-Isource",
-                 "source/dino_pcm_resume_guarded_proxy.c",
+                 "-shared","-fPIC","-Itools/native",
+                 "tools/native/dino_pcm_resume_guarded_proxy.c",
                  "-o",str(path)]
         result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
         if result.returncode:
@@ -135,8 +135,8 @@ class PurePCMResumeGuardTests(unittest.TestCase):
 
     def test_proxy_source_is_independent_from_production_sound_adapter(self):
         adapter=(ROOT/"source/dino_switch_sound.c").read_text()
-        source=(ROOT/"source/dino_pcm_resume_guarded_proxy.c").read_text()
-        header=(ROOT/"source/dino_pcm_resume_guarded_proxy.h").read_text()
+        source=(ROOT/"tools/native/dino_pcm_resume_guarded_proxy.c").read_text()
+        header=(ROOT/"tools/native/dino_pcm_resume_guarded_proxy.h").read_text()
         makefile=(ROOT/"Makefile").read_text()
         self.assertNotIn("dino_pcm_resume_guarded_proxy",adapter)
         self.assertNotIn("DINO_AUDIO_EXPERIMENT_GUARDED",makefile)
