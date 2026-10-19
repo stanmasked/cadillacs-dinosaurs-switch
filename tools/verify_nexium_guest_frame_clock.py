@@ -132,6 +132,28 @@ def witness_clock(rows,ack_rows):
     }
 
 
+def verify_one(clock,trace,report,mode):
+    """Guest-only early gate; paired make_report adds the NRO SHA attestation."""
+    if mode not in ("baseline","extra-poll"):
+        raise ValueError("invalid guest clock selected mode")
+    verified=ack.verify(trace,report,mode)
+    raw_ack,guest=ack.parse_csv(trace)
+    raw_clock,frames=read_clock(clock)
+    if hashlib.sha256(raw_ack).hexdigest()!=verified["guest_ack_csv_sha256"]:
+        raise ValueError("unstable guest ACK before frame clock audit")
+    return {
+        "schema":SCHEMA,
+        "status":"GUEST_CAPPED_FRAME_INTERVALS_RECONCILED_BEFORE_NRO_BINDING",
+        "mode":mode,
+        "guest_clock_sha256":hashlib.sha256(raw_clock).hexdigest(),
+        "guest_ack_csv_sha256":verified["guest_ack_csv_sha256"],
+        "guest_stress_report_sha256":verified["guest_stress_report_sha256"],
+        **witness_clock(frames,guest),
+        "guest_nro_sha256_attested":False,
+        "physical_switch_speaker_timing_verified":False,
+    }
+
+
 def make_report(base_clock,base_trace,base_report,base_binding,base_nro,
                 extra_clock,extra_trace,extra_report,extra_binding,extra_nro):
     provenance=paired.compare(base_report,base_binding,extra_report,
