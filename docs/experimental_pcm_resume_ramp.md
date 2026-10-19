@@ -84,9 +84,15 @@ boundary and the first 96 frames:
 - Original (unmodified) 16-bit stereo PCM.
 - The existing 96-frame fixed-point ramp on the same block.
 
-It recommends the ramp **only** if its greatest absolute adjacent
-sample difference does not worsen in **either** channel and improves
-strictly in the combined worst channel. It rejects NULL previous
+It recommends the ramp **only** if its absolute first-sample
+boundary jump does not worsen in **either** channel, its greatest
+adjacent-sample difference across the entire first 96 frames does not
+worsen in either channel, and the combined worst local jump improves
+strictly. The separate boundary test is essential: a proposed ramp
+can reduce an internal 50,000-unit transient to 19,792 while
+*introducing a brand-new 19,792-unit jump at a previously
+continuous zero-jump block boundary*. This counterexample is explicitly
+rejected by the gate and its regression suite. It rejects NULL previous
 samples, invalid input, silent/no-benefit cases, an already continuous
 signal and any case where just one stereo channel becomes worse.
 
