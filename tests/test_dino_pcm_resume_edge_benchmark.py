@@ -99,6 +99,58 @@ class ResumePCMEdgeBenchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"beyond the 96-frame"):
             edge.score(previous,original,shaped,"already_continuous")
 
+    def test_exact_channel_crossover_is_not_assumed_audible(self):
+        positive=edge.boundary_channel_tradeoff(15156,30000,312)
+        self.assertEqual(positive["crossover_previous_sample_numerator"],30312)
+        self.assertEqual(positive["crossover_previous_sample_denominator"],2)
+        self.assertTrue(positive["equal"])
+        self.assertFalse(positive["improved"])
+        self.assertFalse(positive["worsened"])
+        self.assertTrue(edge.boundary_channel_tradeoff(
+            15155,30000,312)["improved"])
+        self.assertTrue(edge.boundary_channel_tradeoff(
+            15157,30000,312)["worsened"])
+        negative=edge.boundary_channel_tradeoff(-12125,-24000,-250)
+        self.assertTrue(negative["equal"])
+        self.assertTrue(edge.boundary_channel_tradeoff(
+            -12126,-24000,-250)["worsened"])
+        self.assertTrue(edge.boundary_channel_tradeoff(
+            -12124,-24000,-250)["improved"])
+
+    def test_previous_sample_sweep_demonstrates_both_unsafe_and_beneficial_edges(self):
+        for first,shaped,crossover in (
+            (30000,312,15156),
+            (-24000,-250,-12125),
+        ):
+            seen={"improved":0,"worsened":0,"equal":0}
+            for previous in range(-32768,32768,257):
+                scenario=edge.boundary_channel_tradeoff(previous,first,shaped)
+                correct_before=abs(first-previous)
+                correct_after=abs(shaped-previous)
+                self.assertEqual(scenario["unshaped_boundary_jump"],
+                                 correct_before)
+                self.assertEqual(scenario["shaped_boundary_jump"],
+                                 correct_after)
+                self.assertEqual(scenario["delta_shaped_minus_unshaped"],
+                                 correct_after-correct_before)
+                for field in seen:
+                    seen[field]+=int(scenario[field])
+                self.assertEqual(scenario["improved"],
+                                 (previous<crossover if first>shaped
+                                  else previous>crossover))
+            self.assertGreater(seen["worsened"],0)
+            self.assertGreater(seen["improved"],0)
+            self.assertEqual(sum(seen.values()),
+                             len(range(-32768,32768,257)))
+        for invalid in (
+            (True,30000,312),
+            (0,32768,312),
+            (0,-32769,-250),
+            (0,0,1.5),
+        ):
+            with self.subTest(invalid=invalid),self.assertRaises(ValueError):
+                edge.boundary_channel_tradeoff(*invalid)
+
     def test_main_writes_complete_json_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
             out=Path(temp)/"edge.json"
