@@ -63,6 +63,9 @@ class HostArena:
         self.dll.dino_host_step.argtypes=[ctypes.c_uint32,ctypes.c_uint32]
         self.dll.dino_host_demo_step.argtypes=[ctypes.c_uint32]
         self.dll.dino_host_status.argtypes=[ctypes.POINTER(Status)]
+        self.dll.dino_arena_counter_feedback_tick.argtypes=[
+            ctypes.c_uint8,ctypes.c_uint32]
+        self.dll.dino_arena_counter_feedback_tick.restype=ctypes.c_uint8
         self.dll.dino_host_render.argtypes=[
             ctypes.POINTER(ctypes.c_uint8),ctypes.c_size_t]
         self.buffer=(ctypes.c_uint8*PIXELS)()
@@ -73,14 +76,22 @@ class HostArena:
 
     def reset(self):
         self.dll.dino_host_reset()
+        self.counter_feedback_ticks=0
 
     def step(self,held=0,pressed=0):
         self.dll.dino_host_step(held,pressed)
+        self._step_counter_feedback()
 
     def demo_step(self,tick):
         # The replay decisions come directly from the same portable C
         # routine compiled into the Switch NRO. No duplicate Python script.
         self.dll.dino_host_demo_step(tick)
+        self._step_counter_feedback()
+
+    def _step_counter_feedback(self):
+        # Presentation only: six C simulation ticks per successful counter.
+        self.counter_feedback_ticks=self.dll.dino_arena_counter_feedback_tick(
+            self.counter_feedback_ticks,self.status().events)
 
     def status(self):
         item=Status()
@@ -310,7 +321,8 @@ def interactive():
         status_line.set(
             f'Tick {s.ticks}  HP {s.player_hp}/5  Enemy {s.enemy_hp}/3'
             f'  Hits {s.successful_hits}  Combo {s.combo}/3'
-            f'  Spar {"ON" if s.sparring else "OFF"}')
+            f'  Spar {"ON" if s.sparring else "OFF"}'
+            + ('  COUNTER!' if game.counter_feedback_ticks else ''))
         root.after(16,tick)
 
     def close():
