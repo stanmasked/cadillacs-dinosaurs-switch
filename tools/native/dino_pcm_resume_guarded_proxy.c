@@ -34,6 +34,10 @@ bool dino_pcm_resume_guarded_proxy_would_help(
             const int16_t ramped=(int16_t)scaled;
             const int32_t plain_jump=dino_abs_step(original,original_prior);
             const int32_t ramp_jump=dino_abs_step(ramped,ramp_prior);
+            /* A lower peak INSIDE the attack is insufficient when the
+             * FIRST new sample introduces a previously absent pop. */
+            if (f==0u && ramp_jump>plain_jump)
+                return false;
             if (plain_jump>original_max) original_max=plain_jump;
             if (ramp_jump>ramp_max) ramp_max=ramp_jump;
             original_prior=original;
