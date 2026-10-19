@@ -17,6 +17,9 @@
 #include "dino_replay.h"
 #include "dino_replay_witness.h"
 #include "dino_switch_sound.h"
+#ifdef DINO_EMULATOR_SELFTEST
+#include "dino_guest_ack_trace.h"
+#endif
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
        GRID_COLS = 16, GRID_ROWS = 8, PAGE_TILES = GRID_COLS * GRID_ROWS,
@@ -458,6 +461,9 @@ typedef struct {
     uint32_t previous_submitted, previous_mid_calls;
     uint32_t previous_mid_releases;
 } DinoGuestBatchStats;
+/* Fixed 900x13 counters (46.8 KiB), allocated only in a selftest NRO.
+ * No filesystem I/O while collecting measurements inside game ticks. */
+static DinoGuestAckTrace s_guest_ack_tick_trace;
 static void guest_audio_stress_row(FILE *stream, const char *event,
                                    uint32_t elapsed, const DinoArena *arena,
                                    const DinoGuestBatchStats *batch) {
@@ -601,10 +607,8 @@ int main(int argc, char **argv) {
     FILE *guest_hid_timeline=NULL;
     uint32_t guest_hid_phase=0;
     FILE *guest_audio_stress=NULL;
-    /* This extra file exists only in ROM-free DINO_EMULATOR_SELFTEST.
-     * The trace contains no PCM or host timestamps: only the game tick
-     * at which nonblocking libnx calls returned owned page pointers. */
-    FILE *guest_ack_tick_trace=NULL;
+    /* ROM-free selftest only. Never write a CSV in the measured tick loop. */
+    bool guest_ack_tick_collecting=false;
     uint32_t guest_ack_tick_count=0;
     uint32_t guest_audio_stress_start=0;
     uint32_t guest_audio_stress_next=DINO_GUEST_AUDIO_STRESS_PERIOD;
@@ -850,26 +854,21 @@ int main(int argc, char **argv) {
                         mid_releases_total-guest_batch.previous_mid_releases;
                     guest_batch.previous_mid_calls=mid_calls_total;
                     guest_batch.previous_mid_releases=mid_releases_total;
-                    if (guest_ack_tick_trace &&
-                        guest_ack_tick_count<DINO_GUEST_AUDIO_STRESS_TICKS) {
-                        /* Exact simulated tick of discovery, not when the
-                         * audio service actually freed or played a page.
-                         * No sleeps, allocation or replay of queued PCM. */
-                        ++guest_ack_tick_count;
-                        fprintf(guest_ack_tick_trace,
-                                "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
-                                (unsigned)guest_ack_tick_count,
-                                (unsigned)guest_frame_id,
-                                (unsigned)arena_ticks,(unsigned)i,
-                                (unsigned)released_now,
-                                (unsigned)mid_releases_now,
-                                (unsigned)mid_calls_now,
-                                (unsigned)submitted_now,
-                                (unsigned)skipped_now,
-                                (unsigned)full_now,
-                                (unsigned)recovered_now,
-                                (unsigned)audio_now.pending,
-                                (unsigned)audio_now.audio_errors);
+                    if (guest_ack_tick_collecting) {
+                        /* Poll discovery tick, not actual service timestamp.
+                         * Only fixed-size RAM copies within 900 game ticks. */
+                        const uint32_t observation[DINO_GUEST_ACK_TRACE_COLUMNS]={
+                            guest_ack_tick_count+1u,guest_frame_id,
+                            arena_ticks,i,released_now,mid_releases_now,
+                            mid_calls_now,submitted_now,skipped_now,
+                            full_now,recovered_now,audio_now.pending,
+                            audio_now.audio_errors
+                        };
+                        if (dino_guest_ack_trace_append(
+                                &s_guest_ack_tick_trace,observation))
+                            ++guest_ack_tick_count;
+                        else
+                            guest_ack_tick_collecting=false; /* fail closed */
                     }
                     if (arena_ticks>=2u) {
                         ++guest_batch.batched_ticks;
@@ -954,15 +953,8 @@ int main(int argc, char **argv) {
                                                    "START",0u,&arena,
                                                    &guest_batch);
                             guest_ack_tick_count=0;
-                            guest_ack_tick_trace=fopen(
-                                "sdmc:/cadillacs-audio-ack-ticks.csv","w");
-                            if (guest_ack_tick_trace) {
-                                fputs("tick,frame_id,batch_size,batch_position,"
-                                      "released,mid_released,mid_calls,"
-                                      "submitted,skipped,pre_poll_full,"
-                                      "pre_poll_recovered,pending,audio_errors\n",
-                                      guest_ack_tick_trace);
-                            }
+                            dino_guest_ack_trace_reset(&s_guest_ack_tick_trace);
+                            guest_ack_tick_collecting=true;
                         }
                     } else {
                         uint32_t elapsed=arena.ticks-guest_audio_stress_start;
@@ -976,9 +968,19 @@ int main(int argc, char **argv) {
                                 guest_audio_stress_done=true;
                                 fclose(guest_audio_stress);
                                 guest_audio_stress=NULL;
-                                if (guest_ack_tick_trace) {
-                                    fclose(guest_ack_tick_trace);
-                                    guest_ack_tick_trace=NULL;
+                                guest_ack_tick_collecting=false;
+                                /* Delayed SD write occurs AFTER the last
+                                 * measured tick, not during 60Hz simulation. */
+                                const char *const ack_path=
+                                    "sdmc:/cadillacs-audio-ack-ticks.csv";
+                                FILE *ack_output=fopen(ack_path,"w");
+                                if (ack_output) {
+                                    const bool complete=
+                                        dino_guest_ack_trace_write_csv(
+                                            ack_output,&s_guest_ack_tick_trace);
+                                    const int closed=fclose(ack_output);
+                                    if (!complete || closed!=0)
+                                        (void)remove(ack_path);
                                 }
                             } else {
                                 guest_audio_stress_next+=
@@ -1088,7 +1090,6 @@ int main(int argc, char **argv) {
     if (guest_controller_witness) fclose(guest_controller_witness);
     if (guest_hid_timeline) fclose(guest_hid_timeline);
     if (guest_audio_stress) fclose(guest_audio_stress);
-    if (guest_ack_tick_trace) fclose(guest_ack_tick_trace);
 #endif
     dino_switch_sound_close();
     framebufferClose(&fb);
