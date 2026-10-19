@@ -162,6 +162,66 @@ class GuestCounterNativeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     counter.verify(path)
 
+    def test_counter_guest_proof_is_identical_across_optimizers(self):
+        # Compile the EXACT guest diagnostic and game/synth C in separate
+        # binaries. Different optimizer decisions must never change the
+        # serialized tick trace or the first 800 PCM frames' FNV64 digest.
+        reference=self.run_probe('cross-compiler-reference.csv').read_bytes()
+        variants=[
+            ('gcc',('-O0',)),
+            ('gcc',('-O3',)),
+            ('clang',('-O2',)),
+        ]
+        for compiler,flags in variants:
+            executable=shutil.which(compiler)
+            if not executable:
+                if compiler=='clang':
+                    continue  # Clang is optional outside CI.
+                self.fail('GCC unexpectedly disappeared after setup')
+            with self.subTest(compiler=compiler,flags=flags):
+                binary=Path(self.tmp.name)/(
+                    'guest-counter-'+compiler+'-'+flags[0][1:])
+                proc=subprocess.run([
+                    executable,'-std=c11',*flags,
+                    '-Wall','-Wextra','-Werror','-Isource',
+                    'source/dino_guest_counter_probe.c',
+                    'source/dino_arena.c','source/dino_sfx.c',
+                    'source/dino_pcm_witness.c',
+                    str(Path(self.tmp.name)/'driver.c'),
+                    '-o',str(binary),
+                ],cwd=ROOT,capture_output=True,text=True)
+                self.assertEqual(proc.returncode,0,proc.stderr)
+                trace=Path(self.tmp.name)/(
+                    'guest-'+compiler+'-'+flags[0][1:]+'.csv')
+                subprocess.run([str(binary),str(trace)],check=True)
+                self.assertEqual(trace.read_bytes(),reference)
+                self.assertEqual(counter.verify(trace)['counter_pcm_fnv64'],
+                                 '1169E164EDF5FD7D')
+
+    def test_guest_probe_ubsan_rejects_undefined_behavior(self):
+        # Sanitizer-backed execution complements exact byte parity. Do
+        # not infer Nintendo hardware behavior from a successful host run.
+        binary=Path(self.tmp.name)/'guest-counter-ubsan'
+        proc=subprocess.run([
+            'gcc','-std=c11','-O1','-Wall','-Wextra','-Werror',
+            '-fsanitize=undefined','-fno-sanitize-recover=all',
+            '-Isource','source/dino_guest_counter_probe.c',
+            'source/dino_arena.c','source/dino_sfx.c',
+            'source/dino_pcm_witness.c',
+            str(Path(self.tmp.name)/'driver.c'),
+            '-o',str(binary),
+        ],cwd=ROOT,capture_output=True,text=True)
+        if proc.returncode:
+            self.skipTest('UBSan unavailable on this host GCC')
+        trace=Path(self.tmp.name)/'guest-ubsan.csv'
+        result=subprocess.run([str(binary),str(trace)],cwd=ROOT,
+                              capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(trace.read_bytes(),
+                         self.run_probe('guest-unsanitized.csv').read_bytes())
+        self.assertEqual(counter.verify(trace)['invalid_impact_tick_counters_rejected'],
+                         5)
+
     def test_missing_and_symlinked_csv_never_pass(self):
         with self.assertRaises(ValueError):
             counter.verify(Path(self.tmp.name)/'absent.csv')
