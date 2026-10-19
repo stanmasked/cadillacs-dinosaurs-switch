@@ -13,16 +13,16 @@ import tempfile
 import unittest
 
 from tools import verify_nexium_guest_ack_observability as audit
-from test_nexium_audio_paired_artifacts import PairedGuestAudioTests
+import test_nexium_audio_paired_artifacts as bound_fixture
 from test_nexium_audio_mid_batch_ab import complete
 
 
 class GuestACKResolutionTests(unittest.TestCase):
     # Reuse fixture construction without inheriting/rerunning the 17 paired
     # verifier tests as a second copy of the same TestCase.
-    setUp=PairedGuestAudioTests.setUp
-    tearDown=PairedGuestAudioTests.tearDown
-    write=PairedGuestAudioTests.write
+    setUp=bound_fixture.PairedGuestAudioTests.setUp
+    tearDown=bound_fixture.PairedGuestAudioTests.tearDown
+    write=bound_fixture.PairedGuestAudioTests.write
 
     def profile(self,enabled=False,variation=0):
         return audit.guest_ack_profile(complete(enabled,variation),
