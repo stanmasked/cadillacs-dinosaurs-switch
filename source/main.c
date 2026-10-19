@@ -413,7 +413,7 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
     label(frame,pitch,52,698,
-          "DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT",
+          "DPAD MOVE  A HIT  B JUMP  X SPAR  ZR COUNTER  Y RESET  - DEMO  + EXIT",
           1,rgb(182,207,219));
     if (have_gfx)
         label(frame,pitch,755,698,"ZL TILE AND SCENE VIEW",1,
@@ -733,6 +733,7 @@ int main(int argc, char **argv) {
             if (down & HidNpadButton_A) pending_actions|=DINO_ARENA_ATTACK;
             if (down & HidNpadButton_B) pending_actions|=DINO_ARENA_JUMP;
             if (down & HidNpadButton_X) pending_actions|=DINO_ARENA_TOGGLE_SPAR;
+            if (down & HidNpadButton_ZR) pending_actions|=DINO_ARENA_COUNTER;
             arena_clock_carry+=elapsed_ns*60u;
             uint32_t arena_ticks=(uint32_t)(arena_clock_carry/1000000000ULL);
 #ifdef DINO_EMULATOR_SELFTEST
