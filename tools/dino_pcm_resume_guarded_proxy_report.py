@@ -81,8 +81,8 @@ def benchmark():
     with tempfile.TemporaryDirectory(prefix="dino-guarded-c-") as temp:
         filename=Path(temp)/"guarded.so"
         cmd=["gcc","-std=c11","-O2","-Wall","-Wextra","-Werror",
-             "-shared","-fPIC","-Isource",
-             "source/dino_pcm_resume_guarded_proxy.c",
+             "-shared","-fPIC","-Itools/native","-Isource",
+             "tools/native/dino_pcm_resume_guarded_proxy.c",
              "source/dino_pcm_resume_ramp.c","-o",str(filename)]
         proc=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True,
                             timeout=25,check=False)
