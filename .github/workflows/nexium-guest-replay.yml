@@ -31,6 +31,8 @@ on:
       - 'tools/verify_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
+      - 'tools/verify_nexium_guest_counter.py'
+      - 'tests/test_dino_guest_counter.py'
       - 'tests/test_nexium_host_audio.py'
       - 'tests/test_nexium_guest_controller.py'
       - 'tests/test_nexium_hid_timeline.py'
@@ -105,6 +107,8 @@ on:
       - 'tools/verify_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
+      - 'tools/verify_nexium_guest_counter.py'
+      - 'tests/test_dino_guest_counter.py'
       - 'tests/test_nexium_host_audio.py'
       - 'tests/test_nexium_guest_controller.py'
       - 'tests/test_nexium_hid_timeline.py'
@@ -215,6 +219,7 @@ jobs:
           declared=struct.unpack_from("<I",blob,0x18)[0]
           assert 0x80<=declared<=len(blob)
           assert b"cadillacs-arena-selftest.csv" in blob
+          assert b"cadillacs-counter-guest.csv" in blob
           assert b"FRAME_SUBMITTED" in blob
           assert b"REPLAY_DONE" in blob
           print("ROM-free NRO with guest-origin evidence compiled")
@@ -256,6 +261,7 @@ jobs:
         run: |
           bash -n tools/nexium_guest_replay_probe.sh
           python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+          python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_hid_fallback_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
@@ -301,6 +307,8 @@ jobs:
             emulator-evidence/emulator-stdout.txt
             emulator-evidence/vulkan.txt
             emulator-evidence/guest-replay.csv
+            emulator-evidence/guest-counter.csv
+            emulator-evidence/guest-counter-evidence.json
             emulator-evidence/guest-window.png
             emulator-evidence/frame-pixels.txt
             emulator-evidence/host-audio-evidence.json
