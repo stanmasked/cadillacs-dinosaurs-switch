@@ -878,3 +878,55 @@ production C implementation, ROM-free sprites, PCM synthesis,
 approved cover artwork and original ROM remain unchanged. Next:
 confirm the extra five tests in Python/GCC CI before attempting
 a separately attested, true NRO guest natural-sparring witness.
+
+## Stage 244 — optional real libnx ZR during an unstaged AI windup
+
+Stage 243 HEAD `ac5c6a7f` passed all six GitHub Actions,
+including both NeXium guest NRO modes and the required paired ZR/PCM
+report. Its native rules already proved the original ROM-free AI
+naturally starts a twelve-tick telegraph at its tick 116 after
+pursuing from enemy x=250 to x=134 with an idle player at x=90.
+
+Stage 244 adds a **separate CI-only naturally advancing guest
+training-arena instance**, started only *after* the historical
+prepared ZR witness and full 900-tick audio test. The new arena
+starts with `dino_arena_reset`, toggles sparring via normal
+`dino_arena_step`, and advances **one step for each actual normal
+guest 60-Hz simulation tick** without setting any player location,
+enemy location, facing, HP, windup or cooldown. The existing
+player-facing arena is left completely unchanged, so this does NOT
+claim a naturally timed press in the visible live-player state.
+
+When the enemy **naturally** begins its 12-tick windup at tick 116,
+the NRO writes a small fixed `cadillacs-natural-counter-ready.csv`
+marker. The host waits for **that exact complete marker** and makes
+a second external NeXium T key attempt (the emulator's default ZR
+binding). The host attempt never creates success evidence.
+
+A new guest file `cadillacs-natural-counter-hid.csv` is written
+only if a real `padGetButtonsDown(ZR)` is delivered to the native
+simulation during ticks 117–128, the **actual** arena emits
+`DINO_EVT_COUNTER`, and gameplay fields and 800-frame synthesized
+counter PCM agree. The independent strict verifier checks the
+single-row schema, numeric canonical form, naturally possible
+windup countdown `129 - tick`, player/enemy coordinates and HP,
+post-counter 9-tick stun, 48-tick cooldown, counter event `2048`,
+nonzero PCM and FNV64 `1169E164EDF5FD7D`. The host helper and
+guest validator never log raw controller keys or private ROM data.
+Six synthetic negative/positive regression methods cover the
+marker, path/symlink tampering, exact event timing and PCM.
+
+**Experimental and best effort:** a 12-tick window is only
+approximately 200 ms at 60Hz. CI host scheduling, emulation
+render-frame batches and X11 keyboard events may miss this window.
+A missing guest CSV MUST yield the explicit
+`INCONCLUSIVE_NO_GENUINE_UNSTAGED_GUEST_ZR_COUNTER` result; it
+must not create a false witness or fail unrelated previously
+confirmed guest audio parity. First confirm whether NeXium actually
+records the second edge in both modes before deciding whether to
+promote the new witness to the required A/B gate.
+
+This is still an original ROM-free training prototype, **not**
+natural gameplay in the original arcade title, hardware Joy-Con
+latency, actual speaker playback, or a guarantee of reliable host
+timing. No private ROM files or approved cover art were touched.
