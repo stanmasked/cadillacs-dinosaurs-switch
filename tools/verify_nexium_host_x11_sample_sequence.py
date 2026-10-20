@@ -69,16 +69,11 @@ def verify(guest_dir,nro,mode):
         colors=entry['four_counter_point_rgb']
         if (type(entry['index']) is not int or entry['index']!=n or
             type(start) is not int or type(end) is not int or
-            not 0<=earlier_end<=start<=end<=2_500_001 or
+            not 0<=start<=end<=2_500_001 or
+            (n>1 and start<earlier_end) or
             type(present) is not bool or type(colors) is not dict or
             set(colors)!=set(pixel.POINTS)):
-            # The first sample has earlier_end=-1; special handling below.
-            if not (n==1 and type(entry['index']) is int and
-                entry['index']==1 and type(start) is int and
-                type(end) is int and 0<=start<=end<=2_500_001 and
-                type(present) is bool and type(colors) is dict and
-                set(colors)==set(pixel.POINTS)):
-                raise ValueError('out-of-order, duplicated or invalid XGetImage record')
+            raise ValueError('out-of-order, duplicated or invalid XGetImage record')
         for k,v in colors.items():
             if type(v) is not list or len(v)!=3 or any(
                     type(c) is not int or not 0<=c<=255 for c in v):
