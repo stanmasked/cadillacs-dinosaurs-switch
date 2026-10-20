@@ -842,3 +842,39 @@ and rejects reverting to the raw CSV paths. This is an input-path
 correction for the new Stage 241 audit, not an alteration of the
 recorded guest data, ROM-free gameplay, audio renderer or original
 Capcom ROM.
+
+## Stage 243 — unstaged native C sparring counter regressions
+
+The fully verified Stage 242 head `825955c1` passed all six
+GitHub Actions. Its *required* `compare-pr-guest-audio` stage
+independently revalidated the baseline and extra-poll libnx ZR-edge
+guest CSV/JSON, real audio-mode bindings, NRO SHA-256, and synthesized
+counter PCM FNV64 `1169E164EDF5FD7D`. No causal audio benefit,
+real hardware input or authentic arcade gameplay is inferred.
+
+The next gap was that the earlier guest counter trial expressly
+placed the player at x=220 with a ready enemy telegraph. Stage 243
+adds **five host-native GCC tests of the existing original ROM-free
+`dino_arena.c`**, starting from `dino_arena_reset()` and using
+**only normal input bits and elapsed 60-Hz ticks**, never assignments
+to x, facing, enemy AI counters, HP or windup.
+
+In the unstaged simulation, pressing X toggles sparring, the AI
+pursues from x=250 to x=134 while the idle player stays at x=90,
+and its first natural twelve-tick windup starts at tick 116.
+Pressing ZR on tick 117 must interrupt the telegraph without
+damage (9-tick enemy stun / 48-tick cooldown). A *premature*
+ZR edge while the opponent is still distant cannot be buffered
+to automatically counter the later strike, and with no second
+edge the naturally timed impact on tick 128 must damage the player.
+A ZR edge on the **last** windup tick 128 must still work, whereas
+the same edge **after** the enemy impact cannot reverse the hit.
+A fresh-reset replay of 110 additional steps must match byte-for-
+byte in all public arena state fields on every tick.
+
+These are **host-native gameplay-rule tests**, not a NeXium
+HID-from-hardware test of naturally arising player inputs. The
+production C implementation, ROM-free sprites, PCM synthesis,
+approved cover artwork and original ROM remain unchanged. Next:
+confirm the extra five tests in Python/GCC CI before attempting
+a separately attested, true NRO guest natural-sparring witness.
