@@ -32,7 +32,7 @@ class RequiredHostWindowTests(unittest.TestCase):
                     'guest_mid_batch_extra_poll_enabled':enabled,
                     'guest_mid_batch_extra_poll_calls':calls,
                     'guest_mid_batch_extra_poll_released_pages':0}
-            raw=(json.dumps(stress,sort_keys=True)+'\\n').encode('ascii')
+            raw=(json.dumps(stress,sort_keys=True)+'\n').encode('ascii')
             (guest/'guest-audio-stress-evidence.json').write_bytes(raw)
             binding={
                 'schema':'dino-nexium-guest-audio-mode-binding-v1',
