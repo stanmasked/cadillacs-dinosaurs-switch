@@ -200,9 +200,15 @@ class GuestAudioModeBindingTests(unittest.TestCase):
         self.assertIn('["baseline","extra-poll"]',workflow)
         self.assertIn('github.event_name == \'workflow_dispatch\'',workflow)
         self.assertIn("'[\"baseline\"]'",workflow)
-        # Build, NRO integrity, actual guest execution and post-run binding
-        # must all carry the same matrix-selected audio mode explicitly.
-        self.assertEqual(workflow.count('DINO_AUDIO_MODE: ${{ matrix.audio_mode }}'),4)
+        # Build, NRO integrity, actual execution, mode binding and the
+        # optional post-binding X11 interval check must preserve audio mode.
+        self.assertEqual(workflow.count('DINO_AUDIO_MODE: ${{ matrix.audio_mode }}'),5)
+        self.assertLess(
+            workflow.index('      - name: Attest selected mode from actual guest audio stress counters'),
+            workflow.index('      - name: Attest optional host X11 command to captured frame interval'))
+        self.assertLess(
+            workflow.index('      - name: Attest optional host X11 command to captured frame interval'),
+            workflow.index('      - name: Preserve verified result or honest inconclusive evidence'))
         self.assertIn('      - name: Attempt actual ARM64 homebrew guest execution\n'
                       '        env:\n'
                       '          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}',workflow)
