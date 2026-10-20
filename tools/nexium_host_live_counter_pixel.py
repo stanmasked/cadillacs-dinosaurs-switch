@@ -104,6 +104,27 @@ def empty_capture_interval_result():
         'gpu_scanout_timestamp_verified':False,
     }
 
+def empty_command_bracket_result():
+    return {
+        'schema':'dino-nexium-host-keydown-call-capture-v1',
+        'status':'INCONCLUSIVE_NO_HOST_KEYDOWN_BRACKET',
+        'host_command_to_x11_bracket_observed':False,
+        'host_frame_token_u16':None,
+        'keydown_command_duration_floor_us':None,
+        'keydown_command_duration_ceil_us':None,
+        'keydown_call_begin_to_x11_begin_us':None,
+        'keydown_call_begin_to_x11_end_us':None,
+        'keydown_call_complete_to_x11_begin_us':None,
+        'keydown_call_complete_to_x11_end_us':None,
+        'clock_domain':'HOST_MONOTONIC_ONLY',
+        'guest_input_delivery_timestamp_verified':False,
+        'first_visible_frame_onset_verified':False,
+        'physical_joycon_latency_verified':False,
+        'physical_switch_lcd_latency_verified':False,
+        'gpu_scanout_timestamp_verified':False,
+        'cross_mode_causal_comparison_verified':False,
+    }
+
 
 class X11Window:
     """All Xlib calls stay on a single sampler thread."""
