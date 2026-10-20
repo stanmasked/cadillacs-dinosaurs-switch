@@ -973,3 +973,65 @@ run **must not** report complete Stage 245 paired success.
 Until new CI finishes, `18191227` remains the last verified
 all-green guest revision; do not merge the Draft branch, and
 retain private original ROM and approved covers unchanged.
+
+## Stage 246 — optional real guest Y / X / ZR in *rendered* training scene
+
+The Stage 245 head `eb710efa` passed all six workflows:
+the required paired natural-counter attestation independently
+reverified the real baseline and extra-poll NeXium counter CSV
+and recorded JSON, synthesized PCM FNV64
+`1169E164EDF5FD7D` and two distinct mode-bound NRO hashes.
+
+The next gap is visible-player state. Stage 244/245 tested a
+**separate** `guest_natural_counter` training arena that was
+updated with real guest 60-Hz steps but never rendered as the
+player's arena. Stage 246 adds a different **optional guest-only**
+experiment on the actual `DinoArena arena` that is passed to
+`arena_frame` in `source/main.c`:
+
+- Only after Stage 245's successful guest-side natural-counter
+  witness, the host X11 probe issues a real Y reset (default
+  NeXium key `z`) and then a real X spar-toggle (key `v`).
+  The NRO requires `padGetButtonsDown` for both, and the
+  spar-toggle must actually be registered on a 60-Hz step.
+- The NRO records the player-facing arena tick of the actual
+  X toggle as the origin. It does not set `arena.x`,
+  `arena.dummy_x`, `arena.dummy_windup`, HP or enemy timers
+  manually. The existing C AI chases from 250 to 134; on
+  relative tick 116, with x=90 and windup=12, the *guest*
+  writes the exact `LIVE_READY` host scheduling marker.
+- The host uses this marker solely to attempt a third external
+  ZR key (`t`). A valid `LIVE_HID_COUNTER` CSV can only be
+  written by the NRO when a fresh real libnx ZR edge is
+  consumed by the **same rendered arena**, generating event
+  `DINO_EVT_COUNTER`, HP unchanged, enemy stun=9,
+  cooldown=48, windup cleared, and a matching freshly rendered
+  synthetic counter SFX PCM FNV64 fingerprint.
+- The new strict parser
+  `verify_nexium_guest_live_counter_hid.py` accepts only
+  relative ticks 117..128 with the canonical 14-column
+  guest CSV and exact game state, and returns
+  `GUEST_VISIBLE_ARENA_NATURAL_AI_LIBNX_ZR_COUNTER_WITNESSED`.
+  A missing/late/damaged/incorrect guest row produces an
+  explicit `INCONCLUSIVE_NO_LIVE_GUEST_NATURAL_ZR_COUNTER`.
+  Host attempts alone never qualify.
+- Seven synthetic regression methods validate the input
+  preflight, ordered Y/X/ZR key attempts, mandatory guest
+  marker, legal/illegal game states, guest evidence format
+  and protection from manually staged AI state. NeXium CI
+  saves the host attempt and true guest evidence separately.
+
+This Stage 246 experiment is deliberately **optional** in
+its first NeXium run. It must not falsely fail the previous
+required, independently verified Stage 245 paired gate if
+host X11 and variable render frame pacing miss the twelve-
+tick (~200 ms) natural window. Its own proof must first be
+observed in both actual NRO guest modes before promotion
+to a mandatory dual-mode comparison.
+
+This demonstrates the native **rendered game-state object**
+only; it does NOT verify that counter-effect pixels were
+sampled on the display, timing on real Switch hardware,
+physical Joy-Con input, audible loudspeaker output, or
+original arcade game mechanics. The prototype uses no
+redistributed original ROM, commercial assets or screenshots.
