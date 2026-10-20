@@ -130,6 +130,7 @@ class CounterWindowWatcher:
         self.factory=sampler_factory
         self.seconds=min(max(float(seconds),0.2),1.5)
         self.triggered=threading.Event()
+        self._cancel_reason=''
         self.ready=threading.Event()
         self.finished=threading.Event()
         self._thread=None
@@ -138,10 +139,15 @@ class CounterWindowWatcher:
     def start(self):
         self._thread=threading.Thread(target=self._run,daemon=True)
         self._thread.start()
-        return self.ready.wait(0.02)  # avoid delaying the 12-tick counter window
+        # Arm well BEFORE the 116-tick ready marker, not after it.
+        return self.ready.wait(0.35)
 
     def trigger(self):
         # Only immediately after successful xdotool T keydown.
+        self.triggered.set()
+
+    def cancel(self,reason='ZR_NOT_TRIGGERED'):
+        self._cancel_reason=reason
         self.triggered.set()
 
     def finish(self):
@@ -162,15 +168,20 @@ class CounterWindowWatcher:
             pre=sampler.sample()
             count+=1
             self.ready.set()
-            if self.triggered.wait(timeout=0.55):
-                until=time.monotonic()+self.seconds
-                while time.monotonic()<until and count<200:
-                    sample=sampler.sample()
-                    count+=1
-                    post.append(sample)
-                    if classify(pre,[sample])==STATUS:
-                        break
-                    time.sleep(0.008)
+            # Allow the original ROM-free AI 116-tick pursuit to finish
+            # without a new host timing race. Cancel on absent ready marker.
+            if self.triggered.wait(timeout=26.0):
+                if self._cancel_reason:
+                    reason=self._cancel_reason
+                else:
+                    until=time.monotonic()+self.seconds
+                    while time.monotonic()<until and count<200:
+                        sample=sampler.sample()
+                        count+=1
+                        post.append(sample)
+                        if classify(pre,[sample])==STATUS:
+                            break
+                        time.sleep(0.008)
             else:
                 reason='ZR_NOT_TRIGGERED'
         except (ValueError,OSError) as exc:
