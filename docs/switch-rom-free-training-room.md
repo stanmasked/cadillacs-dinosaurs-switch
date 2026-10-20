@@ -1035,3 +1035,56 @@ sampled on the display, timing on real Switch hardware,
 physical Joy-Con input, audible loudspeaker output, or
 original arcade game mechanics. The prototype uses no
 redistributed original ROM, commercial assets or screenshots.
+
+## Stage 247 — *required* paired visible-player-arena ZR/PCM proof
+
+Stage 246 at head `b7d9b952` passed all six GitHub Actions.
+Both actual NeXium ARM64 NRO guests received real Y reset and X
+sparring edges, advanced the **rendered** player `DinoArena arena`
+until natural opponent windup at relative tick 116, and consumed
+a subsequent real libnx ZR edge at relative tick **118**,
+producing `DINO_EVT_COUNTER` with HP intact, windup cleared,
+9-tick opponent stun, 48-tick cooldown, and freshly synthesized
+PCM fingerprint `1169E164EDF5FD7D`. The initial guest proof
+was optional; its native CSV and independently recorded JSON
+were inspected from both real guest artifacts.
+
+Stage 247 now promotes this to an additional **required PR CI
+two-NRO gate**. The new
+`tools/verify_nexium_guest_live_counter_hid_paired.py`
+requires both actual `guest-live-counter-hid.csv` files
+and their separately saved
+`guest-live-counter-hid-evidence.json` verdicts. Each CSV
+is freshly parsed and compared with the recorded JSON. An
+incomplete, malformed, fabricated host attempt, duplicate
+JSON field, symlink, wrong actor position/HP, premature or
+late windup, missing libnx edge, absent `DINO_EVT_COUNTER`,
+or altered PCM causes the paired comparator to **fail closed**.
+
+The comparator also independently re-runs the Stage 245
+paired-natural counter audit and its prerequisite prepared
+counter/900-tick guest audio mode verification, including the
+SHA-256 of **both distinct actual NRO binaries**. The valid
+impact times may differ inside their natural 117–128 tick
+window; identical software PCM fingerprints are required.
+A passing audit writes, with exclusive file creation,
+`paired-visible-arena-zr-pcm-attestation.json`. Seven
+new synthetic tests cover positive conditions, missing and
+altered guest data, wrong gameplay state, NRO binding failures,
+symlinks and the exact CI command inputs. These fixtures
+do not count as actual NeXium guest execution.
+
+**Important restrictions:** this proves game-state input
+effects in the original ROM-free training arena that is passed
+to the renderer; it does not verify pixels captured at counter
+time, real Nintendo Switch/Joy-Con hardware input, speaker
+playback, original Capcom AI, measurable latency, or the
+causal benefit of extra audio polls. An unsuccessful new
+live-scene attempt now makes the *required Stage 247
+paired job* fail; it can no longer silently pass the
+earlier optional guest scene while claiming full CI green.
+
+The Stage 246 head is the last all-green reference until
+Stage 247 tests and both real guest builds are run again.
+The approved cover art, private arcade ROM and non-CI
+gameplay engine have not been changed.
