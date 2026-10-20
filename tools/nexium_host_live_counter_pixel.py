@@ -193,6 +193,7 @@ class CounterWindowWatcher:
         self._report=result(INCONCLUSIVE)
         self._frame_token=None
         self._host_command_complete_ns=None
+        self._host_command_begin_ns=None
         self._sample_begin_ns=None
         self._sample_end_ns=None
 
@@ -201,6 +202,11 @@ class CounterWindowWatcher:
         self._thread.start()
         # Arm well BEFORE the 116-tick ready marker, not after it.
         return self.ready.wait(0.35)
+
+    def begin_keydown_command(self):
+        # Called immediately BEFORE invoking the host xdotool subprocess,
+        # not an actual host-HID or guest libnx delivery timestamp.
+        self._host_command_begin_ns=time.monotonic_ns()
 
     def trigger(self):
         # Taken just AFTER successful xdotool keydown subprocess return,
@@ -263,6 +269,44 @@ class CounterWindowWatcher:
             'physical_controller_verified':False,
             'physical_display_verified':False,
             'gpu_scanout_timestamp_verified':False,
+        }
+
+    def command_bracket_result(self):
+        # Both host xdotool execution and the actual XGetImage call
+        # are bracketed on the same host-only monotonic clock.
+        started=self._host_command_begin_ns
+        completed=self._host_command_complete_ns
+        first=self._sample_begin_ns
+        last=self._sample_end_ns
+        valid=(self._report['status']==STATUS and
+               type(self._frame_token) is int and
+               all(type(v) is int for v in (started,completed,first,last)) and
+               0<=started<=completed<=first<=last and
+               last-started<=2_500_000_000)
+        begin=(first-started)//1000 if valid else None
+        end=(last-started+999)//1000 if valid else None
+        completed_start=(first-completed)//1000 if valid else None
+        completed_end=(last-completed+999)//1000 if valid else None
+        cmd_ns=(completed-started) if valid else None
+        return {
+            'schema':'dino-nexium-host-keydown-call-capture-v1',
+            'status':('HOST_KEYDOWN_COMMAND_AND_X11_SAMPLE_BRACKET_WITNESSED'
+                      if valid else 'INCONCLUSIVE_NO_HOST_KEYDOWN_BRACKET'),
+            'host_command_to_x11_bracket_observed':bool(valid),
+            'host_frame_token_u16':self._frame_token if valid else None,
+            'keydown_command_duration_floor_us':cmd_ns//1000 if valid else None,
+            'keydown_command_duration_ceil_us':(cmd_ns+999)//1000 if valid else None,
+            'keydown_call_begin_to_x11_begin_us':begin,
+            'keydown_call_begin_to_x11_end_us':end,
+            'keydown_call_complete_to_x11_begin_us':completed_start,
+            'keydown_call_complete_to_x11_end_us':completed_end,
+            'clock_domain':'HOST_MONOTONIC_ONLY',
+            'guest_input_delivery_timestamp_verified':False,
+            'first_visible_frame_onset_verified':False,
+            'physical_joycon_latency_verified':False,
+            'physical_switch_lcd_latency_verified':False,
+            'gpu_scanout_timestamp_verified':False,
+            'cross_mode_causal_comparison_verified':False,
         }
 
     def _run(self):
