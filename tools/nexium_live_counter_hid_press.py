@@ -91,7 +91,7 @@ def until(fn,roots,seconds,interval):
     return False
 
 
-def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None,host_frame_token_out=None):
+def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None,host_frame_token_out=None,host_capture_window_out=None):
     if not window.isdecimal() or not 0<int(window)<2**32:
         raise ValueError('invalid NeXium X11 window')
     if not roots:
@@ -110,7 +110,7 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
     # Arm X11 BEFORE waiting for the naturally simulated 116-tick pursuit.
     # Arming only after the READY marker can consume the short ZR window
     # or race with the first post-ZR X11 image.
-    watcher=pixels.CounterWindowWatcher(window) if (host_counter_out or host_frame_token_out) else None
+    watcher=pixels.CounterWindowWatcher(window) if (host_counter_out or host_frame_token_out or host_capture_window_out) else None
     if watcher:
         watcher.start()
     if not until(live_windup_marker,roots,ready_seconds,0.05):
@@ -121,6 +121,8 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
                 pixels.save(host_counter_out,record)
             if host_frame_token_out:
                 pixels.save(host_frame_token_out,watcher.frame_token_result())
+            if host_capture_window_out:
+                pixels.save(host_capture_window_out,watcher.capture_interval_result())
         return {'status':'INCONCLUSIVE_NO_LIVE_ARENA_WINDUP_MARKER',
                 'guest_live_counter_verified':False}
     input_failed=False
@@ -147,6 +149,11 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
                         'token_u16':None,
                         'token_same_x11_image_as_counter_pixels':False}
                 pixels.save(host_frame_token_out,token_record)
+            if host_capture_window_out:
+                window_record=watcher.capture_interval_result()
+                if input_failed:
+                    window_record=pixels.empty_capture_interval_result()
+                pixels.save(host_capture_window_out,window_record)
     return {'status':'HOST_LIVE_SCENE_ZR_ATTEMPT_AFTER_REAL_Y_X',
             'guest_live_counter_verified':False}
 
@@ -158,10 +165,12 @@ def main(argv=None):
     p.add_argument('--out',type=Path,required=True)
     p.add_argument('--host-counter-out',type=Path)
     p.add_argument('--host-frame-token-out',type=Path)
+    p.add_argument('--host-capture-window-out',type=Path)
     a=p.parse_args(argv)
     try:
         report=probe(a.window,a.root,host_counter_out=a.host_counter_out,
-                     host_frame_token_out=a.host_frame_token_out)
+                     host_frame_token_out=a.host_frame_token_out,
+                     host_capture_window_out=a.host_capture_window_out)
     except (ValueError,OSError,subprocess.SubprocessError):
         report={'status':'INCONCLUSIVE_LIVE_HOST_INPUT_UNAVAILABLE',
                 'guest_live_counter_verified':False}
@@ -178,6 +187,8 @@ def main(argv=None):
             'guest_submitted_frame_identity_verified':False,
             'exact_host_guest_frame_latency_verified':False,
             'physical_display_verified':False})
+    if a.host_capture_window_out and not a.host_capture_window_out.is_file():
+        pixels.save(a.host_capture_window_out,pixels.empty_capture_interval_result())
     report={'schema':'dino-nexium-host-live-counter-attempt-v1',**report}
     a.out.write_text(json.dumps(report,sort_keys=True)+'\n',encoding='ascii')
     print(json.dumps(report,sort_keys=True))
