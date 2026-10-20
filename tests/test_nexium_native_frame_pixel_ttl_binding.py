@@ -47,6 +47,54 @@ class NativePixelFrameBindingTests(unittest.TestCase):
         self.assertEqual(
             self.f.verify()['matched_native_render_iteration'],first)
 
+    def test_exact_65535_frame_keeps_full_token_without_wrap(self):
+        self.f.mutate_host(token_u16=65535)
+        self.f.native[0].update(render_iteration='65535',
+                                token_u16='65535')
+        self.f.native[1].update(render_iteration='65536',
+                                token_u16='0')
+        self.f.sample['render_iteration']='65535'
+        self.write_trace();self.write_pixels()
+        result=self.f.verify()
+        self.assertEqual(result['matched_native_render_iteration'],65535)
+        self.assertEqual(result['host_frame_token_u16'],65535)
+
+    def test_exact_65536_frame_accepts_zero_host_token(self):
+        self.f.mutate_host(token_u16=0)
+        self.f.native[0].update(render_iteration='65536',
+                                token_u16='0')
+        self.f.native[1].update(render_iteration='65537',
+                                token_u16='1')
+        self.f.sample['render_iteration']='65536'
+        self.write_trace();self.write_pixels()
+        result=self.f.verify()
+        self.assertEqual(result['matched_native_render_iteration'],65536)
+        self.assertEqual(result['host_frame_token_u16'],0)
+        self.assertEqual(result['matched_caption_ttl'],6)
+        self.assertEqual(result['matched_impact_ttl'],6)
+
+    def test_zero_host_token_without_matching_submitted_frame_rejected(self):
+        self.f.mutate_host(token_u16=0)
+        self.f.native[0].update(render_iteration='65535',
+                                token_u16='65535')
+        self.f.native[1].update(render_iteration='65537',
+                                token_u16='1')
+        self.f.sample['render_iteration']='65535'
+        self.write_trace();self.write_pixels()
+        with self.assertRaises(ValueError):
+            self.f.verify()
+
+    def test_zero_token_ambiguous_across_two_65536_wraps_rejected(self):
+        self.f.mutate_host(token_u16=0)
+        self.f.native[0].update(render_iteration='65536',
+                                token_u16='0')
+        self.f.native[1].update(render_iteration='131072',
+                                token_u16='0')
+        self.f.sample['render_iteration']='65536'
+        self.write_trace();self.write_pixels()
+        with self.assertRaises(ValueError):
+            self.f.verify()
+
     def test_guest_pixel_sample_may_precede_host_observed_token_frame(self):
         # Correct code MUST NOT demand the first guest pixel CSV frame
         # equal the later frame whose X11 token is observed on host.
