@@ -5,7 +5,10 @@ All fixtures are synthetic ROM-free and do not impersonate real NeXium CI.
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -163,6 +166,24 @@ class RequiredDualFrameIdentityTests(unittest.TestCase):
         path.write_text(path.read_text().replace(
             '"status":','"status":"FORGED","status":'))
         with self.assertRaises(ValueError):self.verify()
+
+    def test_direct_script_ci_entrypoint_without_pythonpath(self):
+        script=(Path(__file__).resolve().parents[1] /
+                'tools/verify_nexium_host_frame_token_paired.py')
+        output=self.root/'direct-script-attestation.json'
+        args=[
+            sys.executable,str(script),
+            '--baseline-dir',str(self.guests['baseline']),
+            '--extra-dir',str(self.guests['extra-poll']),
+            '--baseline-nro',str(self.nros['baseline']),
+            '--extra-nro',str(self.nros['extra-poll']),
+            '--out',str(output)]
+        environment=os.environ.copy()
+        environment.pop('PYTHONPATH',None)
+        done=subprocess.run(args,cwd=self.root,env=environment,
+                            text=True,capture_output=True,timeout=10)
+        self.assertEqual(done.returncode,0,done.stdout+done.stderr)
+        self.assertEqual(json.loads(output.read_text())['status'],paired.STATUS)
 
     def test_cli_refuses_overwrite_or_inconclusive_input(self):
         report=self.root/'paired-result.json'
