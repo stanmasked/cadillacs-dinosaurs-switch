@@ -71,6 +71,35 @@ class PairedRequiredX11SeriesTests(unittest.TestCase):
                     lambda d:d['samples'].pop(0))
         with self.assertRaises(ValueError):self.verify()
 
+    def test_renumbered_dropped_negative_matching_own_count_rejected(self):
+        # Prior code checked internal sequence count but not the
+        # independently observed Stage 260 post-keydown absent count.
+        # Remove an early negative, renumber ALL surviving X11 images
+        # and update the declared total: both internal checks remain
+        # self-consistent, but the original Stage 260 count MUST fail.
+        def drop_and_reindex(report):
+            report['samples'].pop(0)
+            for n,item in enumerate(report['samples'],1):
+                item['index']=n
+            report['post_command_negative_samples']-=1
+        self.mutate('baseline','host-x11-sample-sequence-evidence.json',
+                    drop_and_reindex)
+        with self.assertRaises(ValueError):
+            original.verify(self.guests['baseline'],
+                            self.nros['baseline'],'baseline')
+
+    def test_sample_before_host_keydown_return_rejected(self):
+        # Stage 260 requires a real final negative after the keydown
+        # return, but earlier entries must also be strictly post-return.
+        # The native guest and last negative remain completely valid.
+        self.mutate('extra-poll','host-x11-sample-sequence-evidence.json',
+                    lambda d:d['samples'][0].update(
+                        capture_begin_offset_us=100,
+                        capture_end_offset_us=200))
+        with self.assertRaises(ValueError):
+            original.verify(self.guests['extra-poll'],
+                            self.nros['extra-poll'],'extra-poll')
+
     def test_reordered_or_repeated_sample_index_rejected(self):
         self.mutate('baseline','host-x11-sample-sequence-evidence.json',
                     lambda d:d['samples'][1].update(index=1))
