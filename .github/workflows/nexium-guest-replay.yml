@@ -45,6 +45,7 @@ on:
       - 'tools/verify_nexium_host_capture_window.py'
       - 'tools/verify_nexium_host_keydown_bracket.py'
       - 'tools/verify_nexium_host_x11_transition.py'
+      - 'tools/verify_nexium_host_x11_sample_sequence.py'
       - 'tools/verify_nexium_host_x11_transition_paired.py'
       - 'tools/verify_nexium_host_keydown_bracket_paired.py'
       - 'tools/verify_nexium_host_capture_window_paired.py'
@@ -70,6 +71,7 @@ on:
       - 'tests/test_nexium_host_capture_window.py'
       - 'tests/test_nexium_host_keydown_bracket.py'
       - 'tests/test_nexium_host_x11_transition.py'
+      - 'tests/test_nexium_host_x11_sample_sequence.py'
       - 'tests/test_nexium_host_x11_transition_paired.py'
       - 'tests/test_nexium_host_keydown_bracket_paired.py'
       - 'tests/test_nexium_host_capture_window_paired.py'
@@ -158,6 +160,7 @@ on:
       - 'tools/verify_nexium_host_capture_window.py'
       - 'tools/verify_nexium_host_keydown_bracket.py'
       - 'tools/verify_nexium_host_x11_transition.py'
+      - 'tools/verify_nexium_host_x11_sample_sequence.py'
       - 'tools/verify_nexium_host_x11_transition_paired.py'
       - 'tools/verify_nexium_host_keydown_bracket_paired.py'
       - 'tools/verify_nexium_host_capture_window_paired.py'
@@ -183,6 +186,7 @@ on:
       - 'tests/test_nexium_host_capture_window.py'
       - 'tests/test_nexium_host_keydown_bracket.py'
       - 'tests/test_nexium_host_x11_transition.py'
+      - 'tests/test_nexium_host_x11_sample_sequence.py'
       - 'tests/test_nexium_host_x11_transition_paired.py'
       - 'tests/test_nexium_host_keydown_bracket_paired.py'
       - 'tests/test_nexium_host_capture_window_paired.py'
@@ -352,6 +356,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
@@ -413,6 +418,15 @@ jobs:
             --nro emulator-input/cadillacs-dinosaurs-switch.nro \
             --mode "$DINO_AUDIO_MODE" \
             --out emulator-evidence/host-x11-transition-bracket-attestation.json
+          # Stage 261 OPTIONAL: independently verify EVERY post-command
+          # X11 4-RGB/call-bound sample, not just last absent/first present.
+          # Reject sample reordering, missing negatives, forged tokens and
+          # unsupported first-display-onset claims. No screenshots saved.
+          python3 tools/verify_nexium_host_x11_sample_sequence.py \
+            --guest-dir emulator-evidence \
+            --nro emulator-input/cadillacs-dinosaurs-switch.nro \
+            --mode "$DINO_AUDIO_MODE" \
+            --out emulator-evidence/host-x11-sample-sequence-attestation.json
       - name: Preserve verified result or honest inconclusive evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -444,6 +458,8 @@ jobs:
             emulator-evidence/host-keydown-bracket-attestation.json
             emulator-evidence/host-x11-transition-bracket-evidence.json
             emulator-evidence/host-x11-transition-bracket-attestation.json
+            emulator-evidence/host-x11-sample-sequence-evidence.json
+            emulator-evidence/host-x11-sample-sequence-attestation.json
             emulator-evidence/guest-live-counter-hid.csv
             emulator-evidence/guest-live-counter-hid-evidence.json
             emulator-evidence/guest-live-counter-framebuffer.csv
@@ -667,6 +683,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v

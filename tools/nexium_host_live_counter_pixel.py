@@ -147,6 +147,23 @@ def empty_transition_bracket_result():
         'cross_mode_causal_comparison_verified':False,
     }
 
+def empty_sample_sequence_result():
+    return {
+        'schema':'dino-nexium-host-x11-sample-sequence-v1',
+        'status':'INCONCLUSIVE_NO_ORDERED_X11_SAMPLE_SEQUENCE',
+        'ordered_host_x11_samples_observed':False,
+        'post_command_negative_samples':0,
+        'matching_positive_frame_token_u16':None,
+        'samples':[],
+        'clock_domain':'HOST_MONOTONIC_ONLY',
+        'precise_first_visible_frame_onset_verified':False,
+        'guest_input_delivery_timestamp_verified':False,
+        'physical_controller_verified':False,
+        'physical_display_verified':False,
+        'gpu_scanout_timestamp_verified':False,
+        'cross_mode_causal_latency_verified':False,
+    }
+
 
 class X11Window:
     """All Xlib calls stay on a single sampler thread."""
@@ -243,6 +260,7 @@ class CounterWindowWatcher:
         self._last_absent_end_ns=None
         self._last_absent_pixels=None
         self._post_trigger_absent_count=0
+        self._x11_sample_sequence=[]
 
     def start(self):
         self._thread=threading.Thread(target=self._run,daemon=True)
@@ -415,6 +433,39 @@ class CounterWindowWatcher:
             'cross_mode_causal_comparison_verified':False,
         }
 
+    def sample_sequence_result(self):
+        # A compact, bounded X11 sample log: four calibrated RGB triplets
+        # per image, time offsets, no full screenshots or host window IDs.
+        trace=self._x11_sample_sequence
+        matched=(self._report['status']==STATUS and
+                 type(self._frame_token) is int and
+                 len(trace)==self._post_trigger_absent_count+1 and
+                 2<=len(trace)<=199 and
+                 all(type(entry['counter_four_pixels_present']) is bool and
+                     entry['counter_four_pixels_present'] is False
+                     for entry in trace[:-1]) and
+                 trace[-1]['counter_four_pixels_present'] is True and
+                 trace[-1]['frame_token_u16']==self._frame_token and
+                 self._host_command_begin_ns is not None)
+        return {
+            'schema':'dino-nexium-host-x11-sample-sequence-v1',
+            'status':('HOST_X11_ORDERED_SAMPLES_OBSERVED_UNBOUND' if matched
+                      else 'INCONCLUSIVE_NO_ORDERED_X11_SAMPLE_SEQUENCE'),
+            'ordered_host_x11_samples_observed':bool(matched),
+            'post_command_negative_samples':(
+                self._post_trigger_absent_count if matched else 0),
+            'matching_positive_frame_token_u16':(
+                self._frame_token if matched else None),
+            'samples':list(trace) if matched else [],
+            'clock_domain':'HOST_MONOTONIC_ONLY',
+            'precise_first_visible_frame_onset_verified':False,
+            'guest_input_delivery_timestamp_verified':False,
+            'physical_controller_verified':False,
+            'physical_display_verified':False,
+            'gpu_scanout_timestamp_verified':False,
+            'cross_mode_causal_latency_verified':False,
+        }
+
     def _run(self):
         sampler=None
         count=0
@@ -439,6 +490,35 @@ class CounterWindowWatcher:
                         ended_ns=time.monotonic_ns()
                         count+=1
                         post.append(sample)
+                        # Every genuine post-command X11 image is recorded
+                        # BEFORE choosing an exit for the first positive.
+                        # Keep bounded 4-point RGB values, host-relative
+                        # microseconds and optional 16-bit frame token only.
+                        if (type(self._host_command_begin_ns) is int and
+                            started_ns>=self._host_command_begin_ns and
+                            all(k in sample and
+                                isinstance(sample[k],(list,tuple)) and
+                                len(sample[k])==3 and
+                                all(type(v) is int and 0<=v<=255
+                                    for v in sample[k])
+                                for k in POINTS) and
+                            len(self._x11_sample_sequence)<199):
+                            positive=classify(pre,[sample])==STATUS
+                            self._x11_sample_sequence.append({
+                                'index':len(self._x11_sample_sequence)+1,
+                                'capture_begin_offset_us':
+                                    (started_ns-self._host_command_begin_ns)//1000,
+                                'capture_end_offset_us':
+                                    (ended_ns-self._host_command_begin_ns+999)//1000,
+                                'counter_four_pixels_present':positive,
+                                'four_counter_point_rgb':{
+                                    k:list(sample[k]) for k in POINTS},
+                                'frame_token_u16':(
+                                    sample.get('frame_token_u16')
+                                    if positive and
+                                       type(sample.get('frame_token_u16')) is int
+                                    else None),
+                            })
                         if classify(pre,[sample])==STATUS:
                             candidate=sample.get('frame_token_u16')
                             if type(candidate) is int and 0<=candidate<=65535:
