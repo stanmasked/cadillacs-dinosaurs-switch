@@ -400,6 +400,35 @@ def validate_fixed_ack_headroom(report, totals):
     return minimum,possible
 
 
+def possible_one_tick_boundary_carry(report, idx, batch_steps, frame_starts):
+    """Do not reject one observed LATER tick just after a 150-tick split.
+
+    The summary has no per-frame identities: this is only a *possible*
+    two-tick frame split, not authenticated continuity. The mandatory
+    900-row native ACK trace independently checks frame_id/batch_position
+    and the 150-tick checkpoints before attesting a real run.
+    """
+    if (idx < 1 or batch_steps != 1 or frame_starts != 0 or
+            report.get('batch_tick_position_probe_present') is not True):
+        return False
+    windows=report.get('checkpoint_batch_position_intervals')
+    if type(windows) is not list or len(windows)!=6:
+        return False
+    current=windows[idx]
+    previous=windows[idx-1]
+    return (type(current) is dict and type(previous) is dict and
+            type(current.get('first_tick_steps')) is int and
+            type(current.get('later_tick_steps')) is int and
+            type(previous.get('first_tick_steps')) is int and
+            type(previous.get('tick_end')) is int and
+            type(current.get('tick_start')) is int and
+            current['first_tick_steps']==0 and
+            current['later_tick_steps']==1 and
+            previous['first_tick_steps']>=1 and
+            previous['tick_end']==150*idx and
+            current['tick_start']==150*idx)
+
+
 def validate(report):
     if not isinstance(report, dict) or report.get('schema') != SCHEMA or \
             report.get('status') != STATUS:
@@ -463,7 +492,8 @@ def validate(report):
         if (w['tick_start'] != idx * 150 or w['tick_end'] != (idx + 1) * 150 or
                 s + b != 150 or ss > s or bs > b or
                 ss + bs != w['full_queue_skips'] or
-                f > b or (b > 0 and f == 0) or
+                f > b or (b > 0 and f == 0 and
+                    not possible_one_tick_boundary_carry(report, idx, b, f)) or
                 2 * f > b + (2 if idx == 0 else 1) or
                 b > (f + 1) * totals['largest_scheduled_tick_batch'] or
                 window['single_skip_percent_rounded'] != rounded(ss, s) or
