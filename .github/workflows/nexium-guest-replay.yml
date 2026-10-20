@@ -43,6 +43,7 @@ on:
       - 'tools/verify_nexium_host_frame_token.py'
       - 'tools/verify_nexium_host_frame_token_paired.py'
       - 'tools/verify_nexium_host_capture_window.py'
+      - 'tools/verify_nexium_host_capture_window_paired.py'
       - 'tools/verify_nexium_host_counter_window_paired.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
@@ -63,6 +64,7 @@ on:
       - 'tests/test_nexium_host_frame_token.py'
       - 'tests/test_nexium_host_frame_token_paired.py'
       - 'tests/test_nexium_host_capture_window.py'
+      - 'tests/test_nexium_host_capture_window_paired.py'
       - 'tests/test_nexium_host_counter_window_paired.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
@@ -146,6 +148,7 @@ on:
       - 'tools/verify_nexium_host_frame_token.py'
       - 'tools/verify_nexium_host_frame_token_paired.py'
       - 'tools/verify_nexium_host_capture_window.py'
+      - 'tools/verify_nexium_host_capture_window_paired.py'
       - 'tools/verify_nexium_host_counter_window_paired.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
@@ -166,6 +169,7 @@ on:
       - 'tests/test_nexium_host_frame_token.py'
       - 'tests/test_nexium_host_frame_token_paired.py'
       - 'tests/test_nexium_host_capture_window.py'
+      - 'tests/test_nexium_host_capture_window_paired.py'
       - 'tests/test_nexium_host_counter_window_paired.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
@@ -330,6 +334,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_mode_binding.py' -v
@@ -619,12 +624,25 @@ jobs:
           # scanout or controller-to-display latency.
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
           python3 tools/verify_nexium_host_frame_token_paired.py \
             --baseline-dir paired/baseline \
             --extra-dir paired/extra-poll \
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-host-guest-frame-token-attestation.json
+          # Stage 256: require independent host X11 XGetImage call interval
+          # on both live NeXium modes. Recalculate genuine native frame,
+          # full guest NRO SHA and audio-mode binding before trusting host
+          # timestamps. This is NOT input-to-guest, GPU scanout or LCD
+          # latency; neither mode is ranked by elapsed sampling intervals.
+          python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
+          python3 tools/verify_nexium_host_capture_window_paired.py \
+            --baseline-dir paired/baseline \
+            --extra-dir paired/extra-poll \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-host-x11-capture-call-attestation.json
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
@@ -814,6 +832,7 @@ jobs:
             paired-visible-arena-zr-pcm-attestation.json
             paired-host-counter-window-attestation.json
             paired-host-guest-frame-token-attestation.json
+            paired-host-x11-capture-call-attestation.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json
