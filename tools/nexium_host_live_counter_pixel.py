@@ -174,6 +174,9 @@ class CounterWindowWatcher:
         self._thread=None
         self._report=result(INCONCLUSIVE)
         self._frame_token=None
+        self._host_command_complete_ns=None
+        self._sample_begin_ns=None
+        self._sample_end_ns=None
 
     def start(self):
         self._thread=threading.Thread(target=self._run,daemon=True)
@@ -182,7 +185,9 @@ class CounterWindowWatcher:
         return self.ready.wait(0.35)
 
     def trigger(self):
-        # Only immediately after successful xdotool T keydown.
+        # Taken just AFTER successful xdotool keydown subprocess return,
+        # on this host's monotonic clock. NOT a physical keydown timestamp.
+        self._host_command_complete_ns=time.monotonic_ns()
         self.triggered.set()
 
     def cancel(self,reason='ZR_NOT_TRIGGERED'):
@@ -211,6 +216,37 @@ class CounterWindowWatcher:
             'physical_display_verified':False,
         }
 
+    def capture_interval_result(self):
+        # Report a bounded host XGetImage *sampling interval*, not latency
+        # to guest frame generation, presentation onset, LCD photons or HID.
+        start=self._sample_begin_ns
+        end=self._sample_end_ns
+        origin=self._host_command_complete_ns
+        valid=(self._report['status']==STATUS and
+               type(self._frame_token) is int and
+               type(origin) is int and type(start) is int and
+               type(end) is int and
+               0<=origin<=start<=end and
+               0<=end-origin<=2_500_000_000)
+        lower=(start-origin)//1000 if valid else None
+        upper=(end-origin+999)//1000 if valid else None
+        return {
+            'schema':'dino-nexium-host-x11-sample-window-v1',
+            'status':('HOST_COMMAND_COMPLETION_TO_X11_CAPTURE_WINDOW_WITNESSED'
+                      if valid else 'INCONCLUSIVE_NO_BOUND_X11_CAPTURE_WINDOW'),
+            'host_x11_capture_window_observed':bool(valid),
+            'frame_token_u16':self._frame_token if valid else None,
+            'post_keydown_command_to_capture_begin_us':lower,
+            'post_keydown_command_to_capture_end_us':upper,
+            'xgetimage_call_duration_upper_us':upper-lower if valid else None,
+            'clock_domain':'HOST_MONOTONIC_ONLY',
+            'precise_input_to_display_latency_verified':False,
+            'actual_guest_input_delivery_timestamp_verified':False,
+            'physical_controller_verified':False,
+            'physical_display_verified':False,
+            'gpu_scanout_timestamp_verified':False,
+        }
+
     def _run(self):
         sampler=None
         count=0
@@ -230,13 +266,17 @@ class CounterWindowWatcher:
                 else:
                     until=time.monotonic()+self.seconds
                     while time.monotonic()<until and count<200:
+                        started_ns=time.monotonic_ns()
                         sample=sampler.sample()
+                        ended_ns=time.monotonic_ns()
                         count+=1
                         post.append(sample)
                         if classify(pre,[sample])==STATUS:
                             candidate=sample.get('frame_token_u16')
                             if type(candidate) is int and 0<=candidate<=65535:
                                 self._frame_token=candidate
+                                self._sample_begin_ns=started_ns
+                                self._sample_end_ns=ended_ns
                             break
                         time.sleep(0.008)
             else:
