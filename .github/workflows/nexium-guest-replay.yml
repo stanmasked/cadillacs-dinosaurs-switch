@@ -358,6 +358,19 @@ jobs:
             --report emulator-evidence/guest-audio-stress-evidence.json \
             --nro emulator-input/cadillacs-dinosaurs-switch.nro \
             --out emulator-evidence/guest-audio-mode-binding.json
+      - name: Attest optional host X11 command to captured frame interval
+        env:
+          DINO_AUDIO_MODE: ${{ matrix.audio_mode }}
+        run: |
+          # The preceding step created guest-audio-mode-binding.json.
+          # This OPTIONAL report independently checks the exact NRO,
+          # real guest frame token, libnx counter and selected audio mode.
+          # No physical input-to-display latency is asserted.
+          python3 tools/verify_nexium_host_capture_window.py \
+            --guest-dir emulator-evidence \
+            --nro emulator-input/cadillacs-dinosaurs-switch.nro \
+            --mode "$DINO_AUDIO_MODE" \
+            --out emulator-evidence/host-capture-interval-attestation.json
       - name: Preserve verified result or honest inconclusive evidence
         if: always()
         uses: actions/upload-artifact@v4
