@@ -340,6 +340,22 @@ python3 tools/verify_nexium_guest_live_counter_hid.py \
     --report "$out/guest-live-counter-hid.csv" \
     --out "$out/guest-live-counter-hid-evidence.json"
 
+# Stage 248 independent *native guest framebuffer* sampling. This is
+# emitted only after the NRO's own arena_frame() and framebufferEnd(),
+# not inferred from gameplay state or an X11 window screenshot.
+# First pass remains optional; missing pixels explicitly INCONCLUSIVE.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-live-counter-framebuffer.csv' -print \
+    > "$out/guest-counter-framebuffer-locations.txt"
+if [ -s "$out/guest-counter-framebuffer-locations.txt" ]; then
+    IFS= read -r guest_framebuffer_path < "$out/guest-counter-framebuffer-locations.txt"
+    cp "$guest_framebuffer_path" "$out/guest-live-counter-framebuffer.csv"
+fi
+python3 tools/verify_nexium_guest_counter_framebuffer.py \
+    --report "$out/guest-live-counter-framebuffer.csv" \
+    --live-csv "$out/guest-live-counter-hid.csv" \
+    --out "$out/guest-live-counter-framebuffer-evidence.json"
+
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.
 # Require this log and match all 900 ticks against the verified aggregate
