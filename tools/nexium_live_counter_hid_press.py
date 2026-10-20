@@ -107,20 +107,33 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
     press('z')
     time.sleep(0.25)
     press('v')
-    if not until(live_windup_marker,roots,ready_seconds,0.05):
-        return {'status':'INCONCLUSIVE_NO_LIVE_ARENA_WINDUP_MARKER',
-                'guest_live_counter_verified':False}
-    # Stage 250: an independent, optional X11 window sampler is armed
-    # BEFORE T/ZR. It never creates or changes guest evidence and saves
-    # only bounded JSON; a missing window cannot invalidate real guest HID.
+    # Arm X11 BEFORE waiting for the naturally simulated 116-tick pursuit.
+    # Arming only after the READY marker can consume the short ZR window
+    # or race with the first post-ZR X11 image.
     watcher=pixels.CounterWindowWatcher(window) if host_counter_out else None
     if watcher:
         watcher.start()
+    if not until(live_windup_marker,roots,ready_seconds,0.05):
+        if watcher:
+            watcher.cancel('NO_LIVE_ARENA_WINDUP_MARKER')
+            pixels.save(host_counter_out,watcher.finish())
+        return {'status':'INCONCLUSIVE_NO_LIVE_ARENA_WINDUP_MARKER',
+                'guest_live_counter_verified':False}
+    input_failed=False
     try:
         press('t',0.12,after_keydown=watcher.trigger if watcher else None)
+    except (OSError,subprocess.SubprocessError):
+        input_failed=True
+        if watcher:
+            watcher.cancel('HOST_ZR_INPUT_ERROR')
+        raise
     finally:
         if watcher:
-            pixels.save(host_counter_out,watcher.finish())
+            record=watcher.finish()
+            if input_failed:
+                record=pixels.result(pixels.INCONCLUSIVE,
+                                     reason='HOST_ZR_INPUT_ERROR')
+            pixels.save(host_counter_out,record)
     return {'status':'HOST_LIVE_SCENE_ZR_ATTEMPT_AFTER_REAL_Y_X',
             'guest_live_counter_verified':False}
 
