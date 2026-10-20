@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools import nexium_host_live_counter_pixel as pixel
 
@@ -70,6 +71,66 @@ class Tests(unittest.TestCase):
             path=Path(d)/'summary.json'
             pixel.save(path,rec)
             self.assertEqual(json.loads(path.read_text()),rec)
+
+    def test_live_probe_arms_before_waiting_for_ready_marker(self):
+        from tools import nexium_live_counter_hid_press as live_probe
+        events=[]
+        class Watcher:
+            def __init__(self, window):
+                self.window=window
+            def start(self):
+                events.append('arm')
+                return True
+            def trigger(self):
+                events.append('trigger')
+            def cancel(self, reason):
+                events.append('cancel:'+reason)
+            def finish(self):
+                events.append('finish')
+                return pixel.result(pixel.INCONCLUSIVE)
+        def fake_until(fn, roots, seconds, interval):
+            if fn is live_probe.previous_guest_natural_witness:
+                events.append('prior')
+                return True
+            events.append('ready')
+            return True
+        def fake_press(key, duration=0.18, after_keydown=None):
+            events.append('press:'+key)
+            if after_keydown:
+                after_keydown()
+        with patch.object(live_probe,'until',side_effect=fake_until), \
+             patch.object(live_probe,'press',side_effect=fake_press), \
+             patch.object(live_probe.subprocess,'run'), \
+             patch.object(live_probe.pixels,'CounterWindowWatcher',Watcher), \
+             patch.object(live_probe.pixels,'save'):
+            rec=live_probe.probe('987',[Path('.')],host_counter_out=Path('optional.json'))
+        self.assertEqual(rec['status'],'HOST_LIVE_SCENE_ZR_ATTEMPT_AFTER_REAL_Y_X')
+        self.assertLess(events.index('arm'),events.index('ready'))
+        self.assertLess(events.index('ready'),events.index('press:t'))
+        self.assertLess(events.index('press:t'),events.index('trigger'))
+        self.assertEqual(events[-1],'finish')
+
+    def test_no_ready_marker_cancels_observer_without_host_success(self):
+        from tools import nexium_live_counter_hid_press as live_probe
+        events=[]
+        class Watcher:
+            def __init__(self, window): pass
+            def start(self): events.append('arm')
+            def cancel(self, reason): events.append(reason)
+            def finish(self):
+                events.append('finish')
+                return pixel.result(pixel.INCONCLUSIVE,reason='NO_LIVE_ARENA_WINDUP_MARKER')
+        def fake_until(fn, roots, seconds, interval):
+            return fn is live_probe.previous_guest_natural_witness
+        with patch.object(live_probe,'until',side_effect=fake_until), \
+             patch.object(live_probe,'press'), \
+             patch.object(live_probe.subprocess,'run'), \
+             patch.object(live_probe.pixels,'CounterWindowWatcher',Watcher), \
+             patch.object(live_probe.pixels,'save') as save:
+            rec=live_probe.probe('987',[Path('.')],host_counter_out=Path('optional.json'))
+        self.assertEqual(rec['status'],'INCONCLUSIVE_NO_LIVE_ARENA_WINDUP_MARKER')
+        self.assertEqual(events,['arm','NO_LIVE_ARENA_WINDUP_MARKER','finish'])
+        self.assertFalse(save.call_args.args[1]['host_x11_window_counter_pixels_observed'])
 
 if __name__=='__main__':
     unittest.main()
