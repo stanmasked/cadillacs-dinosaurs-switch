@@ -80,6 +80,7 @@ on:
       - 'tests/test_nexium_host_first_sample_gap_paired.py'
       - 'tests/test_nexium_host_first_sample_gap_rounding.py'
       - 'tests/test_nexium_host_frame_token_rollover.py'
+      - 'tests/test_nexium_native_frame_pixel_ttl_binding.py'
       - 'tests/test_nexium_host_x11_transition_paired.py'
       - 'tests/test_nexium_host_keydown_bracket_paired.py'
       - 'tests/test_nexium_host_capture_window_paired.py'
@@ -205,6 +206,7 @@ on:
       - 'tests/test_nexium_host_first_sample_gap_paired.py'
       - 'tests/test_nexium_host_first_sample_gap_rounding.py'
       - 'tests/test_nexium_host_frame_token_rollover.py'
+      - 'tests/test_nexium_native_frame_pixel_ttl_binding.py'
       - 'tests/test_nexium_host_x11_transition_paired.py'
       - 'tests/test_nexium_host_keydown_bracket_paired.py'
       - 'tests/test_nexium_host_capture_window_paired.py'
@@ -382,6 +384,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_rounding.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_rollover.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_native_frame_pixel_ttl_binding.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
@@ -714,6 +717,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_rounding.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_rollover.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_native_frame_pixel_ttl_binding.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
@@ -766,6 +770,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_rounding.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_rollover.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_native_frame_pixel_ttl_binding.py' -v
           python3 tools/verify_nexium_host_x11_sample_sequence_paired.py \
             --baseline-dir paired/baseline \
             --extra-dir paired/extra-poll \
