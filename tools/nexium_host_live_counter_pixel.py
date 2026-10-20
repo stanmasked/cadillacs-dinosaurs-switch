@@ -125,6 +125,28 @@ def empty_command_bracket_result():
         'cross_mode_causal_comparison_verified':False,
     }
 
+def empty_transition_bracket_result():
+    return {
+        'schema':'dino-nexium-host-x11-transition-bracket-v1',
+        'status':'INCONCLUSIVE_NO_POST_TRIGGER_ABSENT_SAMPLE',
+        'post_trigger_absent_x11_images':0,
+        'host_x11_transition_sample_bracket_observed':False,
+        'x11_positive_frame_token_u16':None,
+        'last_negative_x11_pixel_rgb':None,
+        'last_negative_xgetimage_begin_offset_us':None,
+        'last_negative_xgetimage_end_offset_us':None,
+        'first_positive_xgetimage_begin_offset_us':None,
+        'first_positive_xgetimage_end_offset_us':None,
+        'clock_domain':'HOST_MONOTONIC_ONLY',
+        'first_visible_frame_onset_verified':False,
+        'precise_input_to_display_latency_verified':False,
+        'guest_input_delivery_timestamp_verified':False,
+        'physical_controller_verified':False,
+        'physical_display_verified':False,
+        'gpu_scanout_timestamp_verified':False,
+        'cross_mode_causal_comparison_verified':False,
+    }
+
 
 class X11Window:
     """All Xlib calls stay on a single sampler thread."""
@@ -217,6 +239,10 @@ class CounterWindowWatcher:
         self._host_command_begin_ns=None
         self._sample_begin_ns=None
         self._sample_end_ns=None
+        self._last_absent_begin_ns=None
+        self._last_absent_end_ns=None
+        self._last_absent_pixels=None
+        self._post_trigger_absent_count=0
 
     def start(self):
         self._thread=threading.Thread(target=self._run,daemon=True)
@@ -330,6 +356,65 @@ class CounterWindowWatcher:
             'cross_mode_causal_comparison_verified':False,
         }
 
+    def transition_bracket_result(self):
+        # A conservative observation interval, not a presentation-onset time.
+        # Use only negative and positive samples AFTER host keydown return.
+        begin=self._host_command_begin_ns
+        completed=self._host_command_complete_ns
+        negative_start=self._last_absent_begin_ns
+        negative_end=self._last_absent_end_ns
+        positive_start=self._sample_begin_ns
+        positive_end=self._sample_end_ns
+        negative=self._last_absent_pixels
+        valid=(self._report['status']==STATUS and
+               type(self._frame_token) is int and
+               all(type(v) is int for v in (
+                   begin,completed,negative_start,negative_end,
+                   positive_start,positive_end)) and
+               0<=begin<=completed<=negative_start<=negative_end<=
+                  positive_start<=positive_end and
+               positive_end-begin<=2_500_000_000 and
+               type(self._post_trigger_absent_count) is int and
+               1<=self._post_trigger_absent_count<=199 and
+               type(negative) is dict and
+               all(k in negative and
+                   isinstance(negative[k],(tuple,list)) and
+                   len(negative[k])==3 and
+                   all(type(v) is int and 0<=v<=255
+                       for v in negative[k])
+                   for k in POINTS) and
+               not all(tuple(negative[k])==rgb
+                       for k,rgb in EXPECTED.items()))
+        offsets=(
+            ((negative_start-begin)//1000,
+             (negative_end-begin+999)//1000,
+             (positive_start-begin)//1000,
+             (positive_end-begin+999)//1000)
+            if valid else (None,None,None,None))
+        return {
+            'schema':'dino-nexium-host-x11-transition-bracket-v1',
+            'status':('HOST_X11_ABSENT_TO_COUNTER_FRAME_SAMPLE_BRACKET_OBSERVED'
+                      if valid else 'INCONCLUSIVE_NO_POST_TRIGGER_ABSENT_SAMPLE'),
+            'post_trigger_absent_x11_images':(
+                self._post_trigger_absent_count if valid else 0),
+            'host_x11_transition_sample_bracket_observed':bool(valid),
+            'x11_positive_frame_token_u16':self._frame_token if valid else None,
+            'last_negative_x11_pixel_rgb':(
+                {k:list(negative[k]) for k in POINTS} if valid else None),
+            'last_negative_xgetimage_begin_offset_us':offsets[0],
+            'last_negative_xgetimage_end_offset_us':offsets[1],
+            'first_positive_xgetimage_begin_offset_us':offsets[2],
+            'first_positive_xgetimage_end_offset_us':offsets[3],
+            'clock_domain':'HOST_MONOTONIC_ONLY',
+            'first_visible_frame_onset_verified':False,
+            'precise_input_to_display_latency_verified':False,
+            'guest_input_delivery_timestamp_verified':False,
+            'physical_controller_verified':False,
+            'physical_display_verified':False,
+            'gpu_scanout_timestamp_verified':False,
+            'cross_mode_causal_comparison_verified':False,
+        }
+
     def _run(self):
         sampler=None
         count=0
@@ -361,6 +446,18 @@ class CounterWindowWatcher:
                                 self._sample_begin_ns=started_ns
                                 self._sample_end_ns=ended_ns
                             break
+                        # Capture last genuine nonmatching X11 image, not
+                        # a fabricated timestamp or the pre-trigger image.
+                        # This snapshot came from the SAME XGetImage call
+                        # which tested the counter's four pixel colors.
+                        if all(k in sample and isinstance(sample[k],(list,tuple))
+                               and len(sample[k])==3
+                               for k in POINTS):
+                            self._last_absent_begin_ns=started_ns
+                            self._last_absent_end_ns=ended_ns
+                            self._last_absent_pixels={
+                                k:tuple(sample[k]) for k in POINTS}
+                            self._post_trigger_absent_count+=1
                         time.sleep(0.008)
             else:
                 reason='ZR_NOT_TRIGGERED'

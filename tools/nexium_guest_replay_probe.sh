@@ -215,11 +215,12 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             --out "$9" --host-counter-out "${10}" \
             --host-frame-token-out "${11}" \
             --host-capture-window-out "${12}" \
-            --host-command-bracket-out "${13}" || true
+            --host-command-bracket-out "${13}" \
+            --host-transition-out "${14}" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json" "$out/host-frame-token-evidence.json" "$out/host-capture-window-evidence.json" "$out/host-keydown-bracket-evidence.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json" "$out/host-frame-token-evidence.json" "$out/host-capture-window-evidence.json" "$out/host-keydown-bracket-evidence.json" "$out/host-x11-transition-bracket-evidence.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
