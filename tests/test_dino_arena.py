@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
-LEFT=1;RIGHT=2;UP=4;DOWN=8;ATTACK=16;JUMP=32;SPAR=64
+LEFT=1;RIGHT=2;UP=4;DOWN=8;ATTACK=16;JUMP=32;SPAR=64;COUNTER=128
 SPAR_TOGGLE=1;JUMP_START=2;LAND=4;SWING=8;DUMMY_HIT=16
 FINISHER=32;DUMMY_KO=64;DUMMY_SWING=128;PLAYER_HIT=256
 PLAYER_KO=512;DODGE=1024
@@ -221,6 +221,95 @@ class ArenaPrototypeTests(unittest.TestCase):
         self.step(p,pressed=SPAR)
         for _ in range(15):self.step(p,held=RIGHT)
         self.assertGreater(p.x,250)
+
+    def natural_counter_windup(self,p):
+        """Start from reset: AI walks ~116 ticks; never seed x/windup."""
+        self.assertEqual((p.x,p.dummy_x,p.ticks),(90,250,0))
+        self.step(p,pressed=SPAR)
+        self.assertTrue(p.sparring)
+        self.assertEqual(p.events,SPAR_TOGGLE)
+        for _ in range(200):
+            if p.dummy_windup:
+                break
+            self.step(p)
+        else:
+            self.fail('natural sparring AI never reached its windup')
+        # Genuine pursuit from 250 to 134, not the staged x=220 probe.
+        self.assertEqual((p.ticks,p.x,p.dummy_x),(116,90,134))
+        self.assertEqual((p.dummy_windup,p.dummy_cooldown),(12,0))
+        self.assertEqual((p.player_hp,p.dummy_hp,p.successful_hits),(5,3,0))
+        self.assertEqual(p.facing_right,1)
+
+    def test_natural_pursuit_windup_then_pressed_counter_prevents_damage(self):
+        p=self.new()
+        self.natural_counter_windup(p)
+        self.step(p,pressed=COUNTER)
+        self.assertEqual(p.ticks,117)
+        self.assertEqual(p.events,1<<11)
+        self.assertEqual((p.dummy_windup,p.dummy_hitstun,
+                          p.dummy_cooldown),(0,9,48))
+        self.assertEqual((p.player_hp,p.dummy_hp,p.player_hits_taken),(5,3,0))
+        self.assertEqual((p.successful_hits,p.dummy_impact_flash),(0,6))
+        # Repeated ZR during stun/cooldown does not grant extra counters.
+        self.step(p,pressed=COUNTER)
+        self.assertFalse(p.events & (1<<11))
+        self.assertEqual((p.dummy_cooldown,p.dummy_hp),(47,3))
+
+    def test_natural_premature_counter_does_not_buffer_until_enemy_windup(self):
+        p=self.new()
+        self.step(p,pressed=SPAR)
+        self.step(p,pressed=COUNTER)  # enemy is still far away
+        self.assertEqual(p.ticks,2)
+        self.assertFalse(p.events & (1<<11))
+        self.assertEqual((p.player_hp,p.dummy_hp),(5,3))
+        for _ in range(200):
+            if p.dummy_windup:
+                break
+            self.step(p)
+        else:
+            self.fail('AI never initiated its original windup')
+        self.assertEqual((p.ticks,p.dummy_windup),(116,12))
+        for _ in range(12):
+            self.step(p)  # do NOT inject another ZR edge
+        self.assertEqual(p.ticks,128)
+        self.assertEqual(p.events,DUMMY_SWING|PLAYER_HIT)
+        self.assertEqual((p.player_hp,p.player_hits_taken),(4,1))
+        self.assertFalse(p.events & (1<<11))
+
+    def test_natural_last_windup_tick_vs_late_post_impact_edge(self):
+        saved=self.new()
+        missed=self.new()
+        self.natural_counter_windup(saved)
+        self.natural_counter_windup(missed)
+        for _ in range(11):
+            self.step(saved)
+            self.step(missed)
+        self.assertEqual((saved.ticks,saved.dummy_windup),(127,1))
+        self.assertEqual((missed.ticks,missed.dummy_windup),(127,1))
+        self.step(saved,pressed=COUNTER)  # last valid tick
+        self.step(missed)                 # enemy lands its strike
+        self.assertEqual(saved.events,1<<11)
+        self.assertEqual(saved.player_hp,5)
+        self.assertEqual(missed.events,DUMMY_SWING|PLAYER_HIT)
+        self.assertEqual(missed.player_hp,4)
+        self.step(missed,pressed=COUNTER) # already stunned, too late
+        self.assertFalse(missed.events & (1<<11))
+        self.assertEqual(missed.player_hp,4)
+
+    def test_natural_counter_replay_is_identical_from_fresh_reset(self):
+        p=self.new()
+        q=self.new()
+        self.natural_counter_windup(p)
+        self.natural_counter_windup(q)
+        for tick in range(110):
+            pressed=COUNTER if tick in (0,1,48,49,60) else 0
+            self.step(p,pressed=pressed)
+            self.step(q,pressed=pressed)
+            self.assertEqual(p.events,q.events)
+            self.assertEqual(
+                tuple(getattr(p,name) for name,_ in Arena._fields_),
+                tuple(getattr(q,name) for name,_ in Arena._fields_))
+        self.assertEqual((p.ticks,q.ticks),(226,226))
 
     def test_enemy_telegraph_then_single_damage_and_invulnerability(self):
         p=self.new();p.x=220
