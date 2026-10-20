@@ -21,6 +21,30 @@ SCHEMA = 'dino-nexium-paired-host-initial-x11-blind-interval-v1'
 STATUS = 'BOTH_REAL_NRO_BOUND_INITIAL_X11_UNSAMPLED_INTERVALS_AUDITED'
 
 
+
+def conservative_initial_gap_bounds_us(sample_start_floor_us,
+                                       command_end_floor_us,
+                                       command_end_ceil_us):
+    """Conservative microsecond bounds given only rounded host timestamps.
+
+    sample start and subprocess completion share a monotonic nanosecond
+    origin. sample start was rounded DOWN, command completion both DOWN
+    and UP. Reject impossible envelopes instead of silently clipping
+    any reversed, nonintegral, boolean or larger-than-one-µs rounding.
+    """
+    values = (sample_start_floor_us,
+              command_end_floor_us, command_end_ceil_us)
+    if (any(type(x) is not int for x in values) or
+        not 0 <= command_end_floor_us <= command_end_ceil_us <= 2_500_001 or
+        command_end_ceil_us - command_end_floor_us > 1 or
+        not command_end_floor_us <= sample_start_floor_us <= 2_500_001):
+        raise ValueError('invalid rounded host sampling clock brackets')
+    lower = max(0, sample_start_floor_us - command_end_ceil_us)
+    upper = sample_start_floor_us + 1 - command_end_floor_us
+    if not 0 <= lower <= upper:
+        raise ValueError('no conservative host blind-interval bound')
+    return lower, upper
+
 def one(mode, guest_dir, nro):
     # Revalidate two existing independent source chains:
     # all Stage 263 raw X11 samples and the saved Stage 258 xdotool bracket.
@@ -54,16 +78,10 @@ def one(mode, guest_dir, nro):
         observed_positive_begin > last_end):
         raise ValueError('host command and full X11 sampling disagree')
 
-    # All saved microseconds are floor/ceil rounded from host monotonic ns.
-    # start is floor(sample_start-command_start); cmd_low is floor(
-    # command_complete-command_start), cmd_high is its ceil. Therefore the
-    # true preceding no-XGetImage-call interval is conservatively within:
-    #   [max(0, start-cmd_high), start+1-cmd_low] microseconds.
-    # Do NOT call that physical input latency or first-frame onset.
-    lower = max(0, start - cmd_high)
-    upper = start + 1 - cmd_low
-    if upper < lower:
-        raise ValueError('impossible first X11 capture interval')
+    # The source records contain rounded microsecond offsets. This
+    # helper is separately proven over sub-microsecond clock phases;
+    # the output bounds host sampling blindness, NOT physical latency.
+    lower, upper = conservative_initial_gap_bounds_us(start, cmd_low, cmd_high)
     return {
         'mode': mode,
         'whole_nro_sha256': observed['whole_nro_sha256'],
