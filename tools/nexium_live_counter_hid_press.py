@@ -116,9 +116,9 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
     if not until(live_windup_marker,roots,ready_seconds,0.05):
         if watcher:
             watcher.cancel('NO_LIVE_ARENA_WINDUP_MARKER')
-            watcher.finish()
+            record=watcher.finish()
             if host_counter_out:
-                pixels.save(host_counter_out,watcher.finish())
+                pixels.save(host_counter_out,record)
             if host_frame_token_out:
                 pixels.save(host_frame_token_out,watcher.frame_token_result())
         return {'status':'INCONCLUSIVE_NO_LIVE_ARENA_WINDUP_MARKER',
