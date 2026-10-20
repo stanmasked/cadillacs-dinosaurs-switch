@@ -41,6 +41,7 @@ on:
       - 'tools/nexium_live_counter_hid_press.py'
       - 'tools/nexium_host_live_counter_pixel.py'
       - 'tools/verify_nexium_host_frame_token.py'
+      - 'tools/verify_nexium_host_frame_token_paired.py'
       - 'tools/verify_nexium_host_counter_window_paired.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
@@ -59,6 +60,7 @@ on:
       - 'tests/test_nexium_host_input_pixel.py'
       - 'tests/test_nexium_host_live_counter_pixel.py'
       - 'tests/test_nexium_host_frame_token.py'
+      - 'tests/test_nexium_host_frame_token_paired.py'
       - 'tests/test_nexium_host_counter_window_paired.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
@@ -140,6 +142,7 @@ on:
       - 'tools/nexium_live_counter_hid_press.py'
       - 'tools/nexium_host_live_counter_pixel.py'
       - 'tools/verify_nexium_host_frame_token.py'
+      - 'tools/verify_nexium_host_frame_token_paired.py'
       - 'tools/verify_nexium_host_counter_window_paired.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
@@ -158,6 +161,7 @@ on:
       - 'tests/test_nexium_host_input_pixel.py'
       - 'tests/test_nexium_host_live_counter_pixel.py'
       - 'tests/test_nexium_host_frame_token.py'
+      - 'tests/test_nexium_host_frame_token_paired.py'
       - 'tests/test_nexium_host_counter_window_paired.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
@@ -320,6 +324,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_input_pixel.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_live_counter_pixel.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_mode_binding.py' -v
@@ -586,6 +591,19 @@ jobs:
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-host-counter-window-attestation.json
+          # Stage 254: REQUIRE the host-window token in the SAME X11
+          # image as the four real pixels to uniquely match a submitted
+          # guest render iteration in EACH separate NRO mode. The paired
+          # gate re-verifies raw CSV/JSON, 900-tick mode and whole NRO SHA.
+          # Neither host↔frame identity nor X11 pixels imply physical
+          # scanout or controller-to-display latency.
+          python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_paired.py' -v
+          python3 tools/verify_nexium_host_frame_token_paired.py \
+            --baseline-dir paired/baseline \
+            --extra-dir paired/extra-poll \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-host-guest-frame-token-attestation.json
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
@@ -774,6 +792,7 @@ jobs:
             paired-natural-zr-counter-pcm-attestation.json
             paired-visible-arena-zr-pcm-attestation.json
             paired-host-counter-window-attestation.json
+            paired-host-guest-frame-token-attestation.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json
