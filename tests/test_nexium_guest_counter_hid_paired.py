@@ -54,6 +54,27 @@ class PairedGuestZRTests(unittest.TestCase):
         return {'guest_nro_sha256':'A'*64 if mode=='baseline' else 'B'*64,
                 'guest_report_sha256':'C'*64 if mode=='baseline' else 'D'*64}
 
+    def test_workflow_binds_to_guest_audio_evidence_json_not_raw_csv(self):
+        # The mode attestation hashes the *verified JSON*, not the
+        # guest's raw stress CSV. Exact filenames are essential.
+        workflow=Path('.github/workflows/nexium-guest-replay.yml').read_text(
+            encoding='utf-8')
+        fragment=workflow.split(
+            'python3 tools/verify_nexium_guest_counter_hid_paired.py',1)[1]
+        fragment=fragment.split(
+            '--out paired-real-zr-counter-pcm-attestation.json',1)[0]
+        for mode,flag in (('baseline','baseline'),
+                          ('extra-poll','extra')):
+            self.assertIn(
+                '--'+flag+'-report paired/'+mode+
+                '/guest-audio-stress-evidence.json',fragment)
+            self.assertNotIn(
+                '--'+flag+'-report paired/'+mode+
+                '/guest-audio-stress.csv',fragment)
+            self.assertIn(
+                '--'+flag+'-binding paired/'+mode+
+                '/guest-audio-mode-binding.json',fragment)
+
     def test_two_independent_valid_csvs_and_recorded_jsons(self):
         with patch.object(check.paired_audio,'validate_binding',
                           side_effect=self.simulated_binding) as mock:
