@@ -38,6 +38,8 @@ on:
       - 'tools/nexium_counter_hid_press.py'
       - 'tools/nexium_natural_counter_hid_press.py'
       - 'tools/verify_nexium_guest_natural_counter_hid.py'
+      - 'tools/verify_nexium_guest_natural_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_natural_counter_hid_paired.py'
       - 'tests/test_nexium_guest_natural_counter_hid.py'
       - 'tests/test_nexium_guest_counter_hid.py'
       - 'tests/test_dino_guest_counter.py'
@@ -122,6 +124,8 @@ on:
       - 'tools/nexium_counter_hid_press.py'
       - 'tools/nexium_natural_counter_hid_press.py'
       - 'tools/verify_nexium_guest_natural_counter_hid.py'
+      - 'tools/verify_nexium_guest_natural_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_natural_counter_hid_paired.py'
       - 'tests/test_nexium_guest_natural_counter_hid.py'
       - 'tests/test_nexium_guest_counter_hid.py'
       - 'tests/test_dino_guest_counter.py'
@@ -455,6 +459,27 @@ jobs:
             --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
             --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-real-zr-counter-pcm-attestation.json
+          # Stage 245: the optional Stage 244 natural guest witnesses
+          # are now required from BOTH actual libnx guest builds in PR CI.
+          # Re-run the old staged gate and bind both modes to their full
+          # NRO SHA-256; missing/forged/late natural HID evidence fails.
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_natural_counter_hid_paired.py' -v
+          python3 tools/verify_nexium_guest_natural_counter_hid_paired.py \
+            --baseline-natural-csv paired/baseline/guest-natural-counter-hid.csv \
+            --baseline-natural-json paired/baseline/guest-natural-counter-hid-evidence.json \
+            --baseline-staged-csv paired/baseline/guest-counter-hid.csv \
+            --baseline-staged-json paired/baseline/guest-counter-hid-evidence.json \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-natural-csv paired/extra-poll/guest-natural-counter-hid.csv \
+            --extra-natural-json paired/extra-poll/guest-natural-counter-hid-evidence.json \
+            --extra-staged-csv paired/extra-poll/guest-counter-hid.csv \
+            --extra-staged-json paired/extra-poll/guest-counter-hid-evidence.json \
+            --extra-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-natural-zr-counter-pcm-attestation.json
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
@@ -640,6 +665,7 @@ jobs:
           path: |
             paired-audio-comparison.json
             paired-real-zr-counter-pcm-attestation.json
+            paired-natural-zr-counter-pcm-attestation.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json
