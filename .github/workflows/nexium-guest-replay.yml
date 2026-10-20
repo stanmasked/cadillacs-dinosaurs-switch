@@ -42,6 +42,7 @@ on:
       - 'tools/nexium_host_live_counter_pixel.py'
       - 'tools/verify_nexium_host_frame_token.py'
       - 'tools/verify_nexium_host_frame_token_paired.py'
+      - 'tools/verify_nexium_host_capture_window.py'
       - 'tools/verify_nexium_host_counter_window_paired.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
@@ -61,6 +62,7 @@ on:
       - 'tests/test_nexium_host_live_counter_pixel.py'
       - 'tests/test_nexium_host_frame_token.py'
       - 'tests/test_nexium_host_frame_token_paired.py'
+      - 'tests/test_nexium_host_capture_window.py'
       - 'tests/test_nexium_host_counter_window_paired.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
@@ -143,6 +145,7 @@ on:
       - 'tools/nexium_host_live_counter_pixel.py'
       - 'tools/verify_nexium_host_frame_token.py'
       - 'tools/verify_nexium_host_frame_token_paired.py'
+      - 'tools/verify_nexium_host_capture_window.py'
       - 'tools/verify_nexium_host_counter_window_paired.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
@@ -162,6 +165,7 @@ on:
       - 'tests/test_nexium_host_live_counter_pixel.py'
       - 'tests/test_nexium_host_frame_token.py'
       - 'tests/test_nexium_host_frame_token_paired.py'
+      - 'tests/test_nexium_host_capture_window.py'
       - 'tests/test_nexium_host_counter_window_paired.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
@@ -325,6 +329,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_live_counter_pixel.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_paired.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_mode_binding.py' -v
@@ -378,6 +383,8 @@ jobs:
             emulator-evidence/host-frame-token-evidence.json
             emulator-evidence/guest-live-counter-frame-tokens.csv
             emulator-evidence/host-guest-frame-token-evidence.json
+            emulator-evidence/host-capture-window-evidence.json
+            emulator-evidence/host-capture-interval-attestation.json
             emulator-evidence/guest-live-counter-hid.csv
             emulator-evidence/guest-live-counter-hid-evidence.json
             emulator-evidence/guest-live-counter-framebuffer.csv
@@ -598,6 +605,7 @@ jobs:
           # Neither host↔frame identity nor X11 pixels imply physical
           # scanout or controller-to-display latency.
           python3 -m unittest discover -s tests -p 'test_nexium_host_frame_token_paired.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window.py' -v
           python3 tools/verify_nexium_host_frame_token_paired.py \
             --baseline-dir paired/baseline \
             --extra-dir paired/extra-poll \
