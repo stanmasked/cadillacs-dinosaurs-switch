@@ -91,7 +91,7 @@ def until(fn,roots,seconds,interval):
     return False
 
 
-def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None):
+def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None,host_frame_token_out=None):
     if not window.isdecimal() or not 0<int(window)<2**32:
         raise ValueError('invalid NeXium X11 window')
     if not roots:
@@ -110,13 +110,17 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
     # Arm X11 BEFORE waiting for the naturally simulated 116-tick pursuit.
     # Arming only after the READY marker can consume the short ZR window
     # or race with the first post-ZR X11 image.
-    watcher=pixels.CounterWindowWatcher(window) if host_counter_out else None
+    watcher=pixels.CounterWindowWatcher(window) if (host_counter_out or host_frame_token_out) else None
     if watcher:
         watcher.start()
     if not until(live_windup_marker,roots,ready_seconds,0.05):
         if watcher:
             watcher.cancel('NO_LIVE_ARENA_WINDUP_MARKER')
-            pixels.save(host_counter_out,watcher.finish())
+            watcher.finish()
+            if host_counter_out:
+                pixels.save(host_counter_out,watcher.finish())
+            if host_frame_token_out:
+                pixels.save(host_frame_token_out,watcher.frame_token_result())
         return {'status':'INCONCLUSIVE_NO_LIVE_ARENA_WINDUP_MARKER',
                 'guest_live_counter_verified':False}
     input_failed=False
@@ -133,7 +137,16 @@ def probe(window,roots,natural_seconds=14,ready_seconds=22,host_counter_out=None
             if input_failed:
                 record=pixels.result(pixels.INCONCLUSIVE,
                                      reason='HOST_ZR_INPUT_ERROR')
-            pixels.save(host_counter_out,record)
+            if host_counter_out:
+                pixels.save(host_counter_out,record)
+            if host_frame_token_out:
+                token_record=watcher.frame_token_result()
+                if input_failed:
+                    token_record={**token_record,
+                        'status':'INCONCLUSIVE_NO_X11_FRAME_TOKEN',
+                        'token_u16':None,
+                        'token_same_x11_image_as_counter_pixels':False}
+                pixels.save(host_frame_token_out,token_record)
     return {'status':'HOST_LIVE_SCENE_ZR_ATTEMPT_AFTER_REAL_Y_X',
             'guest_live_counter_verified':False}
 
@@ -144,9 +157,11 @@ def main(argv=None):
     p.add_argument('--root',type=Path,required=True,action='append')
     p.add_argument('--out',type=Path,required=True)
     p.add_argument('--host-counter-out',type=Path)
+    p.add_argument('--host-frame-token-out',type=Path)
     a=p.parse_args(argv)
     try:
-        report=probe(a.window,a.root,host_counter_out=a.host_counter_out)
+        report=probe(a.window,a.root,host_counter_out=a.host_counter_out,
+                     host_frame_token_out=a.host_frame_token_out)
     except (ValueError,OSError,subprocess.SubprocessError):
         report={'status':'INCONCLUSIVE_LIVE_HOST_INPUT_UNAVAILABLE',
                 'guest_live_counter_verified':False}
@@ -154,6 +169,15 @@ def main(argv=None):
     if a.host_counter_out and not a.host_counter_out.is_file():
         pixels.save(a.host_counter_out,pixels.result(
             pixels.INCONCLUSIVE,reason='NO_REAL_ZR_ATTEMPT'))
+    if a.host_frame_token_out and not a.host_frame_token_out.is_file():
+        pixels.save(a.host_frame_token_out,{
+            'schema':'dino-nexium-host-frame-token-v1',
+            'status':'INCONCLUSIVE_NO_X11_FRAME_TOKEN',
+            'token_u16':None,
+            'token_same_x11_image_as_counter_pixels':False,
+            'guest_submitted_frame_identity_verified':False,
+            'exact_host_guest_frame_latency_verified':False,
+            'physical_display_verified':False})
     report={'schema':'dino-nexium-host-live-counter-attempt-v1',**report}
     a.out.write_text(json.dumps(report,sort_keys=True)+'\n',encoding='ascii')
     print(json.dumps(report,sort_keys=True))
