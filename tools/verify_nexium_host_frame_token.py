@@ -106,6 +106,8 @@ def verify(host_path,window_path,trace_path,frame_path,metadata_path,nro_path):
         raise ValueError('counter framebuffer witness invalid')
     frame_id=exact_number(guest['render_iteration'],1,2**32-1)
     frame_tick=exact_number(guest['arena_tick'],1,2**32-1)
+    frame_feedback=exact_number(guest['feedback_ttl'],1,6)
+    frame_impact=exact_number(guest['impact_ttl'],1,6)
     prev_iteration=0
     prev_tick=0
     matching=[]
@@ -123,8 +125,14 @@ def verify(host_path,window_path,trace_path,frame_path,metadata_path,nro_path):
             raise ValueError('invalid native frame sequence/token')
         prev_iteration,prev_tick=iteration,tick
         if iteration==frame_id:
-            if tick!=frame_tick:
-                raise ValueError('native pixel CSV/trace frame tick mismatch')
+            # The guest framebuffer sample and native trace are recorded
+            # at the SAME framebuffer submission. Bind ALL ephemeral
+            # state values, not merely the matching 32-bit frame/tick.
+            # This first submitted pixel frame need not be the LATER
+            # token-matched host X11 image: software rendering can lag.
+            if (tick!=frame_tick or ttl!=frame_feedback or
+                    flash!=frame_impact):
+                raise ValueError('native framebuffer CSV/trace state mismatch')
             first_frame_found=True
         if encoded==token:
             matching.append((iteration,tick,ttl,flash))
