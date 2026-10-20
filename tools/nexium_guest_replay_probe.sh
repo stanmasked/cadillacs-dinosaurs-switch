@@ -212,11 +212,12 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             --window "$window" \
             --root "$HOME" --root "$XDG_CONFIG_HOME" \
             --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
-            --out "$9" --host-counter-out "${10}" || true
+            --out "$9" --host-counter-out "${10}" \
+            --host-frame-token-out "${11}" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json" "$out/host-frame-token-evidence.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -366,6 +367,17 @@ python3 tools/verify_nexium_guest_counter_framebuffer.py \
     --report "$out/guest-live-counter-framebuffer.csv" \
     --live-csv "$out/guest-live-counter-hid.csv" \
     --out "$out/guest-live-counter-framebuffer-evidence.json"
+# Stage 253: save diagnostic-only list of actual submitted counter frame IDs.
+# The host token and guest frame trace stay separate until verified; a
+# missing marker is INCONCLUSIVE rather than fabricated proof.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-live-counter-frame-tokens.csv' -print \
+    > "$out/guest-frame-token-locations.txt"
+if [ -s "$out/guest-frame-token-locations.txt" ]; then
+    IFS= read -r token_path < "$out/guest-frame-token-locations.txt"
+    cp "$token_path" "$out/guest-live-counter-frame-tokens.csv"
+fi
+
 
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.
