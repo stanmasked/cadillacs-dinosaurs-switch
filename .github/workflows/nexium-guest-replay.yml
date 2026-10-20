@@ -33,6 +33,8 @@ on:
       - 'tests/test_nexium_guest_replay.py'
       - 'tools/verify_nexium_guest_counter.py'
       - 'tools/verify_nexium_guest_counter_hid.py'
+      - 'tools/verify_nexium_guest_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_counter_hid_paired.py'
       - 'tools/nexium_counter_hid_press.py'
       - 'tests/test_nexium_guest_counter_hid.py'
       - 'tests/test_dino_guest_counter.py'
@@ -112,6 +114,8 @@ on:
       - 'tests/test_nexium_guest_replay.py'
       - 'tools/verify_nexium_guest_counter.py'
       - 'tools/verify_nexium_guest_counter_hid.py'
+      - 'tools/verify_nexium_guest_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_counter_hid_paired.py'
       - 'tools/nexium_counter_hid_press.py'
       - 'tests/test_nexium_guest_counter_hid.py'
       - 'tests/test_dino_guest_counter.py'
@@ -425,6 +429,22 @@ jobs:
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-audio-comparison.json
+          # Stage 241: recheck real NRO-bound ZR and PCM separately for
+          # baseline and extra-poll. Missing guest data fails CI, rather
+          # than silently treating an optional verifier as a pass.
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_counter_hid_paired.py' -v
+          python3 tools/verify_nexium_guest_counter_hid_paired.py \
+            --baseline-csv paired/baseline/guest-counter-hid.csv \
+            --baseline-json paired/baseline/guest-counter-hid-evidence.json \
+            --baseline-report paired/baseline/guest-audio-stress.csv \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-csv paired/extra-poll/guest-counter-hid.csv \
+            --extra-json paired/extra-poll/guest-counter-hid-evidence.json \
+            --extra-report paired/extra-poll/guest-audio-stress.csv \
+            --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-real-zr-counter-pcm-attestation.json
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
@@ -609,6 +629,7 @@ jobs:
           name: dino-ne-xium-bound-audio-ab-comparison
           path: |
             paired-audio-comparison.json
+            paired-real-zr-counter-pcm-attestation.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json
