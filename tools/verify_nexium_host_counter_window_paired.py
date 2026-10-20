@@ -153,7 +153,14 @@ def check_mode(mode,guest,nro):
     binding=jread(guest/'guest-audio-mode-binding.json')
     stress_bytes=file(guest/'guest-audio-stress-evidence.json',
                       minimum=100,maximum=100000).read_bytes()
-    stress=jread(guest/'guest-audio-stress-evidence.json') if len(stress_bytes)<=4096 else json.loads(stress_bytes)
+    try:
+        stress=json.loads(stress_bytes,object_pairs_hook=pairs_unique,
+                          parse_constant=lambda _: (_ for _ in ()).throw(
+                              ValueError('nonfinite stress report')))
+    except (UnicodeError,json.JSONDecodeError) as exc:
+        raise ValueError('malformed raw guest audio-stress report') from exc
+    if not isinstance(stress,dict):
+        raise ValueError('raw guest audio-stress report is not an object')
     enabled=mode=='extra-poll'
     calls=binding.get('guest_poll_calls')
     pages=binding.get('guest_poll_released_pages')
