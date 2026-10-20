@@ -212,11 +212,11 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             --window "$window" \
             --root "$HOME" --root "$XDG_CONFIG_HOME" \
             --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
-            --out "$9" || true
+            --out "$9" --host-counter-out "${10}" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"

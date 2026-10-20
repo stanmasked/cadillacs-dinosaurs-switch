@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Optional ROM-free NeXium X11 counter-frame observation (Stage 250).
+
+Observe four host-window pixels in one XGetImage after real host T/ZR,
+independently of the NRO's submitted framebuffer CSV. This is sampled
+X11 evidence, NOT photons, input latency, original graphics or guest
+HID proof. Never store raw images, input paths or window identities.
+The pixel map is for the pinned 1280x720 NeXium UI; fail closed if changed.
+"""
+import ctypes
+import ctypes.util
+import json
+import threading
+import time
+
+WINDOW_SIZE=(1280,720)
+POINTS={
+    'caption':(795,646), 'impact':(471,323),
+    'player':(345,410), 'ground':(120,617),
+}
+EXPECTED={
+    'caption':(91,235,201), 'impact':(255,243,164),
+    'player':(62,180,208), 'ground':(62,83,74),
+}
+STATUS='HOST_WINDOW_COUNTER_PIXELS_OBSERVED_UNBOUND'
+INCONCLUSIVE='INCONCLUSIVE_NO_HOST_WINDOW_COUNTER_FRAME'
+MIN_X=min(x for x,_ in POINTS.values())
+MIN_Y=min(y for _,y in POINTS.values())
+MAX_X=max(x for x,_ in POINTS.values())
+MAX_Y=max(y for _,y in POINTS.values())
+
+
+def classify(pre, samples):
+    """Require pre-ZR blank caption/impact and all four in ONE later image."""
+    if pre is None or tuple(pre.get('ground',()))!=EXPECTED['ground']:
+        return INCONCLUSIVE
+    if (tuple(pre.get('caption',()))==EXPECTED['caption'] or
+            tuple(pre.get('impact',()))==EXPECTED['impact']):
+        return INCONCLUSIVE
+    if any(all(tuple(s.get(k,()))==rgb for k,rgb in EXPECTED.items())
+           for s in samples):
+        return STATUS
+    return INCONCLUSIVE
+
+
+def result(status, samples=0, baseline=False, reason=''):
+    return {
+        'schema':'dino-nexium-host-counter-frame-v1',
+        'status':status,
+        'host_x11_window_counter_pixels_observed':status==STATUS,
+        'counter_transition_baseline_observed':bool(baseline),
+        'same_x11_image_four_pixel_match':status==STATUS,
+        'frames_sampled':min(max(int(samples),0),200),
+        'diagnostic_code':reason,
+        'native_guest_counter_event_bound':False,
+        'host_window_pixel_latency_verified':False,
+        'physical_display_verified':False,
+        'physical_controller_verified':False,
+        'original_arcade_graphics_verified':False,
+    }
+
+
+class X11Window:
+    """All Xlib calls stay on a single sampler thread."""
+    def __init__(self, window):
+        if not isinstance(window,str) or not window.isdecimal():
+            raise ValueError('INVALID_WINDOW')
+        self.window=int(window)
+        if not 0<self.window<2**32:
+            raise ValueError('INVALID_WINDOW')
+        libname=ctypes.util.find_library('X11')
+        if not libname:
+            raise ValueError('X11_UNAVAILABLE')
+        self.x=ctypes.CDLL(libname)
+        P=ctypes.c_void_p; U=ctypes.c_ulong; I=ctypes.c_int
+        self.x.XOpenDisplay.argtypes=[ctypes.c_char_p]
+        self.x.XOpenDisplay.restype=P
+        self.x.XCloseDisplay.argtypes=[P]
+        self.x.XGetGeometry.argtypes=[P,U,ctypes.POINTER(U),ctypes.POINTER(I),
+            ctypes.POINTER(I),ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_uint),
+            ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_uint)]
+        self.x.XGetGeometry.restype=I
+        self.x.XGetImage.argtypes=[P,U,I,I,ctypes.c_uint,ctypes.c_uint,U,I]
+        self.x.XGetImage.restype=P
+        self.x.XGetPixel.argtypes=[P,I,I]
+        self.x.XGetPixel.restype=U
+        self.x.XDestroyImage.argtypes=[P]
+        self.x.XDestroyImage.restype=I
+        self.display=self.x.XOpenDisplay(None)
+        if not self.display:
+            raise ValueError('X11_UNAVAILABLE')
+        try:
+            root=U(); left=I(); top=I()
+            w=ctypes.c_uint(); h=ctypes.c_uint()
+            border=ctypes.c_uint(); depth=ctypes.c_uint()
+            ok=self.x.XGetGeometry(self.display,self.window,ctypes.byref(root),
+                ctypes.byref(left),ctypes.byref(top),ctypes.byref(w),
+                ctypes.byref(h),ctypes.byref(border),ctypes.byref(depth))
+            if not ok or (w.value,h.value)!=WINDOW_SIZE or depth.value!=24:
+                raise ValueError('WINDOW_GEOMETRY_MISMATCH')
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if getattr(self,'display',None):
+            self.x.XCloseDisplay(self.display)
+            self.display=None
+
+    def sample(self):
+        image=self.x.XGetImage(self.display,self.window,MIN_X,MIN_Y,
+            MAX_X-MIN_X+1,MAX_Y-MIN_Y+1,ctypes.c_ulong(-1).value,2)
+        if not image:
+            raise ValueError('X11_CAPTURE_UNAVAILABLE')
+        try:
+            values={}
+            for k,(x,y) in POINTS.items():
+                p=self.x.XGetPixel(image,x-MIN_X,y-MIN_Y)
+                # Pinned Xvfb 24-bit TrueColor uses 0xRRGGBB.
+                # Background-color calibration is mandatory before success.
+                values[k]=((p>>16)&255,(p>>8)&255,p&255)
+            return values
+        finally:
+            self.x.XDestroyImage(image)
+
+
+class CounterWindowWatcher:
+    def __init__(self,window,sampler_factory=X11Window,seconds=0.75):
+        self.window=window
+        self.factory=sampler_factory
+        self.seconds=min(max(float(seconds),0.2),1.5)
+        self.triggered=threading.Event()
+        self._cancel_reason=''
+        self.ready=threading.Event()
+        self.finished=threading.Event()
+        self._thread=None
+        self._report=result(INCONCLUSIVE)
+
+    def start(self):
+        self._thread=threading.Thread(target=self._run,daemon=True)
+        self._thread.start()
+        # Arm well BEFORE the 116-tick ready marker, not after it.
+        return self.ready.wait(0.35)
+
+    def trigger(self):
+        # Only immediately after successful xdotool T keydown.
+        self.triggered.set()
+
+    def cancel(self,reason='ZR_NOT_TRIGGERED'):
+        self._cancel_reason=reason
+        self.triggered.set()
+
+    def finish(self):
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+        if not self.finished.is_set():
+            return result(INCONCLUSIVE,reason='MONITOR_TIMEOUT')
+        return self._report
+
+    def _run(self):
+        sampler=None
+        count=0
+        pre=None
+        post=[]
+        reason=''
+        try:
+            sampler=self.factory(self.window)
+            pre=sampler.sample()
+            count+=1
+            self.ready.set()
+            # Allow the original ROM-free AI 116-tick pursuit to finish
+            # without a new host timing race. Cancel on absent ready marker.
+            if self.triggered.wait(timeout=26.0):
+                if self._cancel_reason:
+                    reason=self._cancel_reason
+                else:
+                    until=time.monotonic()+self.seconds
+                    while time.monotonic()<until and count<200:
+                        sample=sampler.sample()
+                        count+=1
+                        post.append(sample)
+                        if classify(pre,[sample])==STATUS:
+                            break
+                        time.sleep(0.008)
+            else:
+                reason='ZR_NOT_TRIGGERED'
+        except (ValueError,OSError) as exc:
+            reason=str(exc) if str(exc) in {
+                'INVALID_WINDOW','X11_UNAVAILABLE','WINDOW_GEOMETRY_MISMATCH',
+                'X11_CAPTURE_UNAVAILABLE'} else 'X11_ERROR'
+        except Exception:
+            reason='X11_ERROR'
+        finally:
+            if sampler is not None:
+                sampler.close()
+            self.ready.set()
+            status=classify(pre,post)
+            if status!=STATUS and not reason:
+                reason='PIXELS_NOT_OBSERVED'
+            self._report=result(status,count,pre is not None and
+                tuple(pre.get('ground',()))==EXPECTED['ground'],reason)
+            self.finished.set()
+
+
+def save(path,record):
+    from pathlib import Path
+    Path(path).write_text(json.dumps(record,sort_keys=True)+'\n',encoding='ascii')
