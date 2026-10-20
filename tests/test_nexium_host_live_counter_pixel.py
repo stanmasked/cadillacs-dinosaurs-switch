@@ -81,6 +81,8 @@ class Tests(unittest.TestCase):
             def start(self):
                 events.append('arm')
                 return True
+            def begin_keydown_command(self):
+                events.append('keydown-start')
             def trigger(self):
                 events.append('trigger')
             def cancel(self, reason):
@@ -94,7 +96,10 @@ class Tests(unittest.TestCase):
                 return True
             events.append('ready')
             return True
-        def fake_press(key, duration=0.18, after_keydown=None):
+        def fake_press(key, duration=0.18, after_keydown=None,
+                       before_keydown=None):
+            if before_keydown:
+                before_keydown()
             events.append('press:'+key)
             if after_keydown:
                 after_keydown()
@@ -106,7 +111,8 @@ class Tests(unittest.TestCase):
             rec=live_probe.probe('987',[Path('.')],host_counter_out=Path('optional.json'))
         self.assertEqual(rec['status'],'HOST_LIVE_SCENE_ZR_ATTEMPT_AFTER_REAL_Y_X')
         self.assertLess(events.index('arm'),events.index('ready'))
-        self.assertLess(events.index('ready'),events.index('press:t'))
+        self.assertLess(events.index('ready'),events.index('keydown-start'))
+        self.assertLess(events.index('keydown-start'),events.index('press:t'))
         self.assertLess(events.index('press:t'),events.index('trigger'))
         self.assertEqual(events[-1],'finish')
 
