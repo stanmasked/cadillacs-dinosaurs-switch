@@ -145,6 +145,38 @@ def check_mode(mode,guest,nro):
     if (props.get('nro_sha256')!=sha or
         props.get('scope')!='REAL_NE_XIUM_GUEST_CI_NO_NINTENDO_ROM'):
         raise ValueError('guest evidence does not bind to exact NRO')
+    # Stage 252: distinct NRO hashes alone do NOT prove the files were
+    # attributed to the correct baseline / extra-poll slot. Bind each
+    # actual guest-signed mode attestation to the exact 900-tick raw
+    # stress report and the exact NRO. Fail closed on a complete swap
+    # of guest directories together with their matching binaries.
+    binding=jread(guest/'guest-audio-mode-binding.json')
+    stress_bytes=file(guest/'guest-audio-stress-evidence.json',
+                      minimum=100,maximum=100000).read_bytes()
+    stress=jread(guest/'guest-audio-stress-evidence.json') if len(stress_bytes)<=4096 else json.loads(stress_bytes)
+    enabled=mode=='extra-poll'
+    calls=binding.get('guest_poll_calls')
+    pages=binding.get('guest_poll_released_pages')
+    if (binding.get('schema')!='dino-nexium-guest-audio-mode-binding-v1' or
+        binding.get('status')!='SELECTED_AUDIO_MODE_WITNESSED_BY_GUEST' or
+        binding.get('selected_mode')!=mode or
+        binding.get('guest_nro_sha256')!=sha or
+        binding.get('guest_report_sha256')!=hashlib.sha256(stress_bytes).hexdigest() or
+        binding.get('guest_poll_enabled') is not enabled or
+        type(binding.get('guest_simulation_ticks')) is not int or
+        binding['guest_simulation_ticks']!=900 or
+        type(calls) is not int or
+        (calls<=0 if enabled else calls!=0) or
+        type(pages) is not int or not 0<=pages<=calls or
+        stress.get('guest_mid_batch_extra_poll_enabled') is not enabled or
+        stress.get('guest_mid_batch_extra_poll_calls')!=calls or
+        stress.get('guest_mid_batch_extra_poll_released_pages')!=pages or
+        stress.get('simulation_ticks')!=900 or
+        stress.get('pcm_generated_ticks')!=900 or
+        binding.get('audio_latency_verified') is not False or
+        binding.get('causal_audio_improvement_verified') is not False or
+        binding.get('physical_switch_audio_verified') is not False):
+        raise ValueError('guest-declared mode / raw stress / NRO provenance mismatch')
     if 'PASS: actual NeXium NRO guest' not in file(
         guest/'result.txt',1,1024).read_text(encoding='ascii'):
         raise ValueError('real guest did not pass')
