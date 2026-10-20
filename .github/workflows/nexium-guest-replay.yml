@@ -109,6 +109,8 @@ on:
       - 'tools/verify_nexium_guest_ack_observability.py'
       - 'tests/test_nexium_guest_ack_observability.py'
       - 'tools/verify_nexium_audio_ack_tick_trace.py'
+      - 'tools/compare_nexium_audio_stress_runs.py'
+      - 'tests/test_nexium_audio_crosswindow_carry.py'
       - 'tests/test_nexium_audio_ack_tick_trace.py'
       - 'tools/compare_nexium_guest_ack_discovery.py'
       - 'tests/test_nexium_guest_ack_discovery_profile.py'
@@ -233,6 +235,8 @@ on:
       - 'tools/verify_nexium_guest_ack_observability.py'
       - 'tests/test_nexium_guest_ack_observability.py'
       - 'tools/verify_nexium_audio_ack_tick_trace.py'
+      - 'tools/compare_nexium_audio_stress_runs.py'
+      - 'tests/test_nexium_audio_crosswindow_carry.py'
       - 'tests/test_nexium_audio_ack_tick_trace.py'
       - 'tools/compare_nexium_guest_ack_discovery.py'
       - 'tests/test_nexium_guest_ack_discovery_profile.py'
@@ -801,6 +805,7 @@ jobs:
             --experimental-binding paired/extra-poll/guest-audio-mode-binding.json \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out bound-guest-ack-observability.json
+          python3 -m unittest discover -s tests -p 'test_nexium_audio_crosswindow_carry.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_ack_tick_trace.py' -v
           python3 tools/verify_nexium_audio_ack_tick_trace.py \
             --trace paired/baseline/guest-audio-ack-ticks.csv \
