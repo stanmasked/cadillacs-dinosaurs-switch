@@ -35,13 +35,20 @@ cleanup() {
 }
 trap cleanup EXIT
 release="https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz"
-# Release asset digest verified against the public GitHub API on 2026-10-18.
-# Mutable tag: reject changed binary, never silently trust a replacement.
-expected="0ec2da5d58b6b362a9f0a4c927af0e55d36a0b50d1ab3f035dd075ea12d76761"
+# Stage 247 CI recovered from a nightly asset replacement on 2026-10-20:
+# verified via GitHub's public official release-asset API metadata.
+# Release asset id=658656899 (nexium-linux-x86_64.tar.gz), 114182978 bytes;
+# API asset digest sha256:c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66
+# Mutable nightly tag: ALWAYS reject any future unexpected asset bytes.
+# This is a new emulator revision, not a claim of gameplay compatibility.
+expected="c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66"
+expected_size=114182978
 {
     echo "scope=REAL_NE_XIUM_GUEST_CI_NO_NINTENDO_ROM"
     echo "emulator=NeXium pinned experimental nightly"
     echo "expected_emulator_sha256=$expected"
+    echo "expected_emulator_bytes=$expected_size"
+    echo "expected_release_asset_id=658656899"
     echo "nro_sha256=$(sha256sum "$nro" | cut -d ' ' -f1)"
     echo "host_arch=$(uname -m)"
 } > "$out/metadata.txt"
@@ -49,6 +56,10 @@ if ! curl -fL --retry 2 --connect-timeout 20 --max-time 240 \
         "$release" -o "$scratch/nexium.tar.gz" \
         > "$out/download.txt" 2>&1; then
     echo "INCONCLUSIVE: emulator download failed" > "$out/result.txt"
+    exit 1
+fi
+if [ "$(wc -c < "$scratch/nexium.tar.gz" | tr -d '[:space:]')" != "$expected_size" ]; then
+    echo "BLOCKED: emulator release asset size mismatch" > "$out/result.txt"
     exit 1
 fi
 if ! echo "$expected  $scratch/nexium.tar.gz" | sha256sum -c - \
@@ -137,7 +148,7 @@ fi
 set +e
 xvfb-run -a -s "-screen 0 1280x720x24" \
     bash -c '
-      timeout --signal=TERM --kill-after=5s 110s "$1" "$2" > "$3" 2>&1 &
+      timeout --signal=TERM --kill-after=5s 155s "$1" "$2" > "$3" 2>&1 &
       emulator_pid=$!
       (
         # After 180 ticks should have completed, even under modest
@@ -179,10 +190,33 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             sleep 0.3
             xdotool keydown v; sleep 0.25; xdotool keyup v
           fi
+          # Optional Stage 234 external T/ZR after guest stress finishes.
+          # A host key attempt alone never establishes in-guest delivery.
+          python3 tools/nexium_counter_hid_press.py \
+            --window "$window" \
+            --root "$HOME" --root "$XDG_CONFIG_HOME" \
+            --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
+            --out "$7" || true
+          # Stage 244: the guest runs an unstaged ROM-free enemy chase
+          # over 116 native simulation ticks and writes a ready marker.
+          # This second *host attempt* is never accepted as game evidence.
+          python3 tools/nexium_natural_counter_hid_press.py \
+            --window "$window" \
+            --root "$HOME" --root "$XDG_CONFIG_HOME" \
+            --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
+            --out "$8" || true
+          # Stage 246: another real Y / X / T sequence, gated by
+          # previous genuine natural ZR. This time the game-state
+          # witness must come from the actual *rendered* arena.
+          python3 tools/nexium_live_counter_hid_press.py \
+            --window "$window" \
+            --root "$HOME" --root "$XDG_CONFIG_HOME" \
+            --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
+            --out "$9" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -210,6 +244,20 @@ fi
 python3 tools/verify_nexium_guest_replay.py \
     --report "$out/guest-replay.csv" \
     --out "$out/result.txt"
+
+# Stage 229: an independent scripted counter + original synthesized
+# PCM proof written by the REAL guest NRO before the 180-tick replay.
+# This is NOT an HID ZR press and MUST NOT be reported as one.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-counter-guest.csv' -print \
+    > "$out/counter-guest-locations.txt"
+if [ -s "$out/counter-guest-locations.txt" ]; then
+    IFS= read -r counter_path < "$out/counter-guest-locations.txt"
+    cp "$counter_path" "$out/guest-counter.csv"
+fi
+python3 tools/verify_nexium_guest_counter.py \
+    --report "$out/guest-counter.csv" \
+    --out "$out/guest-counter-evidence.json"
 
 # No host-sink audio classification is published unless the guest's
 # independently verified replay and native audio adapter counters passed.
@@ -262,6 +310,46 @@ python3 tools/verify_nexium_audio_stress.py \
     --timeline "$out/guest-hid-timeline.csv" \
     --controller "$out/guest-controller.csv" \
     --out "$out/guest-audio-stress-evidence.json"
+
+# Optional real libnx ZR edge. Only the NRO can write this guest CSV.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-counter-hid.csv' -print \
+    > "$out/counter-hid-locations.txt"
+if [ -s "$out/counter-hid-locations.txt" ]; then
+    IFS= read -r counter_hid_path < "$out/counter-hid-locations.txt"
+    cp "$counter_hid_path" "$out/guest-counter-hid.csv"
+fi
+python3 tools/verify_nexium_guest_counter_hid.py \
+    --report "$out/guest-counter-hid.csv" \
+    --out "$out/guest-counter-hid-evidence.json"
+
+# Optional Stage 244: guest-owned marker + naturally timed second ZR.
+# The CSV is created only after full 60-Hz AI pursuit from a normal reset.
+# A late or undelivered host press must yield INCONCLUSIVE, not success.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-natural-counter-hid.csv' -print \
+    > "$out/natural-counter-locations.txt"
+if [ -s "$out/natural-counter-locations.txt" ]; then
+    IFS= read -r natural_counter_path < "$out/natural-counter-locations.txt"
+    cp "$natural_counter_path" "$out/guest-natural-counter-hid.csv"
+fi
+python3 tools/verify_nexium_guest_natural_counter_hid.py \
+    --report "$out/guest-natural-counter-hid.csv" \
+    --out "$out/guest-natural-counter-hid-evidence.json"
+
+# Stage 246 optional: the real *visible scene arena* must have consumed
+# Y reset, X spar, its own 116-tick pursuit and a third real T/ZR.
+# A host attempt is never enough; absent native guest CSV is INCONCLUSIVE.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-live-counter-hid.csv' -print \
+    > "$out/live-counter-locations.txt"
+if [ -s "$out/live-counter-locations.txt" ]; then
+    IFS= read -r live_counter_path < "$out/live-counter-locations.txt"
+    cp "$live_counter_path" "$out/guest-live-counter-hid.csv"
+fi
+python3 tools/verify_nexium_guest_live_counter_hid.py \
+    --report "$out/guest-live-counter-hid.csv" \
+    --out "$out/guest-live-counter-hid-evidence.json"
 
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.

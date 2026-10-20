@@ -16,7 +16,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
-EVENTS=[1<<i for i in range(11)]
+EVENTS=[1<<i for i in range(12)]
 SAMPLES=800
 VOICES=6
 
@@ -105,6 +105,42 @@ class OriginalSfxTests(unittest.TestCase):
                 for _ in range(5):
                     self.assertEqual(self.pcm(a),self.pcm(b))
                 self.assertEqual(bytes(a),bytes(b))
+
+    def test_counter_cue_is_distinct_reproducible_and_never_damages(self):
+        # New Stage 227 sound uses only the existing one-tick event bit.
+        # A fresh synth has no voices until a successful counter triggers.
+        a,b,dodge=self.fresh(),self.fresh(),self.fresh()
+        self.assertEqual(self.active(a),0)
+        self.trigger(a,1<<11)
+        self.trigger(b,1<<11)
+        self.assertEqual((a.launched,self.active(a)),(1,1))
+        self.assertEqual(a.voices[0].priority,4)
+        first=self.pcm(a)
+        self.assertTrue(any(first))
+        self.assertEqual(first,self.pcm(b))
+        self.trigger(dodge,1<<10)
+        self.assertNotEqual(first,self.pcm(dodge))
+        for _ in range(5):
+            self.pcm(a)
+        self.assertEqual(self.active(a),0)
+        self.assertTrue(all(v==0 for v in self.pcm(a)))
+
+    def test_default_wav_preview_preserved_with_counter_opt_in(self):
+        original=dino_sfx_preview.render_preview()
+        extended=dino_sfx_preview.render_preview(include_counter=True)
+        self.assertEqual(len(original),11*30*800*4)
+        self.assertEqual(len(extended),12*30*800*4)
+        self.assertEqual(extended[:len(original)],original)
+        self.assertNotEqual(extended[len(original):len(original)+3200],
+                            bytes(3200))
+        with tempfile.TemporaryDirectory(prefix='dino-counter-wav-') as folder:
+            out=Path(folder)/'counter-demo.wav'
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(dino_sfx_preview.main(
+                    ['--out',str(out),'--include-counter']),0)
+            with wave.open(str(out),'rb') as stream:
+                self.assertEqual(stream.getnframes(),12*30*800)
+                self.assertEqual(stream.getframerate(),48000)
 
     def test_event_pan_is_asymmetric_and_audio_is_stereo(self):
         e=self.fresh()

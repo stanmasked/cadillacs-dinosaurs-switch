@@ -20,6 +20,9 @@
 #ifdef DINO_EMULATOR_SELFTEST
 #include "dino_guest_ack_trace.h"
 #include "dino_guest_frame_clock.h"
+#include "dino_guest_counter_probe.h"
+#include "dino_sfx.h"
+#include "dino_pcm_witness.h"
 #endif
 
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
@@ -270,7 +273,8 @@ static const char *arena_pose_name(DinoArenaPose pose) {
 static void arena_frame(uint32_t *frame, unsigned pitch,
                         const DinoArena *arena, bool have_gfx,
                         uint32_t demo_ticks, bool demo_active,
-                        bool demo_complete, uint64_t demo_witness) {
+                        bool demo_complete, uint64_t demo_witness,
+                        uint8_t counter_feedback_ticks) {
     const DinoArenaPose player=dino_arena_player_pose(arena);
     const DinoArenaPose enemy=dino_arena_dummy_pose(arena);
     const unsigned phase=dino_arena_pose_phase(arena);
@@ -412,6 +416,11 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
              (unsigned)arena->successful_hits,
              arena->sparring?"SPAR ON":"SPAR OFF");
     label(frame,pitch,52,670,status,1,rgb(218,228,224));
+    /* A successful counter remains legible for six simulated ticks,
+     * even when multiple game ticks precede one framebuffer refresh.
+     * The legacy replay never emits this event and remains identical. */
+    if (counter_feedback_ticks)
+        label(frame,pitch,800,670,"COUNTER!",1,rgb(91,235,201));
     label(frame,pitch,52,698,
           "DPAD MOVE  A HIT  B JUMP  X SPAR  Y RESET  - DEMO  + EXIT",
           1,rgb(182,207,219));
@@ -591,6 +600,7 @@ int main(int argc, char **argv) {
      * Only the ROM-free arena requires synthesized training audio. */
     if (arena_active) (void)dino_switch_sound_open();
     uint32_t pending_actions=0;
+    uint8_t counter_feedback_ticks=0; /* presentation only, not DinoArena */
     uint32_t demo_ticks=0;
     uint64_t demo_witness=DINO_WITNESS_INIT;
     bool demo_active=false, demo_complete=false;
@@ -605,6 +615,25 @@ int main(int argc, char **argv) {
     FILE *guest_controller_witness=NULL;
     bool guest_controller_active=false, guest_controller_done=false;
     uint32_t guest_controller_flags=0;
+    bool guest_counter_hid_done=false; /* stage 234, after audio stress */
+    bool guest_counter_zr_edge_pending=false;
+    /* Stage 244: independent 60Hz naturally advancing ROM-free AI trial.
+     * NEVER edit coordinates, windup, facing or cooldown for this witness.
+     * It runs after the previous prepared HID proof, without changing the
+     * player-facing arena, replay ledger or measured 900-tick audio path. */
+    DinoArena guest_natural_counter;
+    bool guest_natural_counter_active=false;
+    bool guest_natural_counter_done=false;
+    bool guest_natural_ready_written=false;
+    /* Stage 246: observe the *rendered* arena after real host Y/X/ZR.
+     * No artificial x, enemy windup, tick countdown or attack setup.
+     * This is kept separate from prior Stage 245 required evidence. */
+    bool guest_live_reset_seen=false;
+    bool guest_live_spar_armed=false;
+    bool guest_live_ready_written=false;
+    bool guest_live_counter_done=false;
+    bool guest_live_zr_edge_pending=false;
+    uint32_t guest_live_spar_origin=0u;
     /* An independent, ordered game-tick trace of actual HID effects.
      * Tick values are guest simulation time, NOT host input latency. */
     FILE *guest_hid_timeline=NULL;
@@ -630,6 +659,16 @@ int main(int argc, char **argv) {
     uint32_t guest_frame_id=0;
     if (arena_active) {
         (void)fsdevMountSdmc();
+        /* Stage 229: guest-executed, scripted ROM-free counter proof.
+         * This writes only synthetic diagnostic state, before the main
+         * 180-tick replay; never record raw pad values or ROM contents.
+         * Its result is independently checked by a fail-closed host
+         * verifier, rather than being equated with physical ZR input. */
+        FILE *counter_guest=fopen("sdmc:/cadillacs-counter-guest.csv","w");
+        if (counter_guest) {
+            (void)dino_guest_counter_probe(counter_guest);
+            (void)fclose(counter_guest);
+        }
         guest_witness=fopen("sdmc:/cadillacs-arena-selftest.csv","w");
         if (guest_witness) {
             fputs("event,ticks,player_x,player_hp,hits,state_fnv64,"
@@ -651,6 +690,17 @@ int main(int argc, char **argv) {
         padUpdate(&pad);
         const u64 down=padGetButtonsDown(&pad);
         const u64 held=padGetButtons(&pad);
+#ifdef DINO_EMULATOR_SELFTEST
+        /* A pad edge may arrive in a zero-game-tick render iteration.
+         * Retain its origin until the 60-Hz step consumes the buffered
+         * DINO_ARENA_COUNTER action; do not require same-frame timing. */
+        if (guest_audio_stress_done && guest_controller_done &&
+            (down&HidNpadButton_ZR))
+            guest_counter_zr_edge_pending=true;
+        if (guest_live_spar_armed && !guest_live_counter_done &&
+            (down&HidNpadButton_ZR))
+            guest_live_zr_edge_pending=true;
+#endif
         u64 now=armGetSystemTick();
         u64 elapsed_ns=armTicksToNs(now-last_tick);
         last_tick=now;
@@ -664,6 +714,7 @@ int main(int argc, char **argv) {
             arena_active=!arena_active;
             arena_clock_carry=0;
             pending_actions=0;
+            counter_feedback_ticks=0;
             demo_active=false;
             demo_complete=false;
             demo_ticks=0;
@@ -683,6 +734,7 @@ int main(int argc, char **argv) {
                 demo_active=true;
                 demo_complete=false;
                 pending_actions=0;
+                counter_feedback_ticks=0;
                 arena_clock_carry=0;
                 /* The desktop witness starts from a reset SFX timeline.
                  * Make NRO replay audio equally reproducible, including
@@ -692,6 +744,16 @@ int main(int argc, char **argv) {
                 (void)dino_switch_sound_open();
             } else if (down & HidNpadButton_Y) {
 #ifdef DINO_EMULATOR_SELFTEST
+                if (guest_natural_counter_done &&
+                    guest_audio_stress_done && guest_controller_done &&
+                    guest_counter_hid_done) {
+                    guest_live_reset_seen=true;
+                    guest_live_spar_armed=false;
+                    guest_live_ready_written=false;
+                    guest_live_counter_done=false;
+                    guest_live_zr_edge_pending=false;
+                    guest_live_spar_origin=0u;
+                }
                 if (guest_done && !guest_controller_active &&
                     !guest_controller_done) {
                     /* Evidence exists only if NeXium delivers an ACTUAL
@@ -724,6 +786,7 @@ int main(int argc, char **argv) {
                 demo_complete=false;
                 arena_clock_carry=0;
                 pending_actions=0;
+                counter_feedback_ticks=0;
             }
             uint32_t held_arena=0;
             if (held & HidNpadButton_Left) held_arena|=DINO_ARENA_LEFT;
@@ -733,6 +796,7 @@ int main(int argc, char **argv) {
             if (down & HidNpadButton_A) pending_actions|=DINO_ARENA_ATTACK;
             if (down & HidNpadButton_B) pending_actions|=DINO_ARENA_JUMP;
             if (down & HidNpadButton_X) pending_actions|=DINO_ARENA_TOGGLE_SPAR;
+            if (down & HidNpadButton_ZR) pending_actions|=DINO_ARENA_COUNTER;
             arena_clock_carry+=elapsed_ns*60u;
             uint32_t arena_ticks=(uint32_t)(arena_clock_carry/1000000000ULL);
 #ifdef DINO_EMULATOR_SELFTEST
@@ -748,8 +812,260 @@ int main(int argc, char **argv) {
                                            &step_held,&step_pressed))
                         break; /* invalid trace never runs unknown input */
                 }
-                dino_arena_step(&arena,step_held,step_pressed);
+                /* CI-only: pre-event state from the *visible* player arena,
+                 * not from guest_natural_counter or any staged dummy. */
 #ifdef DINO_EMULATOR_SELFTEST
+                const DinoArena live_before=arena;
+#endif
+                dino_arena_step(&arena,step_held,step_pressed);
+                counter_feedback_ticks=dino_arena_counter_feedback_tick(
+                    counter_feedback_ticks,arena.events);
+#ifdef DINO_EMULATOR_SELFTEST
+                /* Stage 234: optional external HID ZR proof, only after the
+                 * existing 900-tick audio stress evidence is finalized.
+                 * The trigger MUST be libnx padGetButtonsDown AND the
+                 * actual pending edge consumed by this game tick.
+                 * This isolated prepared arena avoids modifying the live
+                 * game, controller sequence or historical audio witnesses. */
+                if (guest_audio_stress_done && guest_controller_done &&
+                    !demo_active && !guest_counter_hid_done &&
+                    guest_counter_zr_edge_pending &&
+                    (step_pressed&DINO_ARENA_COUNTER)) {
+                    guest_counter_zr_edge_pending=false;
+                    guest_counter_hid_done=true;
+                    DinoArena test_counter;
+                    dino_arena_reset(&test_counter);
+                    test_counter.x=220;
+                    dino_arena_step(&test_counter,0u,DINO_ARENA_TOGGLE_SPAR);
+                    const DinoArena ready_counter=test_counter;
+                    /* The edge is real libnx HID, the ready training scene
+                     * is deliberately controlled and independent. Compute
+                     * the complete first 800-frame synthesized PCM digest
+                     * using the same portable C engine, not a preset hash. */
+                    dino_arena_step(&test_counter,0u,
+                                    step_pressed&DINO_ARENA_COUNTER);
+                    DinoSfx counter_sfx;
+                    int16_t counter_pcm[DINO_SFX_TICK_FRAMES*2u];
+                    dino_sfx_reset(&counter_sfx);
+                    dino_sfx_events(&counter_sfx,test_counter.events);
+                    dino_sfx_render_tick(&counter_sfx,counter_pcm,
+                                         DINO_SFX_TICK_FRAMES);
+                    unsigned counter_pcm_nonzero=0u;
+                    for (unsigned j=0u;j<2u*DINO_SFX_TICK_FRAMES;++j)
+                        if (counter_pcm[j]) { counter_pcm_nonzero=1u; break; }
+                    const uint64_t counter_pcm_hash=dino_pcm_witness_feed(
+                        DINO_PCM_WITNESS_INIT,counter_pcm,DINO_SFX_TICK_FRAMES);
+                    const char *const path="sdmc:/cadillacs-counter-hid.csv";
+                    FILE *proof=fopen(path,"w");
+                    if (proof) {
+                        fprintf(proof,"phase,tick,player_hp,enemy_hp,windup,"
+                                "stun,cooldown,event_mask,hid_edge,"
+                                "pcm_nonzero,pcm_fnv64\n");
+                        fprintf(proof,
+                                "READY,%u,%u,%u,%u,%u,%u,%u,0,0,%016llX\n",
+                                (unsigned)ready_counter.ticks,
+                                (unsigned)ready_counter.player_hp,
+                                (unsigned)ready_counter.dummy_hp,
+                                (unsigned)ready_counter.dummy_windup,
+                                (unsigned)ready_counter.dummy_hitstun,
+                                (unsigned)ready_counter.dummy_cooldown,
+                                (unsigned)ready_counter.events,
+                                (unsigned long long)DINO_PCM_WITNESS_INIT);
+                        fprintf(proof,"HID_COUNTER,%u,%u,%u,%u,%u,%u,%u,1,"
+                                "%u,%016llX\n",
+                                (unsigned)test_counter.ticks,
+                                (unsigned)test_counter.player_hp,
+                                (unsigned)test_counter.dummy_hp,
+                                (unsigned)test_counter.dummy_windup,
+                                (unsigned)test_counter.dummy_hitstun,
+                                (unsigned)test_counter.dummy_cooldown,
+                                (unsigned)test_counter.events,
+                                counter_pcm_nonzero,
+                                (unsigned long long)counter_pcm_hash);
+                        (void)fclose(proof);
+                    }
+                }
+                /* Separate real libnx ZR edge during an AI-created
+                 * telegraph, not a preloaded 12-tick dummy windup.
+                 * The independent practice arena advances ONCE for every
+                 * real 60Hz guest simulation tick. Host may react to the
+                 * ready marker, but a host attempt cannot create proof. */
+                if (guest_counter_hid_done &&
+                    !guest_natural_counter_active) {
+                    dino_arena_reset(&guest_natural_counter);
+                    guest_natural_counter_active=true;
+                }
+                if (guest_natural_counter_active &&
+                    !guest_natural_counter_done &&
+                    guest_natural_counter.ticks<400u) {
+                    const DinoArena before=guest_natural_counter;
+                    const bool natural_zr_edge=
+                        guest_counter_zr_edge_pending &&
+                        (step_pressed&DINO_ARENA_COUNTER)!=0u;
+                    const uint32_t natural_pressed=before.ticks==0u ?
+                        DINO_ARENA_TOGGLE_SPAR :
+                        (natural_zr_edge ? DINO_ARENA_COUNTER : 0u);
+                    if (natural_zr_edge)
+                        guest_counter_zr_edge_pending=false;
+                    dino_arena_step(&guest_natural_counter,0u,
+                                    natural_pressed);
+                    if (!guest_natural_ready_written &&
+                        guest_natural_counter.ticks==116u &&
+                        guest_natural_counter.x==90 &&
+                        guest_natural_counter.dummy_x==134 &&
+                        guest_natural_counter.dummy_windup==12u &&
+                        guest_natural_counter.player_hp==5 &&
+                        guest_natural_counter.dummy_hp==3) {
+                        /* Marker is only a host timing hint, not success.
+                         * The emulator guest must still see a second real
+                         * padGetButtonsDown(ZR) at the actual windup tick. */
+                        FILE *ready=fopen(
+                            "sdmc:/cadillacs-natural-counter-ready.csv","w");
+                        if (ready) {
+                            fputs("event,tick,player_x,enemy_x,windup,"
+                                  "player_hp,enemy_hp\n"
+                                  "NATURAL_READY,116,90,134,12,5,3\n",
+                                  ready);
+                            (void)fclose(ready);
+                        }
+                        guest_natural_ready_written=true;
+                    }
+                    if (natural_zr_edge &&
+                        before.ticks>=116u && before.ticks<128u &&
+                        before.x==90 && before.dummy_x==134 &&
+                        before.player_hp==5 && before.dummy_hp==3 &&
+                        before.dummy_windup>=1u &&
+                        before.dummy_windup<=12u &&
+                        guest_natural_counter.events==DINO_EVT_COUNTER &&
+                        guest_natural_counter.player_hp==5 &&
+                        guest_natural_counter.dummy_hp==3 &&
+                        guest_natural_counter.dummy_windup==0u &&
+                        guest_natural_counter.dummy_hitstun==9u &&
+                        guest_natural_counter.dummy_cooldown==48u) {
+                        DinoSfx sfx;
+                        int16_t pcm[DINO_SFX_TICK_FRAMES*2u];
+                        dino_sfx_reset(&sfx);
+                        dino_sfx_events(&sfx,guest_natural_counter.events);
+                        dino_sfx_render_tick(&sfx,pcm,DINO_SFX_TICK_FRAMES);
+                        unsigned nonzero=0u;
+                        for (unsigned j=0u;
+                             j<2u*DINO_SFX_TICK_FRAMES;++j)
+                            if (pcm[j]) { nonzero=1u; break; }
+                        const uint64_t hash=dino_pcm_witness_feed(
+                            DINO_PCM_WITNESS_INIT,pcm,DINO_SFX_TICK_FRAMES);
+                        FILE *proof=fopen(
+                            "sdmc:/cadillacs-natural-counter-hid.csv","w");
+                        if (proof) {
+                            fputs("event,tick,player_x,enemy_x,"
+                                  "pre_windup,player_hp,enemy_hp,"
+                                  "post_windup,stun,cooldown,event_mask,"
+                                  "hid_edge,pcm_nonzero,pcm_fnv64\n",
+                                  proof);
+                            fprintf(proof,
+                                    "NATURAL_HID_COUNTER,%u,%d,%d,%u,"
+                                    "%u,%u,%u,%u,%u,%u,1,%u,%016llX\n",
+                                    (unsigned)guest_natural_counter.ticks,
+                                    guest_natural_counter.x,
+                                    guest_natural_counter.dummy_x,
+                                    (unsigned)before.dummy_windup,
+                                    (unsigned)guest_natural_counter.player_hp,
+                                    (unsigned)guest_natural_counter.dummy_hp,
+                                    (unsigned)guest_natural_counter.dummy_windup,
+                                    (unsigned)guest_natural_counter.dummy_hitstun,
+                                    (unsigned)guest_natural_counter.dummy_cooldown,
+                                    (unsigned)guest_natural_counter.events,
+                                    nonzero,(unsigned long long)hash);
+                            (void)fclose(proof);
+                        }
+                        guest_natural_counter_done=true;
+                    }
+                }
+                /* Stage 246: real X sparring on the actual drawn arena.
+                 * The initial Y reset must also have been a libnx edge.
+                 * Simulated steps, not host stopwatch time, define origin. */
+                if (guest_live_reset_seen && !guest_live_spar_armed &&
+                    (step_pressed&DINO_ARENA_TOGGLE_SPAR) &&
+                    (arena.events&DINO_EVT_SPAR_TOGGLE) &&
+                    arena.sparring && arena.x==90 && arena.dummy_x==249 &&
+                    arena.player_hp==5 && arena.dummy_hp==3 &&
+                    arena.facing_right==1u && !demo_active &&
+                    !demo_complete) {
+                    guest_live_spar_armed=true;
+                    guest_live_spar_origin=arena.ticks;
+                }
+                if (guest_live_spar_armed && !guest_live_counter_done &&
+                    arena.ticks>=guest_live_spar_origin) {
+                    const uint32_t relative_tick=
+                        arena.ticks-guest_live_spar_origin+1u;
+                    if (!guest_live_ready_written &&
+                        relative_tick==116u &&
+                        arena.x==90 && arena.dummy_x==134 &&
+                        arena.dummy_windup==12u &&
+                        arena.player_hp==5 && arena.dummy_hp==3 &&
+                        arena.sparring && !demo_active && !demo_complete) {
+                        FILE *ready=fopen(
+                            "sdmc:/cadillacs-live-counter-ready.csv","w");
+                        if (ready) {
+                            fputs("event,tick,player_x,enemy_x,windup,"
+                                  "player_hp,enemy_hp\n"
+                                  "LIVE_READY,116,90,134,12,5,3\n",ready);
+                            (void)fclose(ready);
+                        }
+                        guest_live_ready_written=true;
+                    }
+                    const bool received_live_zr=
+                        guest_live_zr_edge_pending &&
+                        (step_pressed&DINO_ARENA_COUNTER)!=0u;
+                    if (received_live_zr)
+                        guest_live_zr_edge_pending=false;
+                    if (guest_live_ready_written && received_live_zr &&
+                        relative_tick>=117u && relative_tick<=128u &&
+                        live_before.x==90 && live_before.dummy_x==134 &&
+                        live_before.player_hp==5 && live_before.dummy_hp==3 &&
+                        live_before.dummy_windup==129u-relative_tick &&
+                        live_before.sparring &&
+                        arena.events==DINO_EVT_COUNTER &&
+                        arena.player_hp==5 && arena.dummy_hp==3 &&
+                        arena.dummy_windup==0u &&
+                        arena.dummy_hitstun==9u &&
+                        arena.dummy_cooldown==48u) {
+                        DinoSfx event_sfx;
+                        int16_t pcm[DINO_SFX_TICK_FRAMES*2u];
+                        dino_sfx_reset(&event_sfx);
+                        dino_sfx_events(&event_sfx,arena.events);
+                        dino_sfx_render_tick(&event_sfx,pcm,
+                                             DINO_SFX_TICK_FRAMES);
+                        unsigned nonzero=0u;
+                        for (unsigned j=0u;
+                             j<2u*DINO_SFX_TICK_FRAMES;++j)
+                            if (pcm[j]) { nonzero=1u; break; }
+                        const uint64_t pcm_hash=dino_pcm_witness_feed(
+                            DINO_PCM_WITNESS_INIT,pcm,DINO_SFX_TICK_FRAMES);
+                        FILE *proof=fopen(
+                            "sdmc:/cadillacs-live-counter-hid.csv","w");
+                        if (proof) {
+                            fputs("event,tick,player_x,enemy_x,"
+                                  "pre_windup,player_hp,enemy_hp,"
+                                  "post_windup,stun,cooldown,event_mask,"
+                                  "hid_edge,pcm_nonzero,pcm_fnv64\n",proof);
+                            fprintf(proof,
+                                    "LIVE_HID_COUNTER,%u,%d,%d,%u,"
+                                    "%u,%u,%u,%u,%u,%u,1,%u,%016llX\n",
+                                    (unsigned)relative_tick,
+                                    arena.x,arena.dummy_x,
+                                    (unsigned)live_before.dummy_windup,
+                                    (unsigned)arena.player_hp,
+                                    (unsigned)arena.dummy_hp,
+                                    (unsigned)arena.dummy_windup,
+                                    (unsigned)arena.dummy_hitstun,
+                                    (unsigned)arena.dummy_cooldown,
+                                    (unsigned)arena.events,nonzero,
+                                    (unsigned long long)pcm_hash);
+                            (void)fclose(proof);
+                        }
+                        guest_live_counter_done=true;
+                    }
+                }
                 if (guest_controller_active && !demo_active) {
                     /* A second witness records the ordered effect timeline.
                      * A misordered key sequence never advances the phase.
@@ -1048,6 +1364,7 @@ int main(int argc, char **argv) {
         } else {
             arena_clock_carry=0;
             pending_actions=0;
+            counter_feedback_ticks=0;
         }
         if (!arena_active && (down & HidNpadButton_X) && scene_rgba)
             show_scene=!show_scene;
@@ -1106,7 +1423,8 @@ int main(int argc, char **argv) {
         if (!frame) break;
         if (arena_active)
             arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL,
-                        demo_ticks,demo_active,demo_complete,demo_witness);
+                        demo_ticks,demo_active,demo_complete,demo_witness,
+                        counter_feedback_ticks);
         else if (show_scene && scene_rgba)
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,

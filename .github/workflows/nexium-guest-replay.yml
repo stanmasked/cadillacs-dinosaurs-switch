@@ -31,6 +31,23 @@ on:
       - 'tools/verify_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
+      - 'tools/verify_nexium_guest_counter.py'
+      - 'tools/verify_nexium_guest_counter_hid.py'
+      - 'tools/verify_nexium_guest_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_counter_hid_paired.py'
+      - 'tools/nexium_counter_hid_press.py'
+      - 'tools/nexium_natural_counter_hid_press.py'
+      - 'tools/verify_nexium_guest_natural_counter_hid.py'
+      - 'tools/nexium_live_counter_hid_press.py'
+      - 'tools/verify_nexium_guest_live_counter_hid.py'
+      - 'tools/verify_nexium_guest_live_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_live_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_live_counter_hid.py'
+      - 'tools/verify_nexium_guest_natural_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_natural_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_natural_counter_hid.py'
+      - 'tests/test_nexium_guest_counter_hid.py'
+      - 'tests/test_dino_guest_counter.py'
       - 'tests/test_nexium_host_audio.py'
       - 'tests/test_nexium_guest_controller.py'
       - 'tests/test_nexium_hid_timeline.py'
@@ -105,6 +122,23 @@ on:
       - 'tools/verify_nexium_audio_mode_binding.py'
       - 'tools/verify_nexium_host_input_bound.py'
       - 'tests/test_nexium_guest_replay.py'
+      - 'tools/verify_nexium_guest_counter.py'
+      - 'tools/verify_nexium_guest_counter_hid.py'
+      - 'tools/verify_nexium_guest_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_counter_hid_paired.py'
+      - 'tools/nexium_counter_hid_press.py'
+      - 'tools/nexium_natural_counter_hid_press.py'
+      - 'tools/verify_nexium_guest_natural_counter_hid.py'
+      - 'tools/nexium_live_counter_hid_press.py'
+      - 'tools/verify_nexium_guest_live_counter_hid.py'
+      - 'tools/verify_nexium_guest_live_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_live_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_live_counter_hid.py'
+      - 'tools/verify_nexium_guest_natural_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_natural_counter_hid_paired.py'
+      - 'tests/test_nexium_guest_natural_counter_hid.py'
+      - 'tests/test_nexium_guest_counter_hid.py'
+      - 'tests/test_dino_guest_counter.py'
       - 'tests/test_nexium_host_audio.py'
       - 'tests/test_nexium_guest_controller.py'
       - 'tests/test_nexium_hid_timeline.py'
@@ -215,6 +249,7 @@ jobs:
           declared=struct.unpack_from("<I",blob,0x18)[0]
           assert 0x80<=declared<=len(blob)
           assert b"cadillacs-arena-selftest.csv" in blob
+          assert b"cadillacs-counter-guest.csv" in blob
           assert b"FRAME_SUBMITTED" in blob
           assert b"REPLAY_DONE" in blob
           print("ROM-free NRO with guest-origin evidence compiled")
@@ -256,6 +291,10 @@ jobs:
         run: |
           bash -n tools/nexium_guest_replay_probe.sh
           python3 -m unittest discover -s tests -p 'test_nexium_guest_replay.py' -v
+          python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_counter_hid.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_natural_counter_hid.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_live_counter_hid.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_hid_fallback_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
@@ -301,6 +340,17 @@ jobs:
             emulator-evidence/emulator-stdout.txt
             emulator-evidence/vulkan.txt
             emulator-evidence/guest-replay.csv
+            emulator-evidence/guest-counter.csv
+            emulator-evidence/guest-counter-evidence.json
+            emulator-evidence/guest-counter-hid.csv
+            emulator-evidence/guest-counter-hid-evidence.json
+            emulator-evidence/host-zr-attempt.json
+            emulator-evidence/host-natural-zr-attempt.json
+            emulator-evidence/guest-natural-counter-hid.csv
+            emulator-evidence/guest-natural-counter-hid-evidence.json
+            emulator-evidence/host-live-zr-attempt.json
+            emulator-evidence/guest-live-counter-hid.csv
+            emulator-evidence/guest-live-counter-hid-evidence.json
             emulator-evidence/guest-window.png
             emulator-evidence/frame-pixels.txt
             emulator-evidence/host-audio-evidence.json
@@ -407,6 +457,69 @@ jobs:
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --experimental-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-audio-comparison.json
+          # Stage 241: recheck real NRO-bound ZR and PCM separately for
+          # baseline and extra-poll. Missing guest data fails CI, rather
+          # than silently treating an optional verifier as a pass.
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_counter_hid_paired.py' -v
+          python3 tools/verify_nexium_guest_counter_hid_paired.py \
+            --baseline-csv paired/baseline/guest-counter-hid.csv \
+            --baseline-json paired/baseline/guest-counter-hid-evidence.json \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-csv paired/extra-poll/guest-counter-hid.csv \
+            --extra-json paired/extra-poll/guest-counter-hid-evidence.json \
+            --extra-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-real-zr-counter-pcm-attestation.json
+          # Stage 245: the optional Stage 244 natural guest witnesses
+          # are now required from BOTH actual libnx guest builds in PR CI.
+          # Re-run the old staged gate and bind both modes to their full
+          # NRO SHA-256; missing/forged/late natural HID evidence fails.
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_natural_counter_hid_paired.py' -v
+          python3 tools/verify_nexium_guest_natural_counter_hid_paired.py \
+            --baseline-natural-csv paired/baseline/guest-natural-counter-hid.csv \
+            --baseline-natural-json paired/baseline/guest-natural-counter-hid-evidence.json \
+            --baseline-staged-csv paired/baseline/guest-counter-hid.csv \
+            --baseline-staged-json paired/baseline/guest-counter-hid-evidence.json \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-natural-csv paired/extra-poll/guest-natural-counter-hid.csv \
+            --extra-natural-json paired/extra-poll/guest-natural-counter-hid-evidence.json \
+            --extra-staged-csv paired/extra-poll/guest-counter-hid.csv \
+            --extra-staged-json paired/extra-poll/guest-counter-hid-evidence.json \
+            --extra-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-natural-zr-counter-pcm-attestation.json
+          # Stage 247: require genuine Stage 246 visible/player-facing
+          # arena libnx Y/X/ZR counter evidence from BOTH PR NRO modes.
+          # The verifier rechecks the required previous natural/staged
+          # counter PCM, audout hashes and exact binary SHA-256 binding.
+          # Host xdotool events alone cannot satisfy any live CSV.
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_live_counter_hid_paired.py' -v
+          python3 tools/verify_nexium_guest_live_counter_hid_paired.py \
+            --baseline-live-csv paired/baseline/guest-live-counter-hid.csv \
+            --baseline-live-json paired/baseline/guest-live-counter-hid-evidence.json \
+            --baseline-natural-csv paired/baseline/guest-natural-counter-hid.csv \
+            --baseline-natural-json paired/baseline/guest-natural-counter-hid-evidence.json \
+            --baseline-staged-csv paired/baseline/guest-counter-hid.csv \
+            --baseline-staged-json paired/baseline/guest-counter-hid-evidence.json \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
+            --baseline-binding paired/baseline/guest-audio-mode-binding.json \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-live-csv paired/extra-poll/guest-live-counter-hid.csv \
+            --extra-live-json paired/extra-poll/guest-live-counter-hid-evidence.json \
+            --extra-natural-csv paired/extra-poll/guest-natural-counter-hid.csv \
+            --extra-natural-json paired/extra-poll/guest-natural-counter-hid-evidence.json \
+            --extra-staged-csv paired/extra-poll/guest-counter-hid.csv \
+            --extra-staged-json paired/extra-poll/guest-counter-hid-evidence.json \
+            --extra-report paired/extra-poll/guest-audio-stress-evidence.json \
+            --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-visible-arena-zr-pcm-attestation.json
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
@@ -591,6 +704,9 @@ jobs:
           name: dino-ne-xium-bound-audio-ab-comparison
           path: |
             paired-audio-comparison.json
+            paired-real-zr-counter-pcm-attestation.json
+            paired-natural-zr-counter-pcm-attestation.json
+            paired-visible-arena-zr-pcm-attestation.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json

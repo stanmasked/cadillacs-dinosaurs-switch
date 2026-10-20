@@ -48,11 +48,18 @@ uint8_t dino_arena_pose_phase(const DinoArena *a) {
     return a ? (uint8_t)((a->ticks/6u)&1u) : 0u;
 }
 
+uint8_t dino_arena_counter_feedback_tick(uint8_t remaining,
+                                         uint32_t events) {
+    if (events&DINO_EVT_COUNTER) return 6u;
+    return remaining ? (uint8_t)(remaining-1u) : 0u;
+}
+
 void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
     if (!a) return;
     held &= (DINO_ARENA_LEFT|DINO_ARENA_RIGHT|
              DINO_ARENA_UP|DINO_ARENA_DOWN);
-    pressed &= (DINO_ARENA_ATTACK|DINO_ARENA_JUMP|DINO_ARENA_TOGGLE_SPAR);
+    pressed &= (DINO_ARENA_ATTACK|DINO_ARENA_JUMP|DINO_ARENA_TOGGLE_SPAR|
+                DINO_ARENA_COUNTER);
     /* One-shot events are valid for exactly this 60 Hz simulation step.
      * Short impact flashes persist independently of render frequency. */
     a->events=0;
@@ -84,6 +91,11 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
             a->player_hits_taken=0;
         }
     }
+    /* A counter may start only if the player was truly actionable at the
+     * BEGINNING of the 60 Hz tick. Countdown/landing below cannot turn a
+     * still-stunned, still-attacking or airborne ZR/H press into a success. */
+    const int counter_ready_at_tick_start=
+        !a->player_hitstun && !a->attack_frames && a->z==0 && a->vz==0;
     const int stunned=a->dummy_hitstun>0;
     if (a->dummy_hitstun) --a->dummy_hitstun;
     if (a->attack_frames) --a->attack_frames;
@@ -169,6 +181,31 @@ void dino_arena_step(DinoArena *a, uint32_t held, uint32_t pressed) {
             a->z=0; a->vz=0;
             a->events|=DINO_EVT_LAND;
         }
+    }
+
+    /* Stage 225: wholly invented counter-defense for training sparring.
+     * ZR/H is an EDGE (pressed), not a held invulnerability toggle.
+     * The foe must already be telegraphing a strike. A grounded,
+     * non-stunned player, facing the foe in the same lane and range,
+     * may interrupt that windup. This never inflicts free damage and
+     * cannot stack with jump/attack. The opponent receives its existing
+     * 48-tick cooldown so a successful counter cannot be spammed.
+     *
+     * It adds no fields to the arena state, preserving all existing
+     * deterministic demo/replay/PCM witness layouts and defaults. */
+    if ((pressed&DINO_ARENA_COUNTER) &&
+        !(pressed&(DINO_ARENA_ATTACK|DINO_ARENA_JUMP)) &&
+        a->sparring && a->player_hp && a->dummy_hp &&
+        counter_ready_at_tick_start &&
+        a->dummy_windup && !stunned && !a->dummy_hitstun &&
+        distance(a->x,a->dummy_x)<=44 &&
+        distance(a->y,a->dummy_y)<=14 &&
+        (a->facing_right ? a->dummy_x>=a->x : a->dummy_x<=a->x)) {
+        a->dummy_windup=0;
+        a->dummy_cooldown=48;
+        a->dummy_hitstun=9;
+        a->dummy_impact_flash=6;
+        a->events|=DINO_EVT_COUNTER;
     }
 
     if (a->sparring && a->dummy_hp && a->player_hp) {

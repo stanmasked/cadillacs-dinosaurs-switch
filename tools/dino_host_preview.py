@@ -22,7 +22,7 @@ import time
 ROOT=Path(__file__).resolve().parents[1]
 WIDTH,HEIGHT=384,224
 PIXELS=WIDTH*HEIGHT*3
-LEFT,RIGHT,UP,DOWN,ATTACK,JUMP,SPAR=(1,2,4,8,16,32,64)
+LEFT,RIGHT,UP,DOWN,ATTACK,JUMP,SPAR,COUNTER=(1,2,4,8,16,32,64,128)
 
 
 class Status(ctypes.Structure):
@@ -63,6 +63,9 @@ class HostArena:
         self.dll.dino_host_step.argtypes=[ctypes.c_uint32,ctypes.c_uint32]
         self.dll.dino_host_demo_step.argtypes=[ctypes.c_uint32]
         self.dll.dino_host_status.argtypes=[ctypes.POINTER(Status)]
+        self.dll.dino_arena_counter_feedback_tick.argtypes=[
+            ctypes.c_uint8,ctypes.c_uint32]
+        self.dll.dino_arena_counter_feedback_tick.restype=ctypes.c_uint8
         self.dll.dino_host_render.argtypes=[
             ctypes.POINTER(ctypes.c_uint8),ctypes.c_size_t]
         self.buffer=(ctypes.c_uint8*PIXELS)()
@@ -73,14 +76,22 @@ class HostArena:
 
     def reset(self):
         self.dll.dino_host_reset()
+        self.counter_feedback_ticks=0
 
     def step(self,held=0,pressed=0):
         self.dll.dino_host_step(held,pressed)
+        self._step_counter_feedback()
 
     def demo_step(self,tick):
         # The replay decisions come directly from the same portable C
         # routine compiled into the Switch NRO. No duplicate Python script.
         self.dll.dino_host_demo_step(tick)
+        self._step_counter_feedback()
+
+    def _step_counter_feedback(self):
+        # Presentation only: six C simulation ticks per successful counter.
+        self.counter_feedback_ticks=self.dll.dino_arena_counter_feedback_tick(
+            self.counter_feedback_ticks,self.status().events)
 
     def status(self):
         item=Status()
@@ -165,7 +176,7 @@ class KeyboardInput:
         'left':LEFT,'a':LEFT,'right':RIGHT,'d':RIGHT,
         'up':UP,'w':UP,'down':DOWN,'s':DOWN,
     }
-    ACTIONS={'j':ATTACK,'k':JUMP,'l':SPAR}
+    ACTIONS={'j':ATTACK,'k':JUMP,'l':SPAR,'h':COUNTER}
 
     def __init__(self):
         self.held=set()
@@ -279,7 +290,7 @@ def interactive():
     canvas.pack()
     status_line=tk.StringVar()
     tk.Label(root,textvariable=status_line,font=('monospace',10)).pack()
-    tk.Label(root,text='Arrows/WASD: move  J: attack  K: jump  L: spar  R: reset  Esc: exit').pack()
+    tk.Label(root,text='Arrows/WASD: move  J: attack  K: jump  L: spar  H: counter  R: reset  Esc: exit').pack()
     inputs=KeyboardInput()
     scheduler=FixedTickScheduler()
     last_ns=time.monotonic_ns()
@@ -310,7 +321,8 @@ def interactive():
         status_line.set(
             f'Tick {s.ticks}  HP {s.player_hp}/5  Enemy {s.enemy_hp}/3'
             f'  Hits {s.successful_hits}  Combo {s.combo}/3'
-            f'  Spar {"ON" if s.sparring else "OFF"}')
+            f'  Spar {"ON" if s.sparring else "OFF"}'
+            + ('  COUNTER!' if game.counter_feedback_ticks else ''))
         root.after(16,tick)
 
     def close():

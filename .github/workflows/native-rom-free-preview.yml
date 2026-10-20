@@ -7,6 +7,9 @@ on:
       - feature/mame-capture-crossprobe-session-id
     paths:
       - 'source/dino_arena.*'
+      - 'source/dino_guest_counter_probe.*'
+      - 'tests/test_dino_guest_counter.py'
+      - 'tools/verify_nexium_guest_counter.py'
       - 'source/dino_sfx.*'
       - 'source/dino_replay.*'
       - 'source/dino_replay_witness.*'
@@ -21,6 +24,9 @@ on:
   pull_request:
     paths:
       - 'source/dino_arena.*'
+      - 'source/dino_guest_counter_probe.*'
+      - 'tests/test_dino_guest_counter.py'
+      - 'tools/verify_nexium_guest_counter.py'
       - 'source/dino_sfx.*'
       - 'source/dino_replay.*'
       - 'source/dino_replay_witness.*'
@@ -54,6 +60,12 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_dino_replay.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_replay_witness.py' -v
           python3 -m unittest discover -s tests -p 'test_dino_pcm_witness.py' -v
+      - name: Verify counter against GCC, Clang and UBSan
+        run: |
+          # Never silently omit the Clang build on our official CI host.
+          command -v gcc
+          command -v clang
+          DINO_REQUIRE_UBSAN=1 python3 -m unittest discover -s tests -p 'test_dino_guest_counter.py' -v
       - name: Render independently authored practice-room witness
         run: |
           mkdir -p rom-free-preview

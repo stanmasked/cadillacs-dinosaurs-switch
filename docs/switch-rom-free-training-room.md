@@ -394,3 +394,697 @@ on an authorized Switch homebrew device, listen to the synthetic
 effects and inspect the on-device audio line for dropped buffers
 or audio-service errors. No physical device execution or real
 headphone output has been verified by these host tests.
+
+## Stage 225 — timed defensive counter during invented sparring
+
+The optional **SPAR ON** mode gains an original defensive counter move,
+implemented directly in the existing ROM-free 60-Hz C arena
+(`source/dino_arena.[ch]`). This is **not** an arcade-game mechanic
+reconstructed from Capcom's original code or assets.
+
+Press **ZR** once in the Switch training room, or **H** in the native
+desktop host preview, **during the opponent's visible 12-tick attack
+windup**. The counter succeeds only if the player is alive, on the
+ground, not currently hit-stunned or attacking, in the enemy's depth
+lane, within 44 world pixels, and facing the enemy. It cannot be
+combined with jump or attack in the same simulation tick.
+
+A successful counter interrupts the opponent's winding attack,
+applies nine ticks of opponent hit-stun and its existing 48-tick
+attack cooldown, and briefly displays **COUNTER!** in the Switch
+frame. It does **not** damage the opponent, give the player immunity,
+add health, advance combos, or move characters through colliders.
+A missed or incorrectly faced counter gives no defense; the ordinary
+telegraphed hit and dodge rules still apply.
+
+The counter uses a single press edge (`DINO_ARENA_COUNTER`) and emits
+a new one-tick event (`DINO_EVT_COUNTER`). It does not allocate a
+timer, introduce a gameplay-state field or change `DinoArena` layout.
+The input is never present in the existing automatic 180-tick demo;
+all existing replay input sequences, hashes, default camera/game
+visuals, source assets and music are unchanged.
+
+The host compiler-based regression suite
+`tests/test_dino_arena_counter.py` tests the actual game C module:
+successful interrupt, cooldown, attack timing, facing, lane and range,
+groundedness, player/enemy KO, simultaneous inputs, controller
+toggle path, determinism under legacy replay and a 2,800-tick
+bounded random-input challenge. Switch ZR and desktop H routes are
+explicitly tested as input edges.
+
+No original ROM or sound assets are required and no claim is made
+that this synthetic training counter resembles the arcade original.
+
+## Stage 226 — strict counter input timing at 60 Hz boundaries
+
+The original Stage 225 ZR/H counter is now gated using the **player state
+at the beginning of the simulation tick**, before animation/hit-stun
+countdowns or gravity are advanced. A counter press on the final tick
+of player hit-stun, the final frame of an existing attack animation,
+or the tick on which the player lands cannot produce a counter.
+Pressing again on the **following eligible tick** can succeed, provided
+the opponent is still telegraphing, the distance/lane/facing conditions
+still hold and sparring is active. This is deliberately stricter than
+treating an expired timer mid-tick as retroactive input eligibility.
+
+The update adds three native C boundary regression tests (17 total
+counter tests), without adding any new `DinoArena` fields, changing the
+default 180-tick demonstration, switching controller mappings, adding
+invulnerability, or introducing an arcade ROM dependency. Native NRO
+compilation is not proof of on-device counter timing; the CI guest
+replay and actual physical input still require separate verification.
+
+## Stage 227 — original counter audio, opt-in preview
+
+A successful Stage 225/226 counter event now triggers a freshly synthesized
+820 Hz, six-tick, centered triangle cue (priority 4) inside the existing
+integer-only 48-kHz, stereo C sound engine. A failed counter has no event
+and no new cue. No extra voice slot, prerecorded asset, ROM data, or
+platform-specific audio API was introduced. Priority remains below actual
+damage and KO cues. The event travels through the same native arena → SFX
+→ 800-PCM-frame-per-tick path used in Nintendo Switch and the desktop
+bridge.
+
+Existing eleven cue identities, their C PCM definitions and the default
+eleven-cue WAV preview are left unchanged. The extra counter sound is
+**optional** when generating a local demonstration:
+
+```sh
+python3 tools/dino_sfx_preview.py --include-counter --out /your/private/folder/counter-12-cues.wav
+```
+
+The default command, without `--include-counter`, still emits the original
+eleven-cue, 30-tick-per-cue WAV sequence. The opt-in WAV appends the twelfth
+counter cue after the unchanged original bytes. Both output modes refuse
+to overwrite existing files. The automatic 180-tick original training
+demo never emits DINO_EVT_COUNTER and must retain its earlier image and
+PCM checksums; verification remains a separate CI gate.
+
+Tests cover new cue identity and reproducible envelope expiry, legacy
+WAV prefix identity, opt-in 12-cue WAV metadata, and real native gameplay
+counter-event-to-PCM bridge behavior. These are host-native audio tests,
+not proof of audible Switch console output or emulator counter controls.
+
+## Stage 228 — reliable six-tick visual counter confirmation
+
+The same on-screen `COUNTER!` message now persists for **six 60-Hz
+simulation ticks** (100 ms) after a successful counter, rather than
+only for the exact one-tick event flag. When a frame contains more
+than one game tick, the visible caption survives the normal short
+catch-up interval. This is **not** a promise of visibility during
+arbitrarily long rendering stalls: after more than six simulated ticks
+without a redraw, the feedback correctly expires.
+
+The timer belongs solely to the Switch presentation loop and the
+desktop host preview, **not to DinoArena**. A new portable C
+`dino_arena_counter_feedback_tick(remaining, events)` helper consumes
+the original one-shot `DINO_EVT_COUNTER`, returns six on success,
+decrements once for each following simulated tick, and saturates at
+zero. Replay gameplay state, ABI layout, collision, hit-stun, damage,
+PCM and 180-tick demonstration inputs are unchanged. Reset, starting
+the built-in demo, and switching to the viewer clear the caption.
+
+The native desktop preview shows the same brief `COUNTER!` message
+in its status line. Two new C-backed counter tests verify six-tick
+duration, deterministic reset, non-counter event rejection, unchanged
+arena state and desktop integration. Switch build and emulator guest
+confirmation remain distinct checks; these host tests do not prove
+physical controller latency.
+
+## Stage 229 — executable guest counter + PCM witness, not HID proof
+
+The `DINO_EMULATOR_SELFTEST` NRO now runs a second, independent,
+**ROM-free, scripted** mini-scenario on ARM64, before its normal
+180-tick arena replay. This uses a separate local `DinoArena` and
+`DinoSfx`, leaving the interactive arena, audio device queue and
+historical replay hashes unchanged.
+
+It reports five rows in `sdmc:/cadillacs-counter-guest.csv`:
+
+- `RESET`: empty local arena, no events.
+- `ARMED`: actual 60-Hz C tick activates sparring, opening a 12-tick
+  attack windup.
+- `COUNTER`: next real C tick successfully interrupts the windup,
+  preserves HP, applies 9 ticks of enemy stun and 48 ticks of cooldown;
+  the same synthesized SFX produces nonzero 48-kHz PCM.
+- `RECOVERY`: one later tick decreases enemy stun and cooldown, while
+  the one-tick counter event clears.
+- `WRONG_FACING`: a reset negative control faces away, cannot counter
+  on the last windup tick and receives the ordinary telegraphed hit.
+
+A strict Python verifier rejects absent, symlinked, oversized, malformed,
+reordered, duplicated or altered CSV rows, including simulated evidence
+that the counter dealt damage, generated no PCM, or blocked an invalid
+back-facing hit. The NeXium runner collects the file from the actual
+emulated SD only **after** the separately checked 180-tick guest trace,
+and archives the independent pass/fail result. Six native tests compile
+and run the *same* counter-probe C file on the host; these host-generated
+fixtures themselves are **not** guest evidence.
+
+The new witness never reads the original ROM, saves user inputs, or
+changes the default gameplay/demo. It exercises actual Nintendo Switch
+ARM64 game and synth code only once its NeXium CI completes
+successfully. This scripted diagnostic does **not** claim that ZR was
+delivered by HID, that an on-console button was pressed, or that a
+physical speaker reproduced the cue. Those require separate evidence.
+
+## Stage 230 — exact cross-architecture counter PCM fingerprint
+
+The independent guest counter/PCM diagnostic from Stage 229 now records
+the **full 64-bit FNV-1a checksum** of its first 800-frame, 48-kHz
+interleaved stereo PCM block, rather than merely checking that at least
+one PCM sample was nonzero. The shared portable
+`dino_pcm_witness_feed()` function converts signed 16-bit samples
+into explicit little-endian bytes before hashing, independent of host
+or guest byte order. For the unchanged original 820-Hz counter cue,
+the golden native C fingerprint is `1169E164EDF5FD7D`.
+
+The verifier requires that exact uppercase 16-digit digest on the
+`COUNTER` row, with pristine FNV seed `CBF29CE484222325` on rows
+without generated PCM. A one-bit change in the reported digest, an
+all-zeros/audio-silent substitute, or a lowercase/noncanonical
+encoding fails the check. GCC tests compile the same arena, sound
+engine, PCM hasher and guest probe that are linked into the NRO,
+and include targeted tampering cases.
+
+This is a **deterministic software PCM** comparison, not evidence that
+audout submitted or played the signal. It does not claim genuine ZR
+HID timing, hardware audio latency or source-game audio replication.
+Regular training input, `DinoArena` ABI, the established 180-tick
+replay and its historical PCM witness are unchanged. Stage 230
+requires a new end-to-end GitHub Actions / NeXium run.
+
+## Stage 231 — exact-impact counter eligibility at 60 Hz tick boundaries
+
+The independently executed ARM64 guest diagnostic now appends five
+negative-control rows to its Stage 229/230 five-row trace. It forces the
+enemy windup to one remaining tick and attempts to counter in the same
+tick as a forbidden player state is about to change:
+
+- `LAST_HITSTUN`: final frame of player hit-stun.
+- `LAST_ATTACK`: final frame of the existing attack animation.
+- `LANDING`: a jump reaches ground level during that same update.
+- `ATTACK_CHORD`: attack + counter are pressed simultaneously (with
+  attack held on cooldown).
+- `JUMP_CHORD`: jump + counter are pressed simultaneously.
+
+In every case, **the defensive counter must be rejected**, the enemy's
+telegraphed strike must still complete and deal its normal one HP of
+damage, and the opponent enters the normal 48-tick strike cooldown.
+The landing and jump-chord scenarios preserve their legitimate land
+and jump-start event flags respectively, rather than masking them.
+
+The 10-row guest CSV is checked in exact order against strict
+expected event masks, health, cooldown, hit-stun, and PCM fields. The
+same native C probe runs under GCC and as part of the real NeXium NRO;
+new tests reject forged positive counter events, missing landing/jump
+events and invalidly retained HP. This catches edge bugs where a
+timer decrement or same-tick landing accidentally enables a ZR/H
+counter too early.
+
+These tests are scripted and run only against an originally invented
+ROM-free training opponent. They are **not** native HID/ZR controller
+delivery evidence, console latency measurements or Capcom gameplay.
+They do not alter the live counter rules, ABI layout or historical
+180-tick replay/audio checksums.
+
+## Stage 232 — compiler/optimizer and UBSan portability gate
+
+The Stage 229–231 ROM-free guest-counter probe is now compiled and
+executed on the native host with multiple **independent compiler
+configurations**: GCC `-O0`, GCC `-O2` (reference), GCC `-O3`,
+and Clang `-O2`. The compiled programs must serialize exactly the
+same 10-row guest diagnostic bytes, including the `1169E164EDF5FD7D`
+first-block counter PCM checksum and the five rejected last-impact
+counter cases. A further `-fsanitize=undefined` host executable must
+exit cleanly with the identical trace.
+
+The native CI workflow explicitly requires Clang to be installed so
+compiler diversity cannot silently disappear in GitHub Actions. This
+step exercises the *same* C arena, integer PCM synth, FNV64 hasher and
+counter guest-probe used in the self-test NRO. It catches compiler
+sensitivity and undefined behavior early without importing any original
+arcade asset. It is **host compiler parity**, not proof of successful
+Switch console input or physical audio output.
+
+All changes are test/workflow-only: the interactive arena, counter rules,
+guest witness schema, ABI, and historical 180-tick replay/PCM fingerprints
+remain unchanged. The NeXium guest job must separately confirm that the
+ARM64 build reproduces the golden 10-row report.
+
+## Stage 233 — second-counter round-trip after the complete 48-tick recovery
+
+The scripted, ROM-free guest counter diagnostic now continues after its
+first successful interrupt and recovery frame to establish a full
+**time-bounded combat loop**. An `EARLY_REPEAT` input at tick 4 must
+produce no counter while the opponent is stunned (7 ticks) and cooling
+down (46 ticks). After exactly 46 additional idle updates (48 elapsed
+game ticks since the first successful counter), `REARMED` must be
+recorded at tick 50 with no damage to either character, zero cooldown,
+zero stun and a new 12-tick enemy attack telegraph. A fresh counter
+edge on tick 51 must interrupt that telegraph and reset the opponent's
+stun/cooldown to exactly 9/48 ticks.
+
+The newly allowed `SECOND_COUNTER` is independently synthesized
+again as an isolated ROM-free cue and its 800-frame 48-kHz PCM must
+produce the same nonzero audio and canonical FNV64 digest
+`1169E164EDF5FD7D` as the first legal counter. The diagnostic has
+grown from 10 to **13 guest state rows** (plus a CSV header); the five
+Stage 231 last-impact negative cases remain unchanged. The strict
+verifier refuses early repeats, wrong cooldown expiry, missing new
+windup, or altered second-counter PCM. Two new native tests cover the
+normal roundtrip and tamper cases.
+
+The 180-tick historical replay and interactive gameplay use entirely
+separate state; this is a scripted NRO selftest, not a real NeXium
+HID/ZR button-press attestation or physical speaker measurement.
+
+## Stage 234 — optional real NeXium keyboard T → guest libnx ZR witness
+
+NeXium's public default keyboard binding maps `T` to Switch `ZR`
+(`nexium-gui/src/controller_config.rs`). The existing NeXium guest
+workflow now *optionally* attempts this external X11 key **only after**
+the original, separate 900-tick guest audio-stress CSV has recorded
+`STRESS_DONE`. If the guest is late or the emulator doesn't accept the
+key, the new diagnostic honestly reports `INCONCLUSIVE` without
+invalidating the independent 180-tick gameplay replay.
+
+The CI-only NRO records a valid `padGetButtonsDown(HidNpadButton_ZR)`
+edge, latches it across a possible render frame containing **zero**
+simulation ticks, and waits for the real
+`step_pressed & DINO_ARENA_COUNTER` in a normal 60-Hz update. Only
+then it creates an independent, tightly controlled original-training
+counter-ready `DinoArena`, executes the **actual consumed input**,
+and writes two bounded rows (`READY`, `HID_COUNTER`) to the
+emulated SD filesystem. A separate strict verifier validates its
+event bit, one-shot edge, no damage, 9-tick enemy stun and 48-tick
+cooldown. Host-key injection alone never qualifies as a pass.
+
+The `guest-counter-hid-evidence.json` may become
+`GUEST_LIBNX_ZR_EDGE_AND_COUNTER_EFFECT_WITNESSED` only when those
+guest-written rows have been collected from an actual NeXium NRO;
+otherwise it says `INCONCLUSIVE_NO_VALID_GUEST_ZR_COUNTER_EVIDENCE`.
+This is a **prepared training arena** and establishes neither natural
+combat timing under physical play, Joy-Con hardware latency nor
+speaker output. The scripted Stage 229–233 guest counter scenarios
+remain separately validated and are never substituted for the HID
+witness.
+
+The new validation executes only in `DINO_EMULATOR_SELFTEST` builds.
+Normal NRO behavior, original training graphics and art, classic
+replay hashes, and the 900-tick audio-stress collection are unchanged.
+Two independent new test paths check strict guest CSV acceptance and
+delayed X11 T-key dispatch, including rejection of fake/missing events.
+
+## Stage 235 — exact PCM proof bound to a guest-origin ZR counter
+
+The optional genuine NeXium keyboard T → libnx ZR test from Stage 234
+now also tests the counter's **actual synthesized first PCM block**,
+rather than relying on the counter event bit alone. Only when the NRO
+has witnessed `padGetButtonsDown(ZR)`, carried that edge into a
+normal 60-Hz `step_pressed & DINO_ARENA_COUNTER`, and executed a
+counter in a controlled independent training arena does it reset
+`DinoSfx`, consume the resulting C event, render 800 stereo frames,
+and hash every 16-bit sample with the portable
+`dino_pcm_witness_feed()`.
+
+The strict optional guest report contains two rows:
+`READY` must contain the untouched PCM FNV64 seed
+`CBF29CE484222325` and `pcm_nonzero=0`; `HID_COUNTER` must
+contain an actual generated nonzero cue and the exact golden PCM
+digest `1169E164EDF5FD7D` from the original ROM-free counter synth.
+The C code writes computed, rather than prescribed, state and PCM
+values. The verifier rejects silent output, incorrect samples,
+noncanonical/lowercase checksums, incorrect gameplay events and
+missing/reordered rows. Local tests validate the grammar and host
+conditions only — they are never considered actual NeXium evidence.
+
+This **software synthesized PCM** proof does not establish speaker
+playback, real Switch Joy-Con hardware, physical input latency,
+or a naturally encountered counter opportunity. The complete
+180-tick replay and the existing 900-tick guest audout health
+window are unchanged; the extra synth buffer is local to the
+optional post-stress guest diagnostic and never submitted to audout.
+
+## Stage 236 — fix verified guest ZR PCM verifier failure
+
+Stage 235 Python CI (commit `91fcccb0`) exposed one false-negative
+test: the new guest `READY` record has **11 columns** after the
+addition of `pcm_nonzero` and `pcm_fnv64`, but its expected-list
+entry had only 10 values. This rejected an otherwise valid fixture;
+it was not evidence of a live Switch gameplay failure.
+
+The verifier now requires `hid_edge=0`, `pcm_nonzero=0`, and
+`pcm_fnv64=CBF29CE484222325` in the `READY` row, alongside the
+unchanged 11-field `HID_COUNTER` expectation. Two additional
+regressions check column counts and reject missing/corrupt ready
+audio fields. A separate literal schema/fixture comparison passed;
+GitHub Actions and real NeXium guest results remain independent
+and must be confirmed on the new commit.
+
+Only diagnostic validation and tests are affected. Core gameplay,
+Switch ROM-free audio synth, 180-tick replay and original game data
+are unchanged.
+
+## Stage 237 — fail-closed preflight before optional NeXium ZR injection
+
+The **external** host T/ZR injector previously treated any text line
+beginning `STRESS_DONE,900,` in a bounded guest file as sufficient
+evidence to send the key. This could include a malformed, duplicated,
+truncated or otherwise partial guest audio-stress report.
+
+It now accepts the file **only after** it contains all seven ordered
+`START` / five `CHECKPOINT` / `STRESS_DONE` rows, the exact
+full current CSV column schema, canonical unsigned counters and
+16-character uppercase PCM checksums, the exact 0/150/.../900
+simulated-tick checkpoints, aligned arena/audio/PCM clocks,
+and active/valid two-page audio queue accounting. A symlink, missing
+file, duplicate row, incomplete report, false terminal marker, or
+bad checkpoint keeps the host X11 key **unsent**.
+
+This light, file-completion **preflight is not a substitute** for the
+separately executed full guest audout stress and real HID timeline
+verifiers. Its only job is to avoid disrupting unfinished audio
+measurements or claiming that a host key was delivered prematurely.
+Additional tests construct a complete synthetic seven-row fixture
+and verify that truncated, forged, noncanonical and clock-corrupted
+versions never arm the injection. Synthetic fixtures are never
+interpreted as NeXium execution evidence.
+
+No original ROM, main gameplay timing, counter rules, source audio,
+Switch framebuffer or guest PCM synthesis has changed; only the
+optional CI-side host input gate and its tests have been strengthened.
+
+## Stage 240 → Stage 241 — real NeXium ZR/PCM regression gate
+
+The six PR workflows on Stage 237 commit `1e8633ab` all passed:
+`Nintendo Switch native bootstrap`, `Native ROM-free gameplay visual
+smoke`, `CPS-1 Python tools` (1,413 tests, one expected skip), the
+ROM-free privacy gate, the opt-in PCM ramp guest proof, and the full
+baseline / extra-poll NeXium workflow including its paired audio audit.
+Both actual guest modes produced `GUEST_LIBNX_ZR_EDGE_AND_COUNTER_EFFECT_WITNESSED`
+and a counter software-PCM FNV64 `1169E164EDF5FD7D`.
+The paired audout accounting found 119 skipped baseline versus 116
+skipped experimental blocks across two **not causally matched** runs;
+it does not establish that the experimental mode improves audio.
+
+Stage 241 promotes the real HID counter proof from an **optional,
+locally verified guest-side artifact** into a **separate required paired
+PR gate**. The new script
+`tools/verify_nexium_guest_counter_hid_paired.py` reads the recorded
+two-row guest CSV and the saved guest-verifier JSON **for each mode**
+and independently re-runs `verify_nexium_guest_counter_hid.verify`.
+Any absent guest CSV, incorrect ZR event, altered exact synthesized PCM,
+duplicated JSON property, mismatched recorded verdict, symlink, truncated
+report, or fabricated mode label makes this new paired step fail.
+
+For both modes, it *also* revalidates the actual 900-tick audout report,
+mode-binding JSON, and compiled NRO SHA-256 with the existing
+`verify_nexium_audio_paired_artifacts.validate_binding`; baseline
+and experimental NRO hashes must differ. Its own bounded JSON
+`paired-real-zr-counter-pcm-attestation.json` is emitted only on
+success and included in the completed paired NeXium CI artifacts.
+Six additional synthetic unit tests exercise valid-shape parsing and
+deliberately missing, modified, duplicate, swapped or unbound inputs;
+synthetic fixtures are **not** guest execution evidence.
+
+The guarantee is deliberately limited: two valid ROM-free diagnostic
+witnesses from CI guest runs, consistent with independently checked
+audio-mode/NRO bindings. It is **not** cryptographic proof of in-guest
+file creation, natural encounter timing, Joy-Con input latency, audible
+speaker output, or a causal benefit of extra polling. Production
+controls, gameplay, PCM synthesis, actual ROM contents and cover art
+have not changed. The new required CI step must be executed and
+confirmed on its own fresh commit before Stage 241 is considered done.
+
+### Stage 241 audit correction — real artifact mode-binding paths
+
+Before the Stage 241 paired gate ran, inspection of the *actual*
+Stage 240 baseline and extra-poll artifacts exposed a verified
+provenance bug in its new CI arguments. The new CLI initially passed
+`guest-audio-stress.csv` to
+`verify_nexium_audio_paired_artifacts.validate_binding()`, but the
+guest mode-binding SHA-256 was generated for the **already validated
+`guest-audio-stress-evidence.json`**, not the raw CSV. These two
+different files are not interchangeable.
+
+Both actual Stage 240 artifact ZIPs were independently inspected:
+each recorded audio binding SHA-256 matches its own
+`guest-audio-stress-evidence.json` bytes and the matching real NRO
+SHA-256; it intentionally does not match the raw stress CSV SHA-256.
+Both raw guest counter-HID CSVs have the exact 11-field READY and
+HID_COUNTER rows and exact counter software-PCM
+`1169E164EDF5FD7D` expected by the new strict verifier.
+
+The CI arguments now pass the validated JSON for **both modes**.
+A new negative contract test requires those two exact JSON paths,
+and rejects reverting to the raw CSV paths. This is an input-path
+correction for the new Stage 241 audit, not an alteration of the
+recorded guest data, ROM-free gameplay, audio renderer or original
+Capcom ROM.
+
+## Stage 243 — unstaged native C sparring counter regressions
+
+The fully verified Stage 242 head `825955c1` passed all six
+GitHub Actions. Its *required* `compare-pr-guest-audio` stage
+independently revalidated the baseline and extra-poll libnx ZR-edge
+guest CSV/JSON, real audio-mode bindings, NRO SHA-256, and synthesized
+counter PCM FNV64 `1169E164EDF5FD7D`. No causal audio benefit,
+real hardware input or authentic arcade gameplay is inferred.
+
+The next gap was that the earlier guest counter trial expressly
+placed the player at x=220 with a ready enemy telegraph. Stage 243
+adds **five host-native GCC tests of the existing original ROM-free
+`dino_arena.c`**, starting from `dino_arena_reset()` and using
+**only normal input bits and elapsed 60-Hz ticks**, never assignments
+to x, facing, enemy AI counters, HP or windup.
+
+In the unstaged simulation, pressing X toggles sparring, the AI
+pursues from x=250 to x=134 while the idle player stays at x=90,
+and its first natural twelve-tick windup starts at tick 116.
+Pressing ZR on tick 117 must interrupt the telegraph without
+damage (9-tick enemy stun / 48-tick cooldown). A *premature*
+ZR edge while the opponent is still distant cannot be buffered
+to automatically counter the later strike, and with no second
+edge the naturally timed impact on tick 128 must damage the player.
+A ZR edge on the **last** windup tick 128 must still work, whereas
+the same edge **after** the enemy impact cannot reverse the hit.
+A fresh-reset replay of 110 additional steps must match byte-for-
+byte in all public arena state fields on every tick.
+
+These are **host-native gameplay-rule tests**, not a NeXium
+HID-from-hardware test of naturally arising player inputs. The
+production C implementation, ROM-free sprites, PCM synthesis,
+approved cover artwork and original ROM remain unchanged. Next:
+confirm the extra five tests in Python/GCC CI before attempting
+a separately attested, true NRO guest natural-sparring witness.
+
+## Stage 244 — optional real libnx ZR during an unstaged AI windup
+
+Stage 243 HEAD `ac5c6a7f` passed all six GitHub Actions,
+including both NeXium guest NRO modes and the required paired ZR/PCM
+report. Its native rules already proved the original ROM-free AI
+naturally starts a twelve-tick telegraph at its tick 116 after
+pursuing from enemy x=250 to x=134 with an idle player at x=90.
+
+Stage 244 adds a **separate CI-only naturally advancing guest
+training-arena instance**, started only *after* the historical
+prepared ZR witness and full 900-tick audio test. The new arena
+starts with `dino_arena_reset`, toggles sparring via normal
+`dino_arena_step`, and advances **one step for each actual normal
+guest 60-Hz simulation tick** without setting any player location,
+enemy location, facing, HP, windup or cooldown. The existing
+player-facing arena is left completely unchanged, so this does NOT
+claim a naturally timed press in the visible live-player state.
+
+When the enemy **naturally** begins its 12-tick windup at tick 116,
+the NRO writes a small fixed `cadillacs-natural-counter-ready.csv`
+marker. The host waits for **that exact complete marker** and makes
+a second external NeXium T key attempt (the emulator's default ZR
+binding). The host attempt never creates success evidence.
+
+A new guest file `cadillacs-natural-counter-hid.csv` is written
+only if a real `padGetButtonsDown(ZR)` is delivered to the native
+simulation during ticks 117–128, the **actual** arena emits
+`DINO_EVT_COUNTER`, and gameplay fields and 800-frame synthesized
+counter PCM agree. The independent strict verifier checks the
+single-row schema, numeric canonical form, naturally possible
+windup countdown `129 - tick`, player/enemy coordinates and HP,
+post-counter 9-tick stun, 48-tick cooldown, counter event `2048`,
+nonzero PCM and FNV64 `1169E164EDF5FD7D`. The host helper and
+guest validator never log raw controller keys or private ROM data.
+Six synthetic negative/positive regression methods cover the
+marker, path/symlink tampering, exact event timing and PCM.
+
+**Experimental and best effort:** a 12-tick window is only
+approximately 200 ms at 60Hz. CI host scheduling, emulation
+render-frame batches and X11 keyboard events may miss this window.
+A missing guest CSV MUST yield the explicit
+`INCONCLUSIVE_NO_GENUINE_UNSTAGED_GUEST_ZR_COUNTER` result; it
+must not create a false witness or fail unrelated previously
+confirmed guest audio parity. First confirm whether NeXium actually
+records the second edge in both modes before deciding whether to
+promote the new witness to the required A/B gate.
+
+This is still an original ROM-free training prototype, **not**
+natural gameplay in the original arcade title, hardware Joy-Con
+latency, actual speaker playback, or a guarantee of reliable host
+timing. No private ROM files or approved cover art were touched.
+
+## Stage 245 — required paired *natural* ZR witness across both guest modes
+
+Stage 244 head `18191227` passed all six PR workflows.
+Independent actual NRO guest evidence demonstrated the natural
+AI windup at guest simulation tick 116 and **true** libnx ZR edge
+counter success at guest tick 119 in baseline and tick 117 in
+extra-poll, each with invented software-PCM FNV64
+`1169E164EDF5FD7D`. Both modes also passed the prior prepared
+counter gate. This does **not** assert physical Joy-Con input, a
+counter in the visibly controlled player arena, original Capcom
+combat AI, display/audio latency, or real speaker output.
+
+Stage 245 **promotes** the formerly optional natural counter
+evidence to an additional **required PR paired gate**. The new
+`verify_nexium_guest_natural_counter_hid_paired.py` independently
+validates the exact guest-produced one-row natural counter CSV
+and matches the saved guest JSON *in both modes*. To bind those
+witnesses to their actual emulated software build, it also runs
+the full prior Stage 241 prepared counter proof again, which
+validates the 900-tick guest audio report, selected mode binding
+and full SHA-256 of each distinct compiled NRO. It requires
+matching natural/staged synthesized PCM fingerprints but allows
+different natural trigger ticks (the legal 117..128 window).
+
+A missing/altered/malformed natural CSV or JSON, duplicate
+attestation field, missing prior staged witness, incorrect
+PCM or gameplay state, symlink, unbound NRO or identical
+baseline/extra-poll binary **fails** this new paired CI job.
+The successful audit is written **exclusively** as
+`paired-natural-zr-counter-pcm-attestation.json` alongside the
+existing descriptive audio comparison and prepared counter
+attestation. Seven new synthetic regression test methods exercise
+success and failure behavior. These tests are not themselves
+real NeXium evidence.
+
+The new gate is stricter than Stage 244: a NeXium build may still
+prove the original 180-tick replay and prepared ZR event even if
+host scheduling misses the ~200-ms natural telegraph, but such a
+run **must not** report complete Stage 245 paired success.
+Until new CI finishes, `18191227` remains the last verified
+all-green guest revision; do not merge the Draft branch, and
+retain private original ROM and approved covers unchanged.
+
+## Stage 246 — optional real guest Y / X / ZR in *rendered* training scene
+
+The Stage 245 head `eb710efa` passed all six workflows:
+the required paired natural-counter attestation independently
+reverified the real baseline and extra-poll NeXium counter CSV
+and recorded JSON, synthesized PCM FNV64
+`1169E164EDF5FD7D` and two distinct mode-bound NRO hashes.
+
+The next gap is visible-player state. Stage 244/245 tested a
+**separate** `guest_natural_counter` training arena that was
+updated with real guest 60-Hz steps but never rendered as the
+player's arena. Stage 246 adds a different **optional guest-only**
+experiment on the actual `DinoArena arena` that is passed to
+`arena_frame` in `source/main.c`:
+
+- Only after Stage 245's successful guest-side natural-counter
+  witness, the host X11 probe issues a real Y reset (default
+  NeXium key `z`) and then a real X spar-toggle (key `v`).
+  The NRO requires `padGetButtonsDown` for both, and the
+  spar-toggle must actually be registered on a 60-Hz step.
+- The NRO records the player-facing arena tick of the actual
+  X toggle as the origin. It does not set `arena.x`,
+  `arena.dummy_x`, `arena.dummy_windup`, HP or enemy timers
+  manually. The existing C AI chases from 250 to 134; on
+  relative tick 116, with x=90 and windup=12, the *guest*
+  writes the exact `LIVE_READY` host scheduling marker.
+- The host uses this marker solely to attempt a third external
+  ZR key (`t`). A valid `LIVE_HID_COUNTER` CSV can only be
+  written by the NRO when a fresh real libnx ZR edge is
+  consumed by the **same rendered arena**, generating event
+  `DINO_EVT_COUNTER`, HP unchanged, enemy stun=9,
+  cooldown=48, windup cleared, and a matching freshly rendered
+  synthetic counter SFX PCM FNV64 fingerprint.
+- The new strict parser
+  `verify_nexium_guest_live_counter_hid.py` accepts only
+  relative ticks 117..128 with the canonical 14-column
+  guest CSV and exact game state, and returns
+  `GUEST_VISIBLE_ARENA_NATURAL_AI_LIBNX_ZR_COUNTER_WITNESSED`.
+  A missing/late/damaged/incorrect guest row produces an
+  explicit `INCONCLUSIVE_NO_LIVE_GUEST_NATURAL_ZR_COUNTER`.
+  Host attempts alone never qualify.
+- Seven synthetic regression methods validate the input
+  preflight, ordered Y/X/ZR key attempts, mandatory guest
+  marker, legal/illegal game states, guest evidence format
+  and protection from manually staged AI state. NeXium CI
+  saves the host attempt and true guest evidence separately.
+
+This Stage 246 experiment is deliberately **optional** in
+its first NeXium run. It must not falsely fail the previous
+required, independently verified Stage 245 paired gate if
+host X11 and variable render frame pacing miss the twelve-
+tick (~200 ms) natural window. Its own proof must first be
+observed in both actual NRO guest modes before promotion
+to a mandatory dual-mode comparison.
+
+This demonstrates the native **rendered game-state object**
+only; it does NOT verify that counter-effect pixels were
+sampled on the display, timing on real Switch hardware,
+physical Joy-Con input, audible loudspeaker output, or
+original arcade game mechanics. The prototype uses no
+redistributed original ROM, commercial assets or screenshots.
+
+## Stage 247 — *required* paired visible-player-arena ZR/PCM proof
+
+Stage 246 at head `b7d9b952` passed all six GitHub Actions.
+Both actual NeXium ARM64 NRO guests received real Y reset and X
+sparring edges, advanced the **rendered** player `DinoArena arena`
+until natural opponent windup at relative tick 116, and consumed
+a subsequent real libnx ZR edge at relative tick **118**,
+producing `DINO_EVT_COUNTER` with HP intact, windup cleared,
+9-tick opponent stun, 48-tick cooldown, and freshly synthesized
+PCM fingerprint `1169E164EDF5FD7D`. The initial guest proof
+was optional; its native CSV and independently recorded JSON
+were inspected from both real guest artifacts.
+
+Stage 247 now promotes this to an additional **required PR CI
+two-NRO gate**. The new
+`tools/verify_nexium_guest_live_counter_hid_paired.py`
+requires both actual `guest-live-counter-hid.csv` files
+and their separately saved
+`guest-live-counter-hid-evidence.json` verdicts. Each CSV
+is freshly parsed and compared with the recorded JSON. An
+incomplete, malformed, fabricated host attempt, duplicate
+JSON field, symlink, wrong actor position/HP, premature or
+late windup, missing libnx edge, absent `DINO_EVT_COUNTER`,
+or altered PCM causes the paired comparator to **fail closed**.
+
+The comparator also independently re-runs the Stage 245
+paired-natural counter audit and its prerequisite prepared
+counter/900-tick guest audio mode verification, including the
+SHA-256 of **both distinct actual NRO binaries**. The valid
+impact times may differ inside their natural 117–128 tick
+window; identical software PCM fingerprints are required.
+A passing audit writes, with exclusive file creation,
+`paired-visible-arena-zr-pcm-attestation.json`. Seven
+new synthetic tests cover positive conditions, missing and
+altered guest data, wrong gameplay state, NRO binding failures,
+symlinks and the exact CI command inputs. These fixtures
+do not count as actual NeXium guest execution.
+
+**Important restrictions:** this proves game-state input
+effects in the original ROM-free training arena that is passed
+to the renderer; it does not verify pixels captured at counter
+time, real Nintendo Switch/Joy-Con hardware input, speaker
+playback, original Capcom AI, measurable latency, or the
+causal benefit of extra audio polls. An unsuccessful new
+live-scene attempt now makes the *required Stage 247
+paired job* fail; it can no longer silently pass the
+earlier optional guest scene while claiming full CI green.
+
+The Stage 246 head is the last all-green reference until
+Stage 247 tests and both real guest builds are run again.
+The approved cover art, private arcade ROM and non-CI
+gameplay engine have not been changed.

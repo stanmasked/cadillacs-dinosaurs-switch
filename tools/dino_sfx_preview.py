@@ -18,6 +18,7 @@ ROOT=Path(__file__).resolve().parents[1]
 RATE=48000
 FRAMES=800
 EVENTS=tuple(1<<i for i in range(11))
+COUNTER_EVENT=1<<11
 
 class Voice(ctypes.Structure):
     _fields_=[('phase',ctypes.c_uint32),('phase_step',ctypes.c_uint32),
@@ -31,7 +32,7 @@ class Synth(ctypes.Structure):
               ('ticks',ctypes.c_uint32),('launched',ctypes.c_uint32),
               ('dropped',ctypes.c_uint32)]
 
-def render_preview():
+def render_preview(include_counter=False):
     compiler=shutil.which('gcc')
     if not compiler:
         raise RuntimeError('A host GCC compiler is required')
@@ -52,7 +53,9 @@ def render_preview():
         sound=Synth()
         frame=(ctypes.c_int16*(2*FRAMES))()
         pcm=bytearray()
-        for event in EVENTS:
+        # The original eleven-cue WAV stays byte-identical by default.
+        # Only the opt-in preview appends the newly invented counter cue.
+        for event in EVENTS+((COUNTER_EVENT,) if include_counter else ()):
             lib.dino_sfx_reset(ctypes.byref(sound))
             lib.dino_sfx_events(ctypes.byref(sound),event)
             for _ in range(24):
@@ -69,9 +72,11 @@ def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--out',type=Path,required=True,
                    help='Explicit local WAV output path; never overwrites')
+    p.add_argument('--include-counter',action='store_true',
+                   help='Append the new original counter cue; default 11 cues unchanged')
     args=p.parse_args(argv)
     try:
-        pcm=render_preview()
+        pcm=render_preview(include_counter=args.include_counter)
         with args.out.open('xb') as handle:
             with wave.open(handle,'wb') as wav:
                 wav.setnchannels(2)
@@ -83,7 +88,8 @@ def main(argv=None):
         print('ROM-free WAV preview refused: compiler/output unavailable',
               file=sys.stderr)
         return 2
-    print('Generated synthetic stereo WAV, 48 kHz, 11 cues; no original game audio')
+    count=12 if args.include_counter else 11
+    print(f'Generated synthetic stereo WAV, 48 kHz, {count} cues; no original game audio')
     return 0
 
 if __name__=='__main__':
