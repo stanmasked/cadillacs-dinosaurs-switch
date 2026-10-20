@@ -7,6 +7,7 @@ import sys
 import unittest
 
 from tools import verify_nexium_host_capture_window_paired as paired
+from tools import verify_nexium_host_capture_window as single
 from test_nexium_host_capture_window import RawIntervalVerifierTests
 
 
@@ -19,6 +20,14 @@ class RequiredDualX11CaptureWindowsTests(unittest.TestCase):
         self.root=fixture.root
         self.guests=fixture.guests
         self.nros=fixture.nros
+        # The real NeXium guest workflow produces this single-mode
+        # attestation AFTER binding its 900-tick audio mode. A valid
+        # synthetic setup must produce it from its OWN raw X11 inputs;
+        # never fabricate a hardcoded stored-success file.
+        for mode in ('baseline','extra-poll'):
+            report=single.verify(self.guests[mode],self.nros[mode],mode)
+            (self.guests[mode]/'host-capture-interval-attestation.json').write_text(
+                json.dumps(report),encoding='ascii')
 
     def verify(self):
         return paired.verify(
