@@ -26,6 +26,29 @@ class RequiredHostWindowTests(unittest.TestCase):
             (guest/'metadata.txt').write_text(
                 'scope=REAL_NE_XIUM_GUEST_CI_NO_NINTENDO_ROM\nnro_sha256='+sha+'\n')
             (guest/'result.txt').write_text('PASS: actual NeXium NRO guest 180-tick replay')
+            enabled=(mode=='extra-poll')
+            calls=6 if enabled else 0
+            stress={'simulation_ticks':900,'pcm_generated_ticks':900,
+                    'guest_mid_batch_extra_poll_enabled':enabled,
+                    'guest_mid_batch_extra_poll_calls':calls,
+                    'guest_mid_batch_extra_poll_released_pages':0}
+            raw=(json.dumps(stress,sort_keys=True)+'\n').encode('ascii')
+            (guest/'guest-audio-stress-evidence.json').write_bytes(raw)
+            binding={
+                'schema':'dino-nexium-guest-audio-mode-binding-v1',
+                'status':'SELECTED_AUDIO_MODE_WITNESSED_BY_GUEST',
+                'selected_mode':mode,
+                'guest_nro_sha256':sha,
+                'guest_report_sha256':hashlib.sha256(raw).hexdigest(),
+                'guest_poll_enabled':enabled,
+                'guest_poll_calls':calls,
+                'guest_poll_released_pages':0,
+                'guest_simulation_ticks':900,
+                'audio_latency_verified':False,
+                'causal_audio_improvement_verified':False,
+                'physical_switch_audio_verified':False,
+            }
+            (guest/'guest-audio-mode-binding.json').write_text(json.dumps(binding))
             host={
                 'schema':'dino-nexium-host-counter-frame-v1',
                 'status':paired.STATUS,
@@ -127,6 +150,45 @@ class RequiredHostWindowTests(unittest.TestCase):
     def test_wrong_native_guest_pixel_rejected(self):
         path=self.guests['baseline']/'guest-live-counter-framebuffer.csv'
         path.write_text(path.read_text().replace('FFC9EB5B','FFFFFFFF'))
+        with self.assertRaises(ValueError):self.verify()
+
+    def test_complete_guest_and_matching_nro_mode_swap_rejected(self):
+        # Older verifier incorrectly accepted a perfect baseline↔extra swap.
+        with self.assertRaises(ValueError):
+            paired.verify(self.guests['extra-poll'],self.guests['baseline'],
+                          self.nros['extra-poll'],self.nros['baseline'])
+
+    def test_selected_mode_field_cannot_be_forged(self):
+        path=self.guests['baseline']/'guest-audio-mode-binding.json'
+        binding=json.loads(path.read_text())
+        binding['selected_mode']='extra-poll'
+        path.write_text(json.dumps(binding))
+        with self.assertRaises(ValueError):self.verify()
+
+    def test_mode_stress_hash_tamper_rejected(self):
+        path=self.guests['extra-poll']/'guest-audio-stress-evidence.json'
+        report=json.loads(path.read_text())
+        report['guest_mid_batch_extra_poll_calls']=0
+        path.write_text(json.dumps(report))
+        with self.assertRaises(ValueError):self.verify()
+
+    def test_mode_900_tick_guest_report_required(self):
+        path=self.guests['baseline']/'guest-audio-stress-evidence.json'
+        path.unlink()
+        with self.assertRaises(ValueError):self.verify()
+
+    def test_guest_poll_mode_not_a_self_reported_label_only(self):
+        path=self.guests['extra-poll']/'guest-audio-mode-binding.json'
+        binding=json.loads(path.read_text())
+        binding['guest_poll_enabled']=False
+        path.write_text(json.dumps(binding))
+        with self.assertRaises(ValueError):self.verify()
+
+    def test_duplicate_raw_stress_report_key_rejected(self):
+        path=self.guests['baseline']/'guest-audio-stress-evidence.json'
+        raw=path.read_text().replace(
+            '"simulation_ticks":','"simulation_ticks": 900, "simulation_ticks":')
+        path.write_text(raw)
         with self.assertRaises(ValueError):self.verify()
 
     def test_swapped_mode_nro_rejected(self):
