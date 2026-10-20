@@ -55,9 +55,16 @@ def verify(guest_dir,nro,mode):
     series=raw['samples']
     count=raw['post_command_negative_samples']
     token=raw['matching_positive_frame_token_u16']
+    native_iteration=previous['guest_render_iteration']
+    # The host image encodes only the lower 16 bits. The preceding
+    # Stage 259 verifier independently resolves that token to one
+    # exact full-width NRO-bound submitted guest render iteration.
     if (type(series) is not list or type(count) is not int or
         not 1<=count<=198 or len(series)!=count+1 or len(series)>199 or
-        type(token) is not int or token!=previous['guest_render_iteration']):
+        type(token) is not int or not 0<=token<=65535 or
+        type(native_iteration) is not int or
+        not 1<=native_iteration<=2**32-1 or
+        token!=(native_iteration&65535)):
         raise ValueError('unproven negative count/guest frame identity')
     # Stage 260 independently recorded the number of post-keydown
     # negative X11 images. Compare that witness as well as its LAST
@@ -138,7 +145,7 @@ def verify(guest_dir,nro,mode):
             positive['capture_begin_offset_us'],
         'first_present_capture_end_offset_us':
             positive['capture_end_offset_us'],
-        'guest_submitted_render_iteration':token,
+        'guest_submitted_render_iteration':native_iteration,
         'whole_nro_sha256':previous['whole_nro_sha256'],
         'clock_domain':'HOST_MONOTONIC_ONLY',
         'exact_first_visible_frame_onset_verified':False,
