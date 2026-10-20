@@ -1555,11 +1555,11 @@ int main(int argc, char **argv) {
                 FILE *stream=fopen(token_path,"w");
                 if (stream) {
                     bool ok=fputs("event,render_iteration,arena_tick,"
-                                  "feedback_ttl,impact_ttl,token_u16\\n",
+                                  "feedback_ttl,impact_ttl,token_u16\n",
                                   stream)>=0;
                     for (unsigned i=0;i<guest_token_count;++i) {
                         const DinoCounterTokenFrame *row=&guest_token_rows[i];
-                        if (fprintf(stream,"TOKEN_SUBMITTED,%u,%u,%u,%u,%u\\n",
+                        if (fprintf(stream,"TOKEN_SUBMITTED,%u,%u,%u,%u,%u\n",
                             (unsigned)row->render_iteration,
                             (unsigned)row->arena_tick,
                             (unsigned)row->feedback_ttl,
