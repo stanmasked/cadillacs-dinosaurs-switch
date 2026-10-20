@@ -617,6 +617,14 @@ int main(int argc, char **argv) {
     uint32_t guest_controller_flags=0;
     bool guest_counter_hid_done=false; /* stage 234, after audio stress */
     bool guest_counter_zr_edge_pending=false;
+    /* Stage 244: independent 60Hz naturally advancing ROM-free AI trial.
+     * NEVER edit coordinates, windup, facing or cooldown for this witness.
+     * It runs after the previous prepared HID proof, without changing the
+     * player-facing arena, replay ledger or measured 900-tick audio path. */
+    DinoArena guest_natural_counter;
+    bool guest_natural_counter_active=false;
+    bool guest_natural_counter_done=false;
+    bool guest_natural_ready_written=false;
     /* An independent, ordered game-tick trace of actual HID effects.
      * Tick values are guest simulation time, NOT host input latency. */
     FILE *guest_hid_timeline=NULL;
@@ -848,6 +856,101 @@ int main(int argc, char **argv) {
                                 counter_pcm_nonzero,
                                 (unsigned long long)counter_pcm_hash);
                         (void)fclose(proof);
+                    }
+                }
+                /* Separate real libnx ZR edge during an AI-created
+                 * telegraph, not a preloaded 12-tick dummy windup.
+                 * The independent practice arena advances ONCE for every
+                 * real 60Hz guest simulation tick. Host may react to the
+                 * ready marker, but a host attempt cannot create proof. */
+                if (guest_counter_hid_done &&
+                    !guest_natural_counter_active) {
+                    dino_arena_reset(&guest_natural_counter);
+                    guest_natural_counter_active=true;
+                }
+                if (guest_natural_counter_active &&
+                    !guest_natural_counter_done &&
+                    guest_natural_counter.ticks<400u) {
+                    const DinoArena before=guest_natural_counter;
+                    const bool natural_zr_edge=
+                        guest_counter_zr_edge_pending &&
+                        (step_pressed&DINO_ARENA_COUNTER)!=0u;
+                    const uint32_t natural_pressed=before.ticks==0u ?
+                        DINO_ARENA_TOGGLE_SPAR :
+                        (natural_zr_edge ? DINO_ARENA_COUNTER : 0u);
+                    if (natural_zr_edge)
+                        guest_counter_zr_edge_pending=false;
+                    dino_arena_step(&guest_natural_counter,0u,
+                                    natural_pressed);
+                    if (!guest_natural_ready_written &&
+                        guest_natural_counter.ticks==116u &&
+                        guest_natural_counter.x==90 &&
+                        guest_natural_counter.dummy_x==134 &&
+                        guest_natural_counter.dummy_windup==12u &&
+                        guest_natural_counter.player_hp==5 &&
+                        guest_natural_counter.dummy_hp==3) {
+                        /* Marker is only a host timing hint, not success.
+                         * The emulator guest must still see a second real
+                         * padGetButtonsDown(ZR) at the actual windup tick. */
+                        FILE *ready=fopen(
+                            "sdmc:/cadillacs-natural-counter-ready.csv","w");
+                        if (ready) {
+                            fputs("event,tick,player_x,enemy_x,windup,"
+                                  "player_hp,enemy_hp\n"
+                                  "NATURAL_READY,116,90,134,12,5,3\n",
+                                  ready);
+                            (void)fclose(ready);
+                        }
+                        guest_natural_ready_written=true;
+                    }
+                    if (natural_zr_edge &&
+                        before.ticks>=116u && before.ticks<128u &&
+                        before.x==90 && before.dummy_x==134 &&
+                        before.player_hp==5 && before.dummy_hp==3 &&
+                        before.dummy_windup>=1u &&
+                        before.dummy_windup<=12u &&
+                        guest_natural_counter.events==DINO_EVT_COUNTER &&
+                        guest_natural_counter.player_hp==5 &&
+                        guest_natural_counter.dummy_hp==3 &&
+                        guest_natural_counter.dummy_windup==0u &&
+                        guest_natural_counter.dummy_hitstun==9u &&
+                        guest_natural_counter.dummy_cooldown==48u) {
+                        DinoSfx sfx;
+                        int16_t pcm[DINO_SFX_TICK_FRAMES*2u];
+                        dino_sfx_reset(&sfx);
+                        dino_sfx_events(&sfx,guest_natural_counter.events);
+                        dino_sfx_render_tick(&sfx,pcm,DINO_SFX_TICK_FRAMES);
+                        unsigned nonzero=0u;
+                        for (unsigned j=0u;
+                             j<2u*DINO_SFX_TICK_FRAMES;++j)
+                            if (pcm[j]) { nonzero=1u; break; }
+                        const uint64_t hash=dino_pcm_witness_feed(
+                            DINO_PCM_WITNESS_INIT,pcm,DINO_SFX_TICK_FRAMES);
+                        FILE *proof=fopen(
+                            "sdmc:/cadillacs-natural-counter-hid.csv","w");
+                        if (proof) {
+                            fputs("event,tick,player_x,enemy_x,"
+                                  "pre_windup,player_hp,enemy_hp,"
+                                  "post_windup,stun,cooldown,event_mask,"
+                                  "hid_edge,pcm_nonzero,pcm_fnv64\n",
+                                  proof);
+                            fprintf(proof,
+                                    "NATURAL_HID_COUNTER,%u,%d,%d,%u,"
+                                    "%u,%u,%u,%u,%u,%u,1,%u,%016llX\n",
+                                    (unsigned)guest_natural_counter.ticks,
+                                    guest_natural_counter.x,
+                                    guest_natural_counter.dummy_x,
+                                    (unsigned)before.dummy_windup,
+                                    (unsigned)guest_natural_counter.player_hp,
+                                    (unsigned)guest_natural_counter.dummy_hp,
+                                    (unsigned)guest_natural_counter.dummy_windup,
+                                    (unsigned)guest_natural_counter.dummy_hitstun,
+                                    (unsigned)guest_natural_counter.dummy_cooldown,
+                                    (unsigned)guest_natural_counter.events,
+                                    nonzero,(unsigned long long)hash);
+                            (void)fclose(proof);
+                        }
+                        guest_natural_counter_done=true;
                     }
                 }
                 if (guest_controller_active && !demo_active) {
