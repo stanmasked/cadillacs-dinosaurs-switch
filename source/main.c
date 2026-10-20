@@ -429,6 +429,35 @@ static void arena_frame(uint32_t *frame, unsigned pitch,
               rgb(169,210,182));
 }
 
+#ifdef DINO_EMULATOR_SELFTEST
+/* Stage 253: diagnostic-only 16-bit render-iteration watermark.
+ * The 16 cells live in the unused bottom HUD of the ROM-free arena,
+ * never in protected game art or in release builds. */
+enum { DINO_TOKEN_SLOTS=16, DINO_TOKEN_TRACE_CAP=64 };
+typedef struct {
+    uint32_t render_iteration,arena_tick,feedback_ttl,impact_ttl;
+    uint16_t token;
+} DinoCounterTokenFrame;
+static void dino_counter_token_draw(uint32_t *frame,unsigned pitch,
+                                     uint16_t token) {
+    rectangle(frame,pitch,925,686,9,9,rgb(255,0,153));
+    rectangle(frame,pitch,1165,686,9,9,rgb(0,255,204));
+    for (unsigned bit=0;bit<DINO_TOKEN_SLOTS;++bit)
+        rectangle(frame,pitch,942+(int)bit*12,686,9,9,
+                  (token&(1u<<bit))?rgb(250,250,250):rgb(15,35,50));
+}
+static bool dino_counter_token_check(const uint32_t *frame,
+                                     unsigned pitch,uint16_t token) {
+    if (frame[690u*pitch+929u]!=rgb(255,0,153) ||
+        frame[690u*pitch+1169u]!=rgb(0,255,204)) return false;
+    for (unsigned bit=0;bit<DINO_TOKEN_SLOTS;++bit)
+        if (frame[690u*pitch+946u+12u*bit] !=
+            ((token&(1u<<bit))?rgb(250,250,250):rgb(15,35,50)))
+            return false;
+    return true;
+}
+#endif
+
 static void fallback_text(PadState *pad) {
     consoleInit(NULL);
     printf("Cadillacs and Dinosaurs - CPS-1 tile viewer\n\n");
@@ -635,6 +664,11 @@ int main(int argc, char **argv) {
     /* Stage 248: distinguish actual guest-written framebuffer pixels
      * from game-state events and from emulator host-screen visibility. */
     bool guest_counter_framebuffer_written=false;
+    /* Bounded per-submitted-frame trace, not an input or host clock. */
+    DinoCounterTokenFrame guest_token_rows[DINO_TOKEN_TRACE_CAP];
+    unsigned guest_token_count=0u;
+    bool guest_token_trace_overflow=false;
+    bool guest_token_trace_written=false;
     bool guest_live_zr_edge_pending=false;
     uint32_t guest_live_spar_origin=0u;
     /* An independent, ordered game-tick trace of actual HID effects.
@@ -1430,6 +1464,7 @@ int main(int argc, char **argv) {
          * is NOT framebuffer evidence. No host screenshot is involved.
          * Save sampled values, not pointer data beyond framebufferEnd. */
         bool guest_counter_frame_pixels_valid=false;
+        bool guest_counter_token_frame_valid=false;
         uint32_t guest_counter_pixel_caption=0u;
         uint32_t guest_counter_pixel_impact=0u;
         uint32_t guest_counter_pixel_player=0u;
@@ -1443,6 +1478,22 @@ int main(int argc, char **argv) {
                         demo_ticks,demo_active,demo_complete,demo_witness,
                         counter_feedback_ticks);
 #ifdef DINO_EMULATOR_SELFTEST
+            /* Stage 253: draw a unique render-iteration token on each
+             * submitted feedback frame, visible to the host X11 sampler.
+             * Unlike an event timestamp, this identifies real pixel data. */
+            if (guest_live_counter_done &&
+                counter_feedback_ticks>0u &&
+                arena.dummy_impact_flash>0u &&
+                arena.x==90 && arena.dummy_x==134 &&
+                arena.player_hp==5 && arena.dummy_hp==3 &&
+                !demo_active && !demo_complete &&
+                !guest_token_trace_written) {
+                const unsigned pitch_px=(unsigned)(stride/sizeof(uint32_t));
+                const uint16_t token=(uint16_t)guest_frame_id;
+                dino_counter_token_draw(frame,pitch_px,token);
+                guest_counter_token_frame_valid=
+                    dino_counter_token_check(frame,pitch_px,token);
+            }
             /* 'COUNTER!' glyph C has an illuminated pixel at (801,670).
              * Enemy cross at (465,335), body at (334,425), neutral lane
              * ground at (100,640). These fixed pixels have independent
@@ -1482,6 +1533,45 @@ int main(int argc, char **argv) {
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
 #ifdef DINO_EMULATOR_SELFTEST
+        /* Stage 253: append only after the actual framebuffer submission.
+         * Defer SD serialization until feedback has ended. A missing or
+         * overflowing trace cannot claim host/guest frame identity. */
+        if (guest_counter_token_frame_valid &&
+            !guest_token_trace_written && !guest_token_trace_overflow) {
+            if (guest_token_count<DINO_TOKEN_TRACE_CAP) {
+                DinoCounterTokenFrame *row=&guest_token_rows[guest_token_count++];
+                row->render_iteration=guest_frame_id;
+                row->arena_tick=arena.ticks;
+                row->feedback_ttl=counter_feedback_ticks;
+                row->impact_ttl=arena.dummy_impact_flash;
+                row->token=(uint16_t)guest_frame_id;
+            } else guest_token_trace_overflow=true;
+        }
+        if (guest_token_count>0u && !guest_token_trace_written &&
+            !guest_counter_token_frame_valid) {
+            const char *const token_path=
+                "sdmc:/cadillacs-live-counter-frame-tokens.csv";
+            if (!guest_token_trace_overflow) {
+                FILE *stream=fopen(token_path,"w");
+                if (stream) {
+                    bool ok=fputs("event,render_iteration,arena_tick,"
+                                  "feedback_ttl,impact_ttl,token_u16\\n",
+                                  stream)>=0;
+                    for (unsigned i=0;i<guest_token_count;++i) {
+                        const DinoCounterTokenFrame *row=&guest_token_rows[i];
+                        if (fprintf(stream,"TOKEN_SUBMITTED,%u,%u,%u,%u,%u\\n",
+                            (unsigned)row->render_iteration,
+                            (unsigned)row->arena_tick,
+                            (unsigned)row->feedback_ttl,
+                            (unsigned)row->impact_ttl,
+                            (unsigned)row->token)<0) ok=false;
+                    }
+                    const int closed=fclose(stream);
+                    if (!ok || closed!=0) (void)remove(token_path);
+                }
+            }
+            guest_token_trace_written=true;
+        }
         /* Write only AFTER framebufferEnd. The sampled data originated
          * from the real submitted guest framebuffer for the same frame.
          * This does NOT prove the emulator displayed those pixels. */
