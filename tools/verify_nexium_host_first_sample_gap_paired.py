@@ -53,7 +53,7 @@ def one(mode, guest_dir, nro):
     if (observed['whole_nro_sha256'] != command['whole_nro_sha256'] or
         observed['guest_submitted_render_iteration'] !=
             command['native_render_iteration'] or
-        observed['guest_submitted_render_iteration'] !=
+        (observed['guest_submitted_render_iteration'] & 65535) !=
             command['host_frame_token_u16'] or
         observed['clock_domain'] != 'HOST_MONOTONIC_ONLY' or
         command['clock_domain'] != 'HOST_MONOTONIC_ONLY'):
