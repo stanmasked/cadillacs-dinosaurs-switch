@@ -59,6 +59,26 @@ def verify(guest_dir,nro,mode):
         not 1<=count<=198 or len(series)!=count+1 or len(series)>199 or
         type(token) is not int or token!=previous['guest_render_iteration']):
         raise ValueError('unproven negative count/guest frame identity')
+    # Stage 260 independently recorded the number of post-keydown
+    # negative X11 images. Compare that witness as well as its LAST
+    # negative/first positive timestamps, so silently dropping earlier
+    # images and renumbering the new trace cannot create a false pass.
+    transition_raw=frames.load_json(
+        guest/'host-x11-transition-bracket-evidence.json')
+    if (type(transition_raw.get('post_trigger_absent_x11_images')) is not int
+        or count!=transition_raw['post_trigger_absent_x11_images']):
+        raise ValueError('X11 intermediate sample count contradicts Stage 260')
+    # The sample series claims to start AFTER successful xdotool keydown
+    # subprocess return. The already-verified Stage 257 original host
+    # command call provides a separate elapsed-time lower bound.
+    command_raw=frames.load_json(guest/'host-keydown-bracket-evidence.json')
+    completed_floor=command_raw.get('keydown_command_duration_floor_us')
+    if (type(completed_floor) is not int or
+        completed_floor<0 or
+        type(series[0]) is not dict or
+        type(series[0].get('capture_begin_offset_us')) is not int or
+        series[0]['capture_begin_offset_us']<completed_floor):
+        raise ValueError('X11 sequence includes a pre-keydown-completion image')
     earlier_end=-1
     for n,entry in enumerate(series,1):
         if type(entry) is not dict or set(entry)!=SAMPLE_FIELDS:
