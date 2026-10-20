@@ -213,11 +213,12 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             --root "$HOME" --root "$XDG_CONFIG_HOME" \
             --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
             --out "$9" --host-counter-out "${10}" \
-            --host-frame-token-out "${11}" || true
+            --host-frame-token-out "${11}" \
+            --host-capture-window-out "${12}" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json" "$out/host-frame-token-evidence.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json" "$out/host-counter-window-evidence.json" "$out/host-frame-token-evidence.json" "$out/host-capture-window-evidence.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -388,6 +389,12 @@ python3 tools/verify_nexium_host_frame_token.py \
     --metadata "$out/metadata.txt" \
     --nro "$nro" \
     --out "$out/host-guest-frame-token-evidence.json"
+# Stage 255 OPTIONAL: a host-monotonic sampling window after completed
+# xdotool T keydown command. Strictly NOT input-to-photon latency.
+python3 tools/verify_nexium_host_capture_window.py \
+    --guest-dir "$out" --nro "$nro" --mode "$DINO_AUDIO_MODE" \
+    --out "$out/host-capture-interval-attestation.json"
+
 
 
 
