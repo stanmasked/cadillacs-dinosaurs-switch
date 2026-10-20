@@ -179,6 +179,75 @@ class ArenaNativeDeterministicInvariants(unittest.TestCase):
                 self.assert_invariants(a)
                 self.assertEqual(a.ticks, 1)
 
+    def test_native_pursuit_counter_event_reachable_under_each_compiler(self):
+        # Unlike random inputs, this is a reachable game event with no
+        # manually seeded enemy x, hitstun or windup. Preserve natural AI.
+        for name, lib in self.libs.items():
+            with self.subTest(compiler=name):
+                a = self.new(lib)
+                self.step(lib, a, pressed=SPAR)
+                for _ in range(200):
+                    if a.dummy_windup:
+                        break
+                    self.step(lib, a)
+                else:
+                    self.fail('natural enemy windup was not reached')
+                self.assertEqual((a.ticks, a.x, a.dummy_x),
+                                 (116, 90, 134))
+                self.assertEqual(a.dummy_windup, 12)
+                self.step(lib, a, pressed=128)
+                self.assertEqual(a.events, COUNTER)
+                self.assertEqual((a.dummy_windup, a.dummy_hitstun,
+                                  a.dummy_cooldown), (0, 9, 48))
+                self.assert_invariants(a)
+                self.step(lib, a, pressed=128)
+                self.assertFalse(a.events & COUNTER)
+
+    def test_native_three_hit_finisher_and_ko_under_each_compiler(self):
+        for name, lib in self.libs.items():
+            with self.subTest(compiler=name):
+                a = self.new(lib)
+                a.x = 230
+                for hit_index in range(3):
+                    self.step(lib, a, pressed=16)
+                    expected = (1 << 3) | DUMMY_HIT
+                    if hit_index == 2:
+                        expected |= FINISHER | DUMMY_KO
+                    self.assertEqual(a.events, expected)
+                    self.assert_invariants(a)
+                    if hit_index < 2:
+                        for _ in range(14):
+                            self.step(lib, a)
+                self.assertEqual((a.dummy_hp, a.successful_hits), (0, 3))
+                self.step(lib, a)
+                self.assertFalse(a.events & (DUMMY_KO | FINISHER))
+
+    def test_native_jump_dodge_and_player_ko_events_under_each_compiler(self):
+        for name, lib in self.libs.items():
+            with self.subTest(compiler=name):
+                dodge = self.new(lib)
+                dodge.x = 220
+                self.step(lib, dodge, pressed=SPAR)
+                for i in range(12):
+                    self.step(lib, dodge, pressed=32 if i == 0 else 0)
+                self.assertEqual(dodge.events, DUMMY_SWING | DODGE)
+                self.assertEqual(dodge.player_hp, 5)
+                self.assert_invariants(dodge)
+
+                ko = self.new(lib)
+                ko.x = 220
+                self.step(lib, ko, pressed=SPAR)
+                ko.player_hp = 1
+                ko.dummy_windup = 1
+                ko.player_invuln = 0
+                self.step(lib, ko)
+                self.assertEqual(ko.events,
+                                 DUMMY_SWING | PLAYER_HIT | PLAYER_KO)
+                self.assertEqual(ko.player_hp, 0)
+                self.assert_invariants(ko)
+                self.step(lib, ko)
+                self.assertFalse(ko.events & (PLAYER_HIT | PLAYER_KO))
+
     def test_null_arena_arguments_do_not_dereference(self):
         for lib in self.libs.values():
             lib.dino_arena_reset(None)
