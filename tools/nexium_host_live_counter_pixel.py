@@ -28,6 +28,33 @@ MIN_X=min(x for x,_ in POINTS.values())
 MIN_Y=min(y for _,y in POINTS.values())
 MAX_X=max(x for x,_ in POINTS.values())
 MAX_Y=max(y for _,y in POINTS.values())
+# Calibrated Stage 250 host-window mapping; these are X11 pixels,
+# NOT Nintendo native-buffer coordinates. Sample mid-cell interiors.
+TOKEN_START=(918,665)
+TOKEN_END=(1150,665)
+TOKEN_BITS=tuple((round(23.33333333+0.96354167*(946+12*bit)),665)
+                 for bit in range(16))
+TOKEN_ONE=(250,250,250)
+TOKEN_ZERO=(15,35,50)
+TOKEN_SYNC_START=(255,0,153)
+TOKEN_SYNC_END=(0,255,204)
+MIN_X=min(MIN_X,TOKEN_START[0],TOKEN_END[0],*(x for x,_ in TOKEN_BITS))
+MAX_X=max(MAX_X,TOKEN_START[0],TOKEN_END[0],*(x for x,_ in TOKEN_BITS))
+MAX_Y=max(MAX_Y,TOKEN_START[1])
+
+
+def decode_frame_token(colors):
+    """Accept exact two synchronizers and sixteen binary cells in ONE image."""
+    if len(colors)!=18 or colors[0]!=TOKEN_SYNC_START or colors[-1]!=TOKEN_SYNC_END:
+        return None
+    token=0
+    for bit,color in enumerate(colors[1:-1]):
+        if color==TOKEN_ONE:
+            token|=1<<bit
+        elif color!=TOKEN_ZERO:
+            return None
+    return token
+
 
 
 def classify(pre, samples):
@@ -119,6 +146,17 @@ class X11Window:
                 # Pinned Xvfb 24-bit TrueColor uses 0xRRGGBB.
                 # Background-color calibration is mandatory before success.
                 values[k]=((p>>16)&255,(p>>8)&255,p&255)
+            def rgb_at(pos):
+                x,y=pos
+                p=self.x.XGetPixel(image,x-MIN_X,y-MIN_Y)
+                return ((p>>16)&255,(p>>8)&255,p&255)
+            token=decode_frame_token([
+                rgb_at(TOKEN_START),
+                *(rgb_at(point) for point in TOKEN_BITS),
+                rgb_at(TOKEN_END),
+            ])
+            if token is not None:
+                values['frame_token_u16']=token
             return values
         finally:
             self.x.XDestroyImage(image)
@@ -135,6 +173,7 @@ class CounterWindowWatcher:
         self.finished=threading.Event()
         self._thread=None
         self._report=result(INCONCLUSIVE)
+        self._frame_token=None
 
     def start(self):
         self._thread=threading.Thread(target=self._run,daemon=True)
@@ -156,6 +195,21 @@ class CounterWindowWatcher:
         if not self.finished.is_set():
             return result(INCONCLUSIVE,reason='MONITOR_TIMEOUT')
         return self._report
+
+    def frame_token_result(self):
+        # Never assert guest frame identity without a guest trace CSV.
+        ok=(self._report['status']==STATUS and
+            type(self._frame_token) is int)
+        return {
+            'schema':'dino-nexium-host-frame-token-v1',
+            'status':('HOST_X11_FRAME_TOKEN_OBSERVED_UNBOUND' if ok else
+                      'INCONCLUSIVE_NO_X11_FRAME_TOKEN'),
+            'token_u16':self._frame_token if ok else None,
+            'token_same_x11_image_as_counter_pixels':ok,
+            'guest_submitted_frame_identity_verified':False,
+            'exact_host_guest_frame_latency_verified':False,
+            'physical_display_verified':False,
+        }
 
     def _run(self):
         sampler=None
@@ -180,6 +234,9 @@ class CounterWindowWatcher:
                         count+=1
                         post.append(sample)
                         if classify(pre,[sample])==STATUS:
+                            candidate=sample.get('frame_token_u16')
+                            if type(candidate) is int and 0<=candidate<=65535:
+                                self._frame_token=candidate
                             break
                         time.sleep(0.008)
             else:
