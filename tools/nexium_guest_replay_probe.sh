@@ -186,10 +186,18 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             --root "$HOME" --root "$XDG_CONFIG_HOME" \
             --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
             --out "$7" || true
+          # Stage 244: the guest runs an unstaged ROM-free enemy chase
+          # over 116 native simulation ticks and writes a ready marker.
+          # This second *host attempt* is never accepted as game evidence.
+          python3 tools/nexium_natural_counter_hid_press.py \
+            --window "$window" \
+            --root "$HOME" --root "$XDG_CONFIG_HOME" \
+            --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
+            --out "$8" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -295,6 +303,20 @@ fi
 python3 tools/verify_nexium_guest_counter_hid.py \
     --report "$out/guest-counter-hid.csv" \
     --out "$out/guest-counter-hid-evidence.json"
+
+# Optional Stage 244: guest-owned marker + naturally timed second ZR.
+# The CSV is created only after full 60-Hz AI pursuit from a normal reset.
+# A late or undelivered host press must yield INCONCLUSIVE, not success.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-natural-counter-hid.csv' -print \
+    > "$out/natural-counter-locations.txt"
+if [ -s "$out/natural-counter-locations.txt" ]; then
+    IFS= read -r natural_counter_path < "$out/natural-counter-locations.txt"
+    cp "$natural_counter_path" "$out/guest-natural-counter-hid.csv"
+fi
+python3 tools/verify_nexium_guest_natural_counter_hid.py \
+    --report "$out/guest-natural-counter-hid.csv" \
+    --out "$out/guest-natural-counter-hid-evidence.json"
 
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.
