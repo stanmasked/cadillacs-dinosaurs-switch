@@ -125,6 +125,28 @@ def empty_command_bracket_result():
         'cross_mode_causal_comparison_verified':False,
     }
 
+def empty_transition_bracket_result():
+    return {
+        'schema':'dino-nexium-host-x11-transition-bracket-v1',
+        'status':'INCONCLUSIVE_NO_POST_TRIGGER_ABSENT_SAMPLE',
+        'post_trigger_absent_x11_images':0,
+        'host_x11_transition_sample_bracket_observed':False,
+        'x11_positive_frame_token_u16':None,
+        'last_negative_x11_pixel_rgb':None,
+        'last_negative_xgetimage_begin_offset_us':None,
+        'last_negative_xgetimage_end_offset_us':None,
+        'first_positive_xgetimage_begin_offset_us':None,
+        'first_positive_xgetimage_end_offset_us':None,
+        'clock_domain':'HOST_MONOTONIC_ONLY',
+        'first_visible_frame_onset_verified':False,
+        'precise_input_to_display_latency_verified':False,
+        'guest_input_delivery_timestamp_verified':False,
+        'physical_controller_verified':False,
+        'physical_display_verified':False,
+        'gpu_scanout_timestamp_verified':False,
+        'cross_mode_causal_comparison_verified':False,
+    }
+
 
 class X11Window:
     """All Xlib calls stay on a single sampler thread."""
