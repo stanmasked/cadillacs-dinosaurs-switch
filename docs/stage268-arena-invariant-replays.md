@@ -19,6 +19,11 @@ New `tests/test_dino_arena_invariant_replays.py` builds the real
 - all 256 held-direction/pressed-button mask combinations with
   hostile simultaneous input bits;
 - null-pointer API safety for each compiled C implementation.
+- three targeted reachable game-event routes under **every** compiled C
+  variant: natural enemy pursuit and frame-exact counter interruption,
+  three landed hits culminating in finisher plus dummy KO, and separate
+  jump-dodge and single-transition player KO proofs. These prevent a
+  randomized long-run test from silently missing major combat events.
 
 An additional adversarial rule checks counter-only effects, one-tick
 DODGE and KO events, and that the invented dummy cannot exceed arena
