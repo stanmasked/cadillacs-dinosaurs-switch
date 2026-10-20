@@ -774,3 +774,45 @@ interpreted as NeXium execution evidence.
 No original ROM, main gameplay timing, counter rules, source audio,
 Switch framebuffer or guest PCM synthesis has changed; only the
 optional CI-side host input gate and its tests have been strengthened.
+
+## Stage 240 → Stage 241 — real NeXium ZR/PCM regression gate
+
+The six PR workflows on Stage 237 commit `1e8633ab` all passed:
+`Nintendo Switch native bootstrap`, `Native ROM-free gameplay visual
+smoke`, `CPS-1 Python tools` (1,413 tests, one expected skip), the
+ROM-free privacy gate, the opt-in PCM ramp guest proof, and the full
+baseline / extra-poll NeXium workflow including its paired audio audit.
+Both actual guest modes produced `GUEST_LIBNX_ZR_EDGE_AND_COUNTER_EFFECT_WITNESSED`
+and a counter software-PCM FNV64 `1169E164EDF5FD7D`.
+The paired audout accounting found 119 skipped baseline versus 116
+skipped experimental blocks across two **not causally matched** runs;
+it does not establish that the experimental mode improves audio.
+
+Stage 241 promotes the real HID counter proof from an **optional,
+locally verified guest-side artifact** into a **separate required paired
+PR gate**. The new script
+`tools/verify_nexium_guest_counter_hid_paired.py` reads the recorded
+two-row guest CSV and the saved guest-verifier JSON **for each mode**
+and independently re-runs `verify_nexium_guest_counter_hid.verify`.
+Any absent guest CSV, incorrect ZR event, altered exact synthesized PCM,
+duplicated JSON property, mismatched recorded verdict, symlink, truncated
+report, or fabricated mode label makes this new paired step fail.
+
+For both modes, it *also* revalidates the actual 900-tick audout report,
+mode-binding JSON, and compiled NRO SHA-256 with the existing
+`verify_nexium_audio_paired_artifacts.validate_binding`; baseline
+and experimental NRO hashes must differ. Its own bounded JSON
+`paired-real-zr-counter-pcm-attestation.json` is emitted only on
+success and included in the completed paired NeXium CI artifacts.
+Six additional synthetic unit tests exercise valid-shape parsing and
+deliberately missing, modified, duplicate, swapped or unbound inputs;
+synthetic fixtures are **not** guest execution evidence.
+
+The guarantee is deliberately limited: two valid ROM-free diagnostic
+witnesses from CI guest runs, consistent with independently checked
+audio-mode/NRO bindings. It is **not** cryptographic proof of in-guest
+file creation, natural encounter timing, Joy-Con input latency, audible
+speaker output, or a causal benefit of extra polling. Production
+controls, gameplay, PCM synthesis, actual ROM contents and cover art
+have not changed. The new required CI step must be executed and
+confirmed on its own fresh commit before Stage 241 is considered done.
