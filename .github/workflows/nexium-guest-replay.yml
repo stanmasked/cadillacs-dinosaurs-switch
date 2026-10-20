@@ -39,6 +39,7 @@ on:
       - 'tools/nexium_natural_counter_hid_press.py'
       - 'tools/verify_nexium_guest_natural_counter_hid.py'
       - 'tools/nexium_live_counter_hid_press.py'
+      - 'tools/nexium_host_live_counter_pixel.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
       - 'tests/test_nexium_guest_counter_framebuffer.py'
@@ -54,6 +55,7 @@ on:
       - 'tests/test_nexium_guest_controller.py'
       - 'tests/test_nexium_hid_timeline.py'
       - 'tests/test_nexium_host_input_pixel.py'
+      - 'tests/test_nexium_host_live_counter_pixel.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
       - 'tests/test_nexium_audio_mode_binding.py'
@@ -132,6 +134,7 @@ on:
       - 'tools/nexium_natural_counter_hid_press.py'
       - 'tools/verify_nexium_guest_natural_counter_hid.py'
       - 'tools/nexium_live_counter_hid_press.py'
+      - 'tools/nexium_host_live_counter_pixel.py'
       - 'tools/verify_nexium_guest_live_counter_hid.py'
       - 'tools/verify_nexium_guest_counter_framebuffer.py'
       - 'tests/test_nexium_guest_counter_framebuffer.py'
@@ -147,6 +150,7 @@ on:
       - 'tests/test_nexium_guest_controller.py'
       - 'tests/test_nexium_hid_timeline.py'
       - 'tests/test_nexium_host_input_pixel.py'
+      - 'tests/test_nexium_host_live_counter_pixel.py'
       - 'tests/test_nexium_spar_audio_bound.py'
       - 'tests/test_nexium_audio_stress.py'
       - 'tests/test_nexium_audio_mode_binding.py'
@@ -306,6 +310,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_hid_timeline.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_input_pixel.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_live_counter_pixel.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_spar_audio_bound.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_stress.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_audio_mode_binding.py' -v
@@ -355,6 +360,7 @@ jobs:
             emulator-evidence/guest-natural-counter-hid.csv
             emulator-evidence/guest-natural-counter-hid-evidence.json
             emulator-evidence/host-live-zr-attempt.json
+            emulator-evidence/host-counter-window-evidence.json
             emulator-evidence/guest-live-counter-hid.csv
             emulator-evidence/guest-live-counter-hid-evidence.json
             emulator-evidence/guest-live-counter-framebuffer.csv
