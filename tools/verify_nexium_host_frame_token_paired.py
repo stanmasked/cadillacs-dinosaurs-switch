@@ -9,8 +9,12 @@ import argparse
 import json
 from pathlib import Path
 
-from tools import verify_nexium_host_counter_window_paired as window
-from tools import verify_nexium_host_frame_token as frame
+if __package__:
+    from tools import verify_nexium_host_counter_window_paired as window
+    from tools import verify_nexium_host_frame_token as frame
+else:
+    import verify_nexium_host_counter_window_paired as window
+    import verify_nexium_host_frame_token as frame
 
 SCHEMA='dino-nexium-paired-host-guest-frame-token-v1'
 STATUS='BOTH_REAL_NEXIUM_HOST_FRAMES_MATCH_GUEST_SUBMITTED_TOKENS'
