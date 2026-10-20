@@ -816,3 +816,29 @@ speaker output, or a causal benefit of extra polling. Production
 controls, gameplay, PCM synthesis, actual ROM contents and cover art
 have not changed. The new required CI step must be executed and
 confirmed on its own fresh commit before Stage 241 is considered done.
+
+### Stage 241 audit correction — real artifact mode-binding paths
+
+Before the Stage 241 paired gate ran, inspection of the *actual*
+Stage 240 baseline and extra-poll artifacts exposed a verified
+provenance bug in its new CI arguments. The new CLI initially passed
+`guest-audio-stress.csv` to
+`verify_nexium_audio_paired_artifacts.validate_binding()`, but the
+guest mode-binding SHA-256 was generated for the **already validated
+`guest-audio-stress-evidence.json`**, not the raw CSV. These two
+different files are not interchangeable.
+
+Both actual Stage 240 artifact ZIPs were independently inspected:
+each recorded audio binding SHA-256 matches its own
+`guest-audio-stress-evidence.json` bytes and the matching real NRO
+SHA-256; it intentionally does not match the raw stress CSV SHA-256.
+Both raw guest counter-HID CSVs have the exact 11-field READY and
+HID_COUNTER rows and exact counter software-PCM
+`1169E164EDF5FD7D` expected by the new strict verifier.
+
+The CI arguments now pass the validated JSON for **both modes**.
+A new negative contract test requires those two exact JSON paths,
+and rejects reverting to the raw CSV paths. This is an input-path
+correction for the new Stage 241 audit, not an alteration of the
+recorded guest data, ROM-free gameplay, audio renderer or original
+Capcom ROM.
