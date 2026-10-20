@@ -39,17 +39,19 @@ def one(mode, guest_dir, nro):
     last_end = observed['last_capture_end_offset_us']
     cmd_low = command['keydown_call_duration_floor_us']
     cmd_high = command['keydown_call_duration_ceil_us']
-    observed_positive_begin = (
-        observed['last_capture_end_offset_us'] -
-        observed['total_rounded_capture_span_us'] +
-        observed['sum_rounded_xgetimage_call_envelopes_us'] +
-        observed['sum_between_capture_call_gaps_us'])
+    # The original X11 log and independent keydown call bracket must
+    # describe the exact same *final* positive XGetImage capture.
+    sample_raw = cadence.frame.load_json(
+        Path(guest_dir) / 'host-x11-sample-sequence-evidence.json')
+    observed_positive_begin = sample_raw['samples'][-1]['capture_begin_offset_us']
     # Stage 258 must attest exactly the same final XGetImage call:
     # its offset is relative to the xdotool invocation, like Stage 263.
     if (last_end != command['keydown_invocation_to_x11_capture_end_us'] or
+        observed_positive_begin !=
+            command['keydown_invocation_to_x11_capture_start_us'] or
         not 0 <= cmd_low <= cmd_high <= 2_500_001 or
         cmd_high - cmd_low > 1 or start < cmd_low or
-        observed_positive_begin != last_end):
+        observed_positive_begin > last_end):
         raise ValueError('host command and full X11 sampling disagree')
 
     # All saved microseconds are floor/ceil rounded from host monotonic ns.
