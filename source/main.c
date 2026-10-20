@@ -632,6 +632,9 @@ int main(int argc, char **argv) {
     bool guest_live_spar_armed=false;
     bool guest_live_ready_written=false;
     bool guest_live_counter_done=false;
+    /* Stage 248: distinguish actual guest-written framebuffer pixels
+     * from game-state events and from emulator host-screen visibility. */
+    bool guest_counter_framebuffer_written=false;
     bool guest_live_zr_edge_pending=false;
     uint32_t guest_live_spar_origin=0u;
     /* An independent, ordered game-tick trace of actual HID effects.
@@ -1421,11 +1424,57 @@ int main(int argc, char **argv) {
         u32 stride=0;
         uint32_t *frame=(uint32_t*)framebufferBegin(&fb,&stride);
         if (!frame) break;
-        if (arena_active)
+#ifdef DINO_EMULATOR_SELFTEST
+        /* Capture literal colors from the SAME pixel buffer the native
+         * game renderer submits. A successful ZR state witness alone
+         * is NOT framebuffer evidence. No host screenshot is involved.
+         * Save sampled values, not pointer data beyond framebufferEnd. */
+        bool guest_counter_frame_pixels_valid=false;
+        uint32_t guest_counter_pixel_caption=0u;
+        uint32_t guest_counter_pixel_impact=0u;
+        uint32_t guest_counter_pixel_player=0u;
+        uint32_t guest_counter_pixel_background=0u;
+        uint32_t guest_counter_pixel_tick=0u;
+        uint32_t guest_counter_pixel_ttl=0u;
+        uint32_t guest_counter_pixel_flash=0u;
+#endif
+        if (arena_active) {
             arena_frame(frame,stride/sizeof(uint32_t),&arena,gfx!=NULL,
                         demo_ticks,demo_active,demo_complete,demo_witness,
                         counter_feedback_ticks);
-        else if (show_scene && scene_rgba)
+#ifdef DINO_EMULATOR_SELFTEST
+            /* 'COUNTER!' glyph C has an illuminated pixel at (801,670).
+             * Enemy cross at (465,335), body at (334,425), neutral lane
+             * ground at (100,640). These fixed pixels have independent
+             * layout regions and must all match their renderer colors. */
+            if (guest_live_counter_done &&
+                !guest_counter_framebuffer_written &&
+                counter_feedback_ticks>0u &&
+                arena.dummy_impact_flash>0u &&
+                arena.x==90 && arena.dummy_x==134 &&
+                arena.player_hp==5 && arena.dummy_hp==3 &&
+                !demo_active && !demo_complete) {
+                const unsigned pitch_px=(unsigned)(stride/sizeof(uint32_t));
+                const uint32_t caption=frame[670u*pitch_px+801u];
+                const uint32_t impact=frame[335u*pitch_px+465u];
+                const uint32_t actor=frame[425u*pitch_px+334u];
+                const uint32_t ground=frame[640u*pitch_px+100u];
+                if (caption==rgb(91,235,201) &&
+                    impact==rgb(255,243,164) &&
+                    actor==rgb(62,180,208) &&
+                    ground==rgb(62,83,74)) {
+                    guest_counter_frame_pixels_valid=true;
+                    guest_counter_pixel_caption=caption;
+                    guest_counter_pixel_impact=impact;
+                    guest_counter_pixel_player=actor;
+                    guest_counter_pixel_background=ground;
+                    guest_counter_pixel_tick=arena.ticks;
+                    guest_counter_pixel_ttl=counter_feedback_ticks;
+                    guest_counter_pixel_flash=arena.dummy_impact_flash;
+                }
+            }
+#endif
+        } else if (show_scene && scene_rgba)
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
                         sequence_blob?&playback:NULL);
@@ -1433,6 +1482,38 @@ int main(int argc, char **argv) {
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
         framebufferEnd(&fb);
 #ifdef DINO_EMULATOR_SELFTEST
+        /* Write only AFTER framebufferEnd. The sampled data originated
+         * from the real submitted guest framebuffer for the same frame.
+         * This does NOT prove the emulator displayed those pixels. */
+        if (guest_counter_frame_pixels_valid &&
+            !guest_counter_framebuffer_written) {
+            const char *const path=
+                "sdmc:/cadillacs-live-counter-framebuffer.csv";
+            FILE *pixels=fopen(path,"w");
+            if (pixels) {
+                const int header=fputs(
+                    "event,render_iteration,arena_tick,feedback_ttl,"
+                    "impact_ttl,caption_rgba,impact_rgba,player_rgba,"
+                    "background_rgba\n",pixels);
+                const int body=fprintf(
+                    pixels,
+                    "SUBMITTED_COUNTER_FRAME,%u,%u,%u,%u,"
+                    "%08X,%08X,%08X,%08X\n",
+                    (unsigned)guest_frame_id,
+                    (unsigned)guest_counter_pixel_tick,
+                    (unsigned)guest_counter_pixel_ttl,
+                    (unsigned)guest_counter_pixel_flash,
+                    (unsigned)guest_counter_pixel_caption,
+                    (unsigned)guest_counter_pixel_impact,
+                    (unsigned)guest_counter_pixel_player,
+                    (unsigned)guest_counter_pixel_background);
+                const int closed=fclose(pixels);
+                if (header<0 || body<0 || closed!=0)
+                    (void)remove(path);
+                else
+                    guest_counter_framebuffer_written=true;
+            }
+        }
         if (guest_frame_clock_started && !guest_frame_clock_flushed) {
             /* Use existing clamped game-loop interval, not a new clock read.
              * Includes zero-game-tick iterations; no disk I/O during the

@@ -1088,3 +1088,63 @@ The Stage 246 head is the last all-green reference until
 Stage 247 tests and both real guest builds are run again.
 The approved cover art, private arcade ROM and non-CI
 gameplay engine have not been changed.
+
+## Stage 248 staging — guest-submitted framebuffer pixels for live counter
+
+This stage is prepared on a **separate branch** derived from
+Stage 247 HEAD `ded8c375`, so the Stage 247 PR #56 CI
+does not get cancelled or replaced while it is still running.
+
+The Stage 246 / Stage 247 evidence already distinguishes a
+real libnx Y reset + X spar + ZR counter on the visible player's
+actual `DinoArena arena` from a separate hidden practice
+simulation. However those witnesses concern gameplay state:
+they do **not** show that the NRO's native drawing function
+actually rendered the counter caption or impact flash.
+
+The new Stage 248 CI-only guest code samples **four exact
+pixels from the same uint32_t framebuffer passed to
+`arena_frame()`**, after rendering the live-counter state
+and immediately before `framebufferEnd()`:
+
+- caption pixel **(801,670)**: the illuminated `C` in
+  `COUNTER!`, source RGB **(91,235,201)**
+- enemy impact-cross pixel **(465,335)**: the impact VFX,
+  source RGB **(255,243,164)**
+- live actor-body pixel **(334,425)**: idle hero,
+  source RGB **(62,180,208)**
+- neutral lane background pixel **(100,640)**,
+  source RGB **(62,83,74)**
+
+A CSV is written **only after** the guest called
+`framebufferEnd()` on that same render iteration,
+only after an independently established true live
+Y/X/ZR counter event, only if visual TTLs remain
+positive and all four native framebuffer pixel values
+match the game's own RGB palette.
+
+`verify_nexium_guest_counter_framebuffer.py` parses
+the real native guest report and independently checks
+all four exact packed RGBA values (in either one of
+two consistent standard 32-bit packing conventions),
+valid render/tick/TTL fields, and the prerequisite
+genuine `LIVE_HID_COUNTER` guest CSV. Missing or
+malformed records produce an explicit INCONCLUSIVE,
+not false success. Seven synthetic tests cover
+positive and negative input/column/pixel mutations,
+symlinks and wiring.
+
+**Scope boundary:** this proves the NRO wrote
+specific pixels into its submitted **guest framebuffer
+memory** and called `framebufferEnd`; it does **not**
+prove an actual host-window screenshot at counter time,
+emulator presentation latency, physical display light,
+Joy-Con hardware, audio delivery, or the original
+arcade game's sprites/physics.
+
+The experiment is optional initially. Next actions:
+run CI through a future PR once Stage 247 completes,
+inspect both real guest files, and promote the new
+pixel witness to a required bound A/B gate only after
+both modes reproduce it. Never upload the commercial
+ROM or approved cover art to this public repository.
