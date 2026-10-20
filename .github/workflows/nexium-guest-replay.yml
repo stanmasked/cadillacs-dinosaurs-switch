@@ -436,12 +436,12 @@ jobs:
           python3 tools/verify_nexium_guest_counter_hid_paired.py \
             --baseline-csv paired/baseline/guest-counter-hid.csv \
             --baseline-json paired/baseline/guest-counter-hid-evidence.json \
-            --baseline-report paired/baseline/guest-audio-stress.csv \
+            --baseline-report paired/baseline/guest-audio-stress-evidence.json \
             --baseline-binding paired/baseline/guest-audio-mode-binding.json \
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --extra-csv paired/extra-poll/guest-counter-hid.csv \
             --extra-json paired/extra-poll/guest-counter-hid-evidence.json \
-            --extra-report paired/extra-poll/guest-audio-stress.csv \
+            --extra-report paired/extra-poll/guest-audio-stress-evidence.json \
             --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
             --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-real-zr-counter-pcm-attestation.json
