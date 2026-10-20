@@ -625,6 +625,15 @@ int main(int argc, char **argv) {
     bool guest_natural_counter_active=false;
     bool guest_natural_counter_done=false;
     bool guest_natural_ready_written=false;
+    /* Stage 246: observe the *rendered* arena after real host Y/X/ZR.
+     * No artificial x, enemy windup, tick countdown or attack setup.
+     * This is kept separate from prior Stage 245 required evidence. */
+    bool guest_live_reset_seen=false;
+    bool guest_live_spar_armed=false;
+    bool guest_live_ready_written=false;
+    bool guest_live_counter_done=false;
+    bool guest_live_zr_edge_pending=false;
+    uint32_t guest_live_spar_origin=0u;
     /* An independent, ordered game-tick trace of actual HID effects.
      * Tick values are guest simulation time, NOT host input latency. */
     FILE *guest_hid_timeline=NULL;
@@ -688,6 +697,9 @@ int main(int argc, char **argv) {
         if (guest_audio_stress_done && guest_controller_done &&
             (down&HidNpadButton_ZR))
             guest_counter_zr_edge_pending=true;
+        if (guest_live_spar_armed && !guest_live_counter_done &&
+            (down&HidNpadButton_ZR))
+            guest_live_zr_edge_pending=true;
 #endif
         u64 now=armGetSystemTick();
         u64 elapsed_ns=armTicksToNs(now-last_tick);
@@ -732,6 +744,16 @@ int main(int argc, char **argv) {
                 (void)dino_switch_sound_open();
             } else if (down & HidNpadButton_Y) {
 #ifdef DINO_EMULATOR_SELFTEST
+                if (guest_natural_counter_done &&
+                    guest_audio_stress_done && guest_controller_done &&
+                    guest_counter_hid_done) {
+                    guest_live_reset_seen=true;
+                    guest_live_spar_armed=false;
+                    guest_live_ready_written=false;
+                    guest_live_counter_done=false;
+                    guest_live_zr_edge_pending=false;
+                    guest_live_spar_origin=0u;
+                }
                 if (guest_done && !guest_controller_active &&
                     !guest_controller_done) {
                     /* Evidence exists only if NeXium delivers an ACTUAL
@@ -790,6 +812,11 @@ int main(int argc, char **argv) {
                                            &step_held,&step_pressed))
                         break; /* invalid trace never runs unknown input */
                 }
+                /* CI-only: pre-event state from the *visible* player arena,
+                 * not from guest_natural_counter or any staged dummy. */
+#ifdef DINO_EMULATOR_SELFTEST
+                const DinoArena live_before=arena;
+#endif
                 dino_arena_step(&arena,step_held,step_pressed);
                 counter_feedback_ticks=dino_arena_counter_feedback_tick(
                     counter_feedback_ticks,arena.events);
@@ -951,6 +978,92 @@ int main(int argc, char **argv) {
                             (void)fclose(proof);
                         }
                         guest_natural_counter_done=true;
+                    }
+                }
+                /* Stage 246: real X sparring on the actual drawn arena.
+                 * The initial Y reset must also have been a libnx edge.
+                 * Simulated steps, not host stopwatch time, define origin. */
+                if (guest_live_reset_seen && !guest_live_spar_armed &&
+                    (step_pressed&DINO_ARENA_TOGGLE_SPAR) &&
+                    (arena.events&DINO_EVT_SPAR_TOGGLE) &&
+                    arena.sparring && arena.x==90 && arena.dummy_x==249 &&
+                    arena.player_hp==5 && arena.dummy_hp==3 &&
+                    arena.facing_right==1u && !demo_active &&
+                    !demo_complete) {
+                    guest_live_spar_armed=true;
+                    guest_live_spar_origin=arena.ticks;
+                }
+                if (guest_live_spar_armed && !guest_live_counter_done &&
+                    arena.ticks>=guest_live_spar_origin) {
+                    const uint32_t relative_tick=
+                        arena.ticks-guest_live_spar_origin+1u;
+                    if (!guest_live_ready_written &&
+                        relative_tick==116u &&
+                        arena.x==90 && arena.dummy_x==134 &&
+                        arena.dummy_windup==12u &&
+                        arena.player_hp==5 && arena.dummy_hp==3 &&
+                        arena.sparring && !demo_active && !demo_complete) {
+                        FILE *ready=fopen(
+                            "sdmc:/cadillacs-live-counter-ready.csv","w");
+                        if (ready) {
+                            fputs("event,tick,player_x,enemy_x,windup,"
+                                  "player_hp,enemy_hp\n"
+                                  "LIVE_READY,116,90,134,12,5,3\n",ready);
+                            (void)fclose(ready);
+                        }
+                        guest_live_ready_written=true;
+                    }
+                    const bool received_live_zr=
+                        guest_live_zr_edge_pending &&
+                        (step_pressed&DINO_ARENA_COUNTER)!=0u;
+                    if (received_live_zr)
+                        guest_live_zr_edge_pending=false;
+                    if (guest_live_ready_written && received_live_zr &&
+                        relative_tick>=117u && relative_tick<=128u &&
+                        live_before.x==90 && live_before.dummy_x==134 &&
+                        live_before.player_hp==5 && live_before.dummy_hp==3 &&
+                        live_before.dummy_windup==129u-relative_tick &&
+                        live_before.sparring &&
+                        arena.events==DINO_EVT_COUNTER &&
+                        arena.player_hp==5 && arena.dummy_hp==3 &&
+                        arena.dummy_windup==0u &&
+                        arena.dummy_hitstun==9u &&
+                        arena.dummy_cooldown==48u) {
+                        DinoSfx event_sfx;
+                        int16_t pcm[DINO_SFX_TICK_FRAMES*2u];
+                        dino_sfx_reset(&event_sfx);
+                        dino_sfx_events(&event_sfx,arena.events);
+                        dino_sfx_render_tick(&event_sfx,pcm,
+                                             DINO_SFX_TICK_FRAMES);
+                        unsigned nonzero=0u;
+                        for (unsigned j=0u;
+                             j<2u*DINO_SFX_TICK_FRAMES;++j)
+                            if (pcm[j]) { nonzero=1u; break; }
+                        const uint64_t pcm_hash=dino_pcm_witness_feed(
+                            DINO_PCM_WITNESS_INIT,pcm,DINO_SFX_TICK_FRAMES);
+                        FILE *proof=fopen(
+                            "sdmc:/cadillacs-live-counter-hid.csv","w");
+                        if (proof) {
+                            fputs("event,tick,player_x,enemy_x,"
+                                  "pre_windup,player_hp,enemy_hp,"
+                                  "post_windup,stun,cooldown,event_mask,"
+                                  "hid_edge,pcm_nonzero,pcm_fnv64\n",proof);
+                            fprintf(proof,
+                                    "LIVE_HID_COUNTER,%u,%d,%d,%u,"
+                                    "%u,%u,%u,%u,%u,%u,1,%u,%016llX\n",
+                                    (unsigned)relative_tick,
+                                    arena.x,arena.dummy_x,
+                                    (unsigned)live_before.dummy_windup,
+                                    (unsigned)arena.player_hp,
+                                    (unsigned)arena.dummy_hp,
+                                    (unsigned)arena.dummy_windup,
+                                    (unsigned)arena.dummy_hitstun,
+                                    (unsigned)arena.dummy_cooldown,
+                                    (unsigned)arena.events,nonzero,
+                                    (unsigned long long)pcm_hash);
+                            (void)fclose(proof);
+                        }
+                        guest_live_counter_done=true;
                     }
                 }
                 if (guest_controller_active && !demo_active) {
