@@ -528,6 +528,37 @@ jobs:
             --extra-binding paired/extra-poll/guest-audio-mode-binding.json \
             --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-visible-arena-zr-pcm-attestation.json
+          # Stage 249: Stage 248 submitted-framebuffer pixels are mandatory
+          # in BOTH independent real NeXium guest modes, not optional.
+          # Do not confuse native guest buffer sampling with host display.
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_counter_framebuffer.py' -v
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from tools import verify_nexium_guest_counter_framebuffer as framebuffer
+          for mode in ('baseline', 'extra-poll'):
+              guest = Path('paired') / mode
+              source = guest / 'guest-live-counter-framebuffer.csv'
+              live = guest / 'guest-live-counter-hid.csv'
+              recalculated = framebuffer.verify(source, live)
+              saved = json.loads(
+                  (guest / 'guest-live-counter-framebuffer-evidence.json').read_text())
+              if saved != recalculated:
+                  raise ValueError(f'{mode}: framebuffer evidence mismatch')
+              metadata = dict(line.split('=', 1)
+                              for line in (guest / 'metadata.txt').read_text().splitlines()
+                              if '=' in line)
+              nro = (Path('paired') / ('build-' + mode) /
+                     'cadillacs-dinosaurs-switch.nro').read_bytes()
+              if metadata.get('nro_sha256') != hashlib.sha256(nro).hexdigest():
+                  raise ValueError(f'{mode}: guest framebuffer NRO provenance mismatch')
+              if not recalculated['native_guest_framebuffer_pixels_verified']:
+                  raise ValueError(f'{mode}: no genuine submitted-frame pixels')
+              if recalculated['host_emulator_screen_pixel_verified']:
+                  raise ValueError(f'{mode}: unsupported host-screen verification')
+          print('Required Stage 249: both real guest submitted-framebuffer proofs match NROs')
+          PY
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
