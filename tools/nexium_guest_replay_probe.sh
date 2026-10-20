@@ -389,11 +389,9 @@ python3 tools/verify_nexium_host_frame_token.py \
     --metadata "$out/metadata.txt" \
     --nro "$nro" \
     --out "$out/host-guest-frame-token-evidence.json"
-# Stage 255 OPTIONAL: a host-monotonic sampling window after completed
-# xdotool T keydown command. Strictly NOT input-to-photon latency.
-python3 tools/verify_nexium_host_capture_window.py \
-    --guest-dir "$out" --nro "$nro" --mode "$DINO_AUDIO_MODE" \
-    --out "$out/host-capture-interval-attestation.json"
+# Stage 255: raw host X11 sampling-window JSON is collected here.
+# Its independent validation must happen AFTER the workflow has created
+# guest-audio-mode-binding.json from the completed native 900-tick report.
 
 
 
