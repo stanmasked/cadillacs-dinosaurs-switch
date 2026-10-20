@@ -378,6 +378,18 @@ if [ -s "$out/guest-frame-token-locations.txt" ]; then
     cp "$token_path" "$out/guest-live-counter-frame-tokens.csv"
 fi
 
+# Optional frame-level cross-domain evidence. Always fail closed if a
+# pixel, native frame token or exact binary witness is absent.
+python3 tools/verify_nexium_host_frame_token.py \
+    --host-token "$out/host-frame-token-evidence.json" \
+    --host-window "$out/host-counter-window-evidence.json" \
+    --guest-trace "$out/guest-live-counter-frame-tokens.csv" \
+    --guest-framebuffer "$out/guest-live-counter-framebuffer.csv" \
+    --metadata "$out/metadata.txt" \
+    --nro "$nro" \
+    --out "$out/host-guest-frame-token-evidence.json"
+
+
 
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.
