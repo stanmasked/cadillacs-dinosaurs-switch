@@ -138,7 +138,7 @@ class CounterWindowWatcher:
     def start(self):
         self._thread=threading.Thread(target=self._run,daemon=True)
         self._thread.start()
-        return self.ready.wait(0.35)
+        return self.ready.wait(0.02)  # avoid delaying the 12-tick counter window
 
     def trigger(self):
         # Only immediately after successful xdotool T keydown.
