@@ -48,6 +48,7 @@ on:
       - 'tools/verify_nexium_host_x11_sample_sequence.py'
       - 'tools/verify_nexium_host_x11_sample_sequence_paired.py'
       - 'tools/verify_nexium_host_x11_cadence_paired.py'
+      - 'tools/verify_nexium_host_first_sample_gap_paired.py'
       - 'tools/verify_nexium_host_x11_transition_paired.py'
       - 'tools/verify_nexium_host_keydown_bracket_paired.py'
       - 'tools/verify_nexium_host_capture_window_paired.py'
@@ -76,6 +77,7 @@ on:
       - 'tests/test_nexium_host_x11_sample_sequence.py'
       - 'tests/test_nexium_host_x11_sample_sequence_paired.py'
       - 'tests/test_nexium_host_x11_cadence_paired.py'
+      - 'tests/test_nexium_host_first_sample_gap_paired.py'
       - 'tests/test_nexium_host_x11_transition_paired.py'
       - 'tests/test_nexium_host_keydown_bracket_paired.py'
       - 'tests/test_nexium_host_capture_window_paired.py'
@@ -167,6 +169,7 @@ on:
       - 'tools/verify_nexium_host_x11_sample_sequence.py'
       - 'tools/verify_nexium_host_x11_sample_sequence_paired.py'
       - 'tools/verify_nexium_host_x11_cadence_paired.py'
+      - 'tools/verify_nexium_host_first_sample_gap_paired.py'
       - 'tools/verify_nexium_host_x11_transition_paired.py'
       - 'tools/verify_nexium_host_keydown_bracket_paired.py'
       - 'tools/verify_nexium_host_capture_window_paired.py'
@@ -195,6 +198,7 @@ on:
       - 'tests/test_nexium_host_x11_sample_sequence.py'
       - 'tests/test_nexium_host_x11_sample_sequence_paired.py'
       - 'tests/test_nexium_host_x11_cadence_paired.py'
+      - 'tests/test_nexium_host_first_sample_gap_paired.py'
       - 'tests/test_nexium_host_x11_transition_paired.py'
       - 'tests/test_nexium_host_keydown_bracket_paired.py'
       - 'tests/test_nexium_host_capture_window_paired.py'
@@ -367,6 +371,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_cadence_paired.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
@@ -696,6 +701,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_cadence_paired.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_transition_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_keydown_bracket_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_capture_window_paired.py' -v
@@ -745,6 +751,7 @@ jobs:
           # This does not prove first physical visual onset or latency.
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_sample_sequence_paired.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_x11_cadence_paired.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_host_first_sample_gap_paired.py' -v
           python3 tools/verify_nexium_host_x11_sample_sequence_paired.py \
             --baseline-dir paired/baseline \
             --extra-dir paired/extra-poll \
@@ -761,6 +768,15 @@ jobs:
             --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
             --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
             --out paired-host-x11-cadence-attestation.json
+          # Stage 264: require independently bound host xdotool subprocess
+          # completion to first X11 capture-call blind interval on BOTH
+          # real guest modes. This is NOT first display onset or latency.
+          python3 tools/verify_nexium_host_first_sample_gap_paired.py \
+            --baseline-dir paired/baseline \
+            --extra-dir paired/extra-poll \
+            --baseline-nro paired/build-baseline/cadillacs-dinosaurs-switch.nro \
+            --extra-nro paired/build-extra-poll/cadillacs-dinosaurs-switch.nro \
+            --out paired-host-first-sample-gap-attestation.json
           python3 -m unittest discover -s tests -p 'test_nexium_guest_ack_observability.py' -v
           python3 tools/verify_nexium_guest_ack_observability.py \
             --baseline-report paired/baseline/guest-audio-stress-evidence.json \
@@ -955,6 +971,7 @@ jobs:
             paired-host-x11-transition-attestation.json
             paired-host-x11-sample-sequence-attestation.json
             paired-host-x11-cadence-attestation.json
+            paired-host-first-sample-gap-attestation.json
             controlled-host-audout-plan.json
             controlled-host-audout-result.json
             controlled-host-audout-oracle.json
