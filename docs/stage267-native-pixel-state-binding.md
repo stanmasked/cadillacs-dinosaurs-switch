@@ -20,8 +20,8 @@ frame. Therefore they must not be forced to have the same full-width
 frame ID. They must both be independently identified in the native
 trace. Stage 267 deliberately preserves this distinction.
 
-Ten new synthetic regression tests cover first/second 16-bit wraps,
-unique-token rejection after wrap, correctly accepting a later
+Fourteen synthetic regression tests cover first/second 16-bit wraps,
+exact 65535→65536 zero-token boundary and ambiguous repeated zero-token rejection after wrap, correctly accepting a later
 host-visible X11 frame, forged TTL/impact values in either native
 witness and noncanonical integer strings. These are synthetic
 interface tests, *not* a new 65k-frame real NeXium execution.
