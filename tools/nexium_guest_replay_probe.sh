@@ -137,7 +137,7 @@ fi
 set +e
 xvfb-run -a -s "-screen 0 1280x720x24" \
     bash -c '
-      timeout --signal=TERM --kill-after=5s 110s "$1" "$2" > "$3" 2>&1 &
+      timeout --signal=TERM --kill-after=5s 155s "$1" "$2" > "$3" 2>&1 &
       emulator_pid=$!
       (
         # After 180 ticks should have completed, even under modest
@@ -194,10 +194,18 @@ xvfb-run -a -s "-screen 0 1280x720x24" \
             --root "$HOME" --root "$XDG_CONFIG_HOME" \
             --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
             --out "$8" || true
+          # Stage 246: another real Y / X / T sequence, gated by
+          # previous genuine natural ZR. This time the game-state
+          # witness must come from the actual *rendered* arena.
+          python3 tools/nexium_live_counter_hid_press.py \
+            --window "$window" \
+            --root "$HOME" --root "$XDG_CONFIG_HOME" \
+            --root "$XDG_CACHE_HOME" --root "$XDG_DATA_HOME" \
+            --out "$9" || true
         fi
       ) >/dev/null 2>&1 &
       wait "$emulator_pid"
-    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json"
+    ' bash "$exe" "$nro" "$out/emulator-stdout.txt" "$out/guest-window.png" "$out/host-pixel-raw.json" "$out/host-spar-raw.json" "$out/host-zr-attempt.json" "$out/host-natural-zr-attempt.json" "$out/host-live-zr-attempt.json"
 rc=$?
 set -e
 echo "emulator_exit_code=$rc" >> "$out/metadata.txt"
@@ -317,6 +325,20 @@ fi
 python3 tools/verify_nexium_guest_natural_counter_hid.py \
     --report "$out/guest-natural-counter-hid.csv" \
     --out "$out/guest-natural-counter-hid-evidence.json"
+
+# Stage 246 optional: the real *visible scene arena* must have consumed
+# Y reset, X spar, its own 116-tick pursuit and a third real T/ZR.
+# A host attempt is never enough; absent native guest CSV is INCONCLUSIVE.
+find "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" \
+    -type f -name 'cadillacs-live-counter-hid.csv' -print \
+    > "$out/live-counter-locations.txt"
+if [ -s "$out/live-counter-locations.txt" ]; then
+    IFS= read -r live_counter_path < "$out/live-counter-locations.txt"
+    cp "$live_counter_path" "$out/guest-live-counter-hid.csv"
+fi
+python3 tools/verify_nexium_guest_live_counter_hid.py \
+    --report "$out/guest-live-counter-hid.csv" \
+    --out "$out/guest-live-counter-hid-evidence.json"
 
 # Stage 208: guest-selftest-only per-tick ACK observation log. This is
 # when polling *noticed* a page return, never a service or speaker timestamp.
