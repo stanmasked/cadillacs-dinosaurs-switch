@@ -86,6 +86,24 @@ def result(status, samples=0, baseline=False, reason=''):
         'original_arcade_graphics_verified':False,
     }
 
+def empty_capture_interval_result():
+    # Explicitly inconclusive even if T keydown failed or no guest marker.
+    return {
+        'schema':'dino-nexium-host-x11-sample-window-v1',
+        'status':'INCONCLUSIVE_NO_BOUND_X11_CAPTURE_WINDOW',
+        'host_x11_capture_window_observed':False,
+        'frame_token_u16':None,
+        'post_keydown_command_to_capture_begin_us':None,
+        'post_keydown_command_to_capture_end_us':None,
+        'xgetimage_call_duration_upper_us':None,
+        'clock_domain':'HOST_MONOTONIC_ONLY',
+        'precise_input_to_display_latency_verified':False,
+        'actual_guest_input_delivery_timestamp_verified':False,
+        'physical_controller_verified':False,
+        'physical_display_verified':False,
+        'gpu_scanout_timestamp_verified':False,
+    }
+
 
 class X11Window:
     """All Xlib calls stay on a single sampler thread."""
