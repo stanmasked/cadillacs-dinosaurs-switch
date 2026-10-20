@@ -300,6 +300,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_nexium_guest_natural_counter_hid.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_live_counter_hid.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_counter_framebuffer.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_guest_emulator_asset_pin.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_hid_fallback_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_host_audio.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_guest_controller.py' -v
