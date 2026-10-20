@@ -147,6 +147,23 @@ def empty_transition_bracket_result():
         'cross_mode_causal_comparison_verified':False,
     }
 
+def empty_sample_sequence_result():
+    return {
+        'schema':'dino-nexium-host-x11-sample-sequence-v1',
+        'status':'INCONCLUSIVE_NO_ORDERED_X11_SAMPLE_SEQUENCE',
+        'ordered_host_x11_samples_observed':False,
+        'post_command_negative_samples':0,
+        'matching_positive_frame_token_u16':None,
+        'samples':[],
+        'clock_domain':'HOST_MONOTONIC_ONLY',
+        'precise_first_visible_frame_onset_verified':False,
+        'guest_input_delivery_timestamp_verified':False,
+        'physical_controller_verified':False,
+        'physical_display_verified':False,
+        'gpu_scanout_timestamp_verified':False,
+        'cross_mode_causal_latency_verified':False,
+    }
+
 
 class X11Window:
     """All Xlib calls stay on a single sampler thread."""
