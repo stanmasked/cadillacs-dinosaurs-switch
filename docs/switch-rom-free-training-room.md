@@ -930,3 +930,46 @@ This is still an original ROM-free training prototype, **not**
 natural gameplay in the original arcade title, hardware Joy-Con
 latency, actual speaker playback, or a guarantee of reliable host
 timing. No private ROM files or approved cover art were touched.
+
+## Stage 245 — required paired *natural* ZR witness across both guest modes
+
+Stage 244 head `18191227` passed all six PR workflows.
+Independent actual NRO guest evidence demonstrated the natural
+AI windup at guest simulation tick 116 and **true** libnx ZR edge
+counter success at guest tick 119 in baseline and tick 117 in
+extra-poll, each with invented software-PCM FNV64
+`1169E164EDF5FD7D`. Both modes also passed the prior prepared
+counter gate. This does **not** assert physical Joy-Con input, a
+counter in the visibly controlled player arena, original Capcom
+combat AI, display/audio latency, or real speaker output.
+
+Stage 245 **promotes** the formerly optional natural counter
+evidence to an additional **required PR paired gate**. The new
+`verify_nexium_guest_natural_counter_hid_paired.py` independently
+validates the exact guest-produced one-row natural counter CSV
+and matches the saved guest JSON *in both modes*. To bind those
+witnesses to their actual emulated software build, it also runs
+the full prior Stage 241 prepared counter proof again, which
+validates the 900-tick guest audio report, selected mode binding
+and full SHA-256 of each distinct compiled NRO. It requires
+matching natural/staged synthesized PCM fingerprints but allows
+different natural trigger ticks (the legal 117..128 window).
+
+A missing/altered/malformed natural CSV or JSON, duplicate
+attestation field, missing prior staged witness, incorrect
+PCM or gameplay state, symlink, unbound NRO or identical
+baseline/extra-poll binary **fails** this new paired CI job.
+The successful audit is written **exclusively** as
+`paired-natural-zr-counter-pcm-attestation.json` alongside the
+existing descriptive audio comparison and prepared counter
+attestation. Seven new synthetic regression test methods exercise
+success and failure behavior. These tests are not themselves
+real NeXium evidence.
+
+The new gate is stricter than Stage 244: a NeXium build may still
+prove the original 180-tick replay and prepared ZR event even if
+host scheduling misses the ~200-ms natural telegraph, but such a
+run **must not** report complete Stage 245 paired success.
+Until new CI finishes, `18191227` remains the last verified
+all-green guest revision; do not merge the Draft branch, and
+retain private original ROM and approved covers unchanged.
