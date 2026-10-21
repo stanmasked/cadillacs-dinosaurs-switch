@@ -36,7 +36,7 @@ repository's tools, request a 1,200-frame candidate window beginning at frame
       --rom-dir C:\private\roms ^
       --inp C:\private\recordings\dino.inp ^
       --wlf C:\private\recordings\dino.wlf ^
-      --start-frame 36000 --frames 1200 --seconds 300 ^
+      --start-frame 36000 --frames 1200 --seconds 1800 ^
       --capture-out C:\private\audits\stage286.mng ^
       --out C:\private\audits\stage286.json
 
@@ -47,7 +47,7 @@ runs playback from the beginning with `-nothrottle` and
 `-frames_to_run (start_frame + frames)`. The patched video writer suppresses
 MNG writes before the requested window and closes the MNG after the requested
 frame count. The emulator still has to emulate the frames leading up to the
-window, so runtime depends on the machine.
+window, so runtime depends on the machine. The timeout ceiling is 30 minutes to permit windows late in a long recording.
 
 In historical Windows MAME, `FILETYPE_MOVIE` writes in the current working
 directory and appends `.mng`. The runner uses an isolated temporary working
