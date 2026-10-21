@@ -147,9 +147,20 @@ class WolfMameBinaryGateTests(unittest.TestCase):
         self.assertEqual(captured, "")
         self.assertFalse(timed_out)
 
+    def test_vintage_generic_mame_banner_is_accepted_without_wolf_identity_claim(self):
+        def legacy(_binary, argv, _cwd, _timeout):
+            if argv == ["-help"]:
+                return 0, "MAME 0.106 copyright historic", False
+            return 0, "romset dino is good", False
+        receipt = self.inspect(probe=legacy)
+        self.assertTrue(receipt["emulator_help_reports_mame_0_106"])
+        self.assertTrue(receipt["dino_rom_verifyroms_passed"])
+        self.assertFalse(receipt["emulator_binary_provenance_verified"])
+        self.assertFalse(receipt["actual_inp_playback_verified"])
+
     def test_version_banner_spoof_is_not_provenance(self):
         receipt = self.inspect(probe=self.response())
-        self.assertTrue(receipt["emulator_help_reports_wolfmame_0_106"])
+        self.assertTrue(receipt["emulator_help_reports_mame_0_106"])
         self.assertFalse(receipt["emulator_binary_provenance_verified"])
 
 
