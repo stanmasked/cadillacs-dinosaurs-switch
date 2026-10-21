@@ -1,6 +1,8 @@
 """Stage285 local-only capture orchestration tests; no ROM or game images."""
 import os
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -74,7 +76,9 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertTrue((work / "hi").is_dir())
         self.assertIn("dino", cmd)
         self.assertIn("-playback", cmd)
-        self.assertIn("-frames_to_run", cmd)
+        self.assertEqual(cmd[cmd.index("-playback") + 1], "dino")
+        self.assertEqual(Path(cmd[cmd.index("-rompath") + 1]), self.roms.resolve())
+        self.assertEqual(cmd[cmd.index("-frames_to_run") + 1], "121")
         self.assertIn("-mngwrite", cmd)
         self.assertEqual(cmd[cmd.index("-mngwrite") + 1], "stage285")
         self.assertEqual(seconds, 120)
@@ -191,6 +195,25 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertNotIn(str(self.root), str(result))
         self.assertNotIn("original.inp", str(result))
         self.assertNotIn("original.wlf", str(result))
+
+    def test_real_subprocess_runner_returns_exit_code_without_logs(self):
+        spawned, exit_code, timed_out = capture._run(
+            [sys.executable, "-c",
+             "import sys; print('PRIVATE_SENTINEL'); sys.exit(7)"],
+            self.root, 5,
+        )
+        self.assertTrue(spawned)
+        self.assertEqual(exit_code, 7)
+        self.assertFalse(timed_out)
+
+    def test_real_subprocess_runner_enforces_hard_timeout(self):
+        spawned, exit_code, timed_out = capture._run(
+            [sys.executable, "-c", "import time; time.sleep(10)"],
+            self.root, 1,
+        )
+        self.assertTrue(spawned)
+        self.assertIsNone(exit_code)
+        self.assertTrue(timed_out)
 
 
 if __name__ == "__main__":
