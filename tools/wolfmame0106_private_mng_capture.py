@@ -210,8 +210,20 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
                 return report
             report["candidate_mng_found"] = True
             result = audit_fn(candidate, minimum_frames=2)
+            # A well-formed MNG is candidate evidence only. A custom audit
+            # function must not be able to mark an unverified container valid.
+            container_valid = (
+                result.get("mng_signature_header_end_and_chunk_crcs_valid") is True
+                and result.get("embedded_png_scanlines_and_chunk_crcs_valid") is True
+            )
+            if not container_valid:
+                report["status"] = "CAPTURE_AUDIT_DID_NOT_CONFIRM_CONTAINER"
+                return report
+            frame_count = result["candidate_frame_count"]
+            if type(frame_count) is not int or not 2 <= frame_count <= MAX_FRAMES:
+                raise ValueError("invalid audited candidate frame count")
             report["candidate_mng_integrity_verified"] = True
-            report["candidate_video_frames"] = result["candidate_frame_count"]
+            report["candidate_video_frames"] = frame_count
             report["changed_adjacent_pixel_pairs"] = result["changed_candidate_pairs"]
             report["identical_adjacent_pixel_pairs"] = result["identical_candidate_pairs"]
             report["capture_frame_count_matches_request"] = (
@@ -264,7 +276,15 @@ def main(argv=None):
         report["status"] = "BLOCKED_INVALID_PRIVATE_ENVIRONMENT"
     gate.write_private_receipt(args.out, report)
     print(report["status"])
-    return 0 if report["candidate_mng_integrity_verified"] else 2
+    # A valid container alone is not a successful capture run: reject
+    # truncated windows, nonzero emulator exits, and timeouts at the CLI.
+    return 0 if (
+        report["status"] == "CANDIDATE_MNG_VALID_PLAYBACK_UNAUTHENTICATED"
+        and report["candidate_mng_integrity_verified"]
+        and report["capture_frame_count_matches_request"]
+        and report["process_exit_code"] == 0
+        and not report["process_timed_out"]
+    ) else 2
 
 
 if __name__ == "__main__":
