@@ -94,7 +94,7 @@ jobs:
           # Current MinGW headers use named DirectDraw unions, but the 2006
           # source defines NONAMELESSUNION after windows.h and expects the old
           # DUMMYUNIONNAMEN(n) macro. Restore the alias and correct include order
-          # only in these two legacy DirectDraw renderer translation units.
+          # in these three legacy DirectDraw renderer translation units.
           cat >> src/windows/winprefix.h <<'EOF'
           #ifndef DUMMYUNIONNAMEN
           #define DUMMYUNIONNAMEN(n) DUMMYUNIONNAME##n
@@ -107,7 +107,7 @@ jobs:
           perl -0pi -e 's/(preprocess_vertex\[[^\]]+\])\.sx/$1.DUMMYUNIONNAME1.sx/g; s/(preprocess_vertex\[[^\]]+\])\.sy/$1.DUMMYUNIONNAME2.sy/g; s/(preprocess_vertex\[[^\]]+\])\.rhw/$1.DUMMYUNIONNAME4.rhw/g; s/(preprocess_vertex\[[^\]]+\])\.color/$1.DUMMYUNIONNAME5.color/g; s/(preprocess_vertex\[[^\]]+\])\.specular/$1.DUMMYUNIONNAME6.specular/g; s/(preprocess_vertex\[[^\]]+\])\.tu/$1.DUMMYUNIONNAME7.tu/g; s/(preprocess_vertex\[[^\]]+\])\.tv/$1.DUMMYUNIONNAME8.tv/g' src/windows/wind3d.c
           grep -q 'preprocess_vertex\[0\]\.DUMMYUNIONNAME1\.sx' src/windows/wind3d.c
           git diff --check
-          git diff -- src/windows/winprefix.h src/windows/wind3d.c src/windows/wind3dfx.c > ../runtime-artifact/mame0106-build-compat.patch
+          git diff -- src/windows/winprefix.h src/windows/wind3d.c src/windows/wind3dfx.c src/windows/winddraw.c > ../runtime-artifact/mame0106-build-compat.patch
           test -s ../runtime-artifact/mame0106-build-compat.patch
           printf 'build_compat_patch=mame0106-build-compat.patch\n' >> ../source-pin.txt
           # SYMBOLS=1 avoids old -Werror; ASM override avoids removed -mno-cygwin.
@@ -117,16 +117,23 @@ jobs:
           # Verify that this binary actually executes without private ROMs.
           ./mame.exe -help > ../runtime-artifact/mame0106-help.txt 2>&1
           grep -q 'M.A.M.E. v0.106' ../runtime-artifact/mame0106-help.txt
+          # Also enumerate the driver table without loading any game ROMs.
+          ./mame.exe -listxml > ../runtime-artifact/dino-driver.xml
+          grep -q '<machine name="dino"' ../runtime-artifact/dino-driver.xml
+          printf 'listxml_smoke_test=passed\ndino_driver_listed=yes\n' >> ../source-pin.txt
           cp mame.exe ../runtime-artifact/mame0106.exe
           # The mame0106 tree has docs/license.txt, not a COPYING file.
           cp docs/license.txt ../runtime-artifact/MAME-0106-LICENSE.txt
           git archive --format=zip --prefix=mame0106/ HEAD > ../runtime-artifact/mame0106-source.zip
           cd ../runtime-artifact
-          sha256sum mame0106.exe mame0106-source.zip > SHA256SUMS.txt
+          sha256sum mame0106.exe mame0106-source.zip mame0106-build-compat.patch dino-driver.xml > SHA256SUMS.txt
           cp ../source-pin.txt .
           cat > runtime-status.txt <<'EOF'
           Runtime source: mamedev/historic-mame tag mame0106
           Build target: 32-bit Windows / MinGW
+          ROM-free command-line help smoke test: PASSED
+          ROM-free -listxml smoke test: PASSED
+          dino driver listed in upstream driver table: YES
           WolfMAME-specific anti-cheat additions: NOT INCLUDED
           Original dino.inp playback: NOT RUN
           Original dino.wlf validation: NOT RUN
