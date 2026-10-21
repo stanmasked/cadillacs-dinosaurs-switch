@@ -100,7 +100,7 @@ jobs:
           #define DUMMYUNIONNAMEN(n) DUMMYUNIONNAME##n
           #endif
           EOF
-          perl -0pi -e 's/#define WIN32_LEAN_AND_MEAN\n#include <windows\.h>\n\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <ddraw\.h>/#define WIN32_LEAN_AND_MEAN\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <windows.h>\n#include <ddraw.h>/g' src/windows/wind3d.c src/windows/wind3dfx.c
+          perl -0pi -e 's/#define WIN32_LEAN_AND_MEAN\n#include <windows\.h>\n\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <ddraw\.h>/#define WIN32_LEAN_AND_MEAN\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <windows.h>\n#include <ddraw.h>/g' src/windows/wind3d.c src/windows/wind3dfx.c src/windows/winddraw.c
           # The current MinGW d3dtypes.h leaves DUMMYUNIONNAME1..8 as literal
           # members of D3DTLVERTEX. Qualify the seven fields used by MAME's
           # preprocess vertices; D3DTLVERTEX2 in d3d_extra.h remains unchanged.
