@@ -7,6 +7,7 @@ This audits *candidate video data*, not emulator provenance, INP playback,
 recording time alignment, game authenticity or Switch parity.
 """
 import argparse
+import hashlib
 import os
 import struct
 import zlib
@@ -51,8 +52,10 @@ def _source(path):
     return path
 
 
-def audit(path, minimum_frames=2):
-    """Audit MAME 0.106-style MNG, counting candidate frames, not authenticated gameplay."""
+def audit(path, minimum_frames=2, *, _private_frame_digests=None):
+    """Audit candidate MNG. Optional digest sink is ephemeral and never in receipt."""
+    if _private_frame_digests is not None and type(_private_frame_digests) is not list:
+        raise ValueError("private frame digest sink must be a list")
     if type(minimum_frames) is not int or not 2 <= minimum_frames <= MAX_FRAMES:
         raise ValueError("invalid expected minimum frame count")
     source = _source(path)
@@ -121,6 +124,8 @@ def audit(path, minimum_frames=2):
                             changed_pairs += 1
                             if first_change is None:
                                 first_change = [frames - 1, frames]
+                    if _private_frame_digests is not None:
+                        _private_frame_digests.append(hashlib.sha256(rgba).digest())
                     previous_rgba = rgba
                     frames += 1
                     frame = None
@@ -134,6 +139,8 @@ def audit(path, minimum_frames=2):
         "mng_signature_header_end_and_chunk_crcs_valid": True,
         "embedded_png_scanlines_and_chunk_crcs_valid": True,
         "candidate_frame_count": frames,
+        "candidate_frame_width": header[0],
+        "candidate_frame_height": header[1],
         "frame_pairs_compared": frames - 1,
         "changed_candidate_pairs": changed_pairs,
         "identical_candidate_pairs": identical_pairs,
