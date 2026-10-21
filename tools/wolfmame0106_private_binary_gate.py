@@ -21,7 +21,7 @@ except ImportError:  # direct invocation: python3 tools/wolfmame0106_private_bin
 ROOT = Path(__file__).resolve().parents[1]
 MAX_OUTPUT = 131072
 VERSION = re.compile(r"(?<![0-9])0\.106(?![0-9])", re.I)
-WOLF = re.compile(r"wolf[\s-]*mame", re.I)
+MAME = re.compile(r"(?<![a-z])(?:wolf[\s-]*)?mame(?![a-z])", re.I)
 ROM_GOOD = re.compile(
     r"^romset\s+dino(?:\s+\[[^\]\r\n]*\])?\s+is\s+(?:good|best available)\s*$",
     re.I | re.M,
@@ -81,7 +81,7 @@ def inspect(emulator, rom_dir, inp, wlf, *, probe=bounded_probe):
         "schema": "dino-wolfmame0106-private-binary-gate-v1",
         "input_record_count": frames,
         "recording_wolfmame_family_0_106": version.startswith("0.106 "),
-        "emulator_help_reports_wolfmame_0_106": False,
+        "emulator_help_reports_mame_0_106": False,
         "dino_rom_verifyroms_passed": False,
         "emulator_binary_provenance_verified": False,
         "actual_inp_playback_verified": False,
@@ -103,10 +103,10 @@ def inspect(emulator, rom_dir, inp, wlf, *, probe=bounded_probe):
         if timeout:
             report["status"] = "BLOCKED_EMULATOR_HELP_TIMEOUT"
             return report
-        if code != 0 or not WOLF.search(help_text) or not VERSION.search(help_text):
+        if code != 0 or not MAME.search(help_text) or not VERSION.search(help_text):
             report["status"] = "BLOCKED_WOLFMAME_VERSION_NOT_CONFIRMED"
             return report
-        report["emulator_help_reports_wolfmame_0_106"] = True
+        report["emulator_help_reports_mame_0_106"] = True
         code, verify_text, timeout = probe(
             emulator, ["-verifyroms", "dino", "-rompath", str(rom.resolve())],
             work, 45,
