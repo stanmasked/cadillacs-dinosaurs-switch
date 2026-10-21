@@ -23,14 +23,36 @@ static uint64_t mix(uint64_t hash,uint32_t value) {
     }
     return hash;
 }
+static int hex_digit(char x) {
+    if(x>='0' && x<='9') return x-'0';
+    if(x>='a' && x<='f') return x-'a'+10;
+    if(x>='A' && x<='F') return x-'A'+10;
+    return -1;
+}
 int main(int argc,char **argv) {
-    int spar=0;
-    if(argc==2 && strcmp(argv[1],"--spar")==0) spar=1;
-    else if(argc!=1) {fputs("usage: arena_stress [--spar]\n",stderr);return 2;}
+    int spar=0,seen_prior=0;
+    uint8_t prior=255u;
+    for(int a=1;a<argc;a++) {
+        const char *prefix="--prior-active-low=";
+        const size_t length=strlen(prefix);
+        if(!strcmp(argv[a],"--spar") && !spar) {
+            spar=1;
+        } else if(!seen_prior && !strncmp(argv[a],prefix,length) &&
+                  strlen(argv[a]+length)==2u &&
+                  hex_digit(argv[a][length])>=0 &&
+                  hex_digit(argv[a][length+1])>=0) {
+            prior=(uint8_t)(hex_digit(argv[a][length])*16+
+                            hex_digit(argv[a][length+1]));
+            seen_prior=1;
+        } else {
+            fputs("usage: arena_stress [--spar] [--prior-active-low=HH]\n",stderr);
+            return 2;
+        }
+    }
     DinoArena arena;
     dino_arena_reset(&arena);
     if(spar) dino_arena_step(&arena,0,DINO_ARENA_TOGGLE_SPAR);
-    uint32_t previous=0,frames=0,presses_attack=0,presses_jump=0;
+    uint32_t previous=mapping(prior),frames=0,presses_attack=0,presses_jump=0;
     uint32_t live_attacks=0,live_jumps=0;
     uint64_t digest=UINT64_C(14695981039346656037);
     unsigned char input[32768];

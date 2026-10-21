@@ -40,13 +40,29 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
              str(ROOT/"tools"/"dino_arena_recorded_input_stress.c"),
              "-o",str(binary)],
             capture_output=True,text=True,check=True,timeout=30)
-        rounds=[input_bytes[i:i+round_frames]
+        # Preserve input-edge continuity even while deliberately resetting
+        # the invented arena at every round boundary.
+        rounds=[(i,input_bytes[i:i+round_frames])
                 for i in range(0,len(input_bytes),round_frames)]
+        boundary_held_attack=sum(
+            not (input_bytes[i-1]&16) and not (input_bytes[i]&16)
+            for i in range(round_frames,len(input_bytes),round_frames))
+        boundary_held_jump=sum(
+            not (input_bytes[i-1]&32) and not (input_bytes[i]&32)
+            for i in range(round_frames,len(input_bytes),round_frames))
+        expected_attack_edges=sum(
+            not (byte&16) and (i==0 or bool(input_bytes[i-1]&16))
+            for i,byte in enumerate(input_bytes))
+        expected_jump_edges=sum(
+            not (byte&32) and (i==0 or bool(input_bytes[i-1]&32))
+            for i,byte in enumerate(input_bytes))
         outcome={}
         for mode in ("normal","invented_sparring"):
             records=[]
-            for chunk in rounds:
+            for offset,chunk in rounds:
+                prior=input_bytes[offset-1] if offset else 255
                 cmd=[str(binary)]+(["--spar"] if mode=="invented_sparring" else [])
+                cmd.append(f"--prior-active-low={prior:02x}")
                 p=subprocess.run(cmd,input=chunk,capture_output=True,check=True,timeout=30)
                 item=json.loads(p.stdout)
                 if (item.get("nominal_input_records")!=len(chunk) or
@@ -55,12 +71,17 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
                     item.get("sparring_mode") is not (mode=="invented_sparring")):
                     raise ValueError("bad native input receipt")
                 records.append(item)
+            if (sum(i["attack_press_edges"] for i in records)!=expected_attack_edges or
+                sum(i["jump_press_edges"] for i in records)!=expected_jump_edges):
+                raise ValueError("round boundaries changed authentic P1 press-edge totals")
             hash_digest=hashlib.sha256(
                 (";".join(i["state_digest_fnv64"] for i in records)).encode("ascii")
             ).hexdigest()
             outcome[mode]={
                 "rounds":len(records),
                 "records":sum(i["nominal_input_records"] for i in records),
+                "nominal_attack_press_edges":expected_attack_edges,
+                "nominal_jump_press_edges":expected_jump_edges,
                 "rounds_with_swings":sum(i["actual_training_swings"]>0 for i in records),
                 "rounds_with_jumps":sum(i["actual_training_jumps"]>0 for i in records),
                 "rounds_with_hits":sum(i["successful_training_hits"]>0 for i in records),
@@ -68,6 +89,8 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
                 "jumps":sum(i["actual_training_jumps"] for i in records),
                 "hits":sum(i["successful_training_hits"] for i in records),
                 "player_defeated_rounds":sum(i["player_hp"]==0 for i in records),
+                "continued_held_attack_edges_suppressed":boundary_held_attack,
+                "continued_held_jump_edges_suppressed":boundary_held_jump,
                 "round_state_digest_sha256":hash_digest,
             }
         return outcome
