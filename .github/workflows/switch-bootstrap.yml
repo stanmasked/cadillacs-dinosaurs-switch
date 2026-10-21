@@ -91,15 +91,19 @@ jobs:
         run: |
           set -euo pipefail
           cd upstream-mame
-          # Current MinGW headers renamed the DirectDraw union macro expected
-          # by this 2006 source. Preserve a tiny build-only compatibility patch.
+          # Current MinGW headers use named DirectDraw unions, but the 2006
+          # source defines NONAMELESSUNION after windows.h and expects the old
+          # DUMMYUNIONNAMEN(n) macro. Restore the alias and correct include order
+          # only in these two legacy DirectDraw renderer translation units.
           cat >> src/windows/winprefix.h <<'EOF'
           #ifndef DUMMYUNIONNAMEN
           #define DUMMYUNIONNAMEN(n) DUMMYUNIONNAME##n
           #endif
           EOF
+          perl -0pi -e 's/#define WIN32_LEAN_AND_MEAN\n#include <windows\.h>\n\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <ddraw\.h>/#define WIN32_LEAN_AND_MEAN\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <windows.h>\n#include <ddraw.h>/g' src/windows/wind3d.c src/windows/wind3dfx.c
+          grep -q -B3 '#include <windows.h>' src/windows/wind3d.c
           git diff --check
-          git diff -- src/windows/winprefix.h > ../runtime-artifact/mame0106-build-compat.patch
+          git diff -- src/windows/winprefix.h src/windows/wind3d.c src/windows/wind3dfx.c > ../runtime-artifact/mame0106-build-compat.patch
           test -s ../runtime-artifact/mame0106-build-compat.patch
           printf 'build_compat_patch=mame0106-build-compat.patch\n' >> ../source-pin.txt
           # SYMBOLS=1 avoids old -Werror; ASM override avoids removed -mno-cygwin.
