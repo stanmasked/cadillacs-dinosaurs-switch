@@ -9,6 +9,25 @@ This stage tests **repeatability across two distinct real MAME replay
 processes**, using *only the synthetic recording* from a third, actual
 MAME process. This is not original Cadillacs and Dinosaurs playback.
 
+## First real run and source-grounded correction
+
+Initial [Windows CI #39671227200](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39671227200) **correctly failed** with:
+- 16/16 matching decoded overlapping pixels;
+- 16/16 matching port-0 counters and 16/16 matching input-word counters;
+- input counters advanced, **but video pixels were static**.
+
+The original artificial Z80 fixture wrote to address `0xa000`. In the
+historical source `src/vidhrdw/minivadr.c:minivadr_videoram_w`, the
+screen row equals `(address - 0xa000) / 32`. The driver `src/drivers/minivadr.c`
+defines **visible y=16..240**, so address `0xa000` maps to **invisible
+y=0**. The screenshot never changed despite the Z80 modifying RAM.
+
+The fixture now writes to **`0xa200`**, which maps to visible **row y=16**,
+without changing the strict non-static test condition. A new unit test
+guards against inadvertently writing outside the visible area again.
+This remains an entirely invented, temporary ROM and the resulting
+Windows CI outcome must be independently rechecked.
+
 ## Windows CI protocol
 
 Within the existing Stage295 **short-lived test-only MAME** built after
