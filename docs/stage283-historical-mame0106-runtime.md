@@ -15,9 +15,10 @@ https://github.com/mamedev/historic-mame/tree/mame0106
 
 ## Build and artifact
 
-The existing `.github/workflows/python-tests.yml` workflow has an opt-in
+The existing `.github/workflows/switch-bootstrap.yml` workflow has an isolated
 build job: it runs on this specific PR branch and can be run manually after
-that workflow is available on the default branch. It builds a 32-bit Windows
+that workflow is available on the default branch. Keeping it in the Switch
+workflow separates the slow Windows build from Python CI's cancellation group. It builds a 32-bit Windows
 executable with MinGW from that source. The legacy makefile's old
 `COMPILESYSTEM_CYGWIN` option enables `-mno-cygwin`, which modern MinGW no
 longer supports; the build therefore overrides the NASM executable name
