@@ -38,7 +38,7 @@ def candidate_mng(frame_count=3):
 
 class PrivateCaptureRunnerTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="dino285-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="dino286-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.inp = self.root / "original.inp"
@@ -129,6 +129,16 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         result = self.run_capture(runner=no_file)
         self.assertEqual(result["status"], "CAPTURE_FILE_NOT_CREATED")
         self.assertFalse(result["candidate_mng_integrity_verified"])
+
+    def test_candidate_frame_count_mismatch_is_not_success(self):
+        def short_video(cmd, cwd, seconds):
+            (Path(cwd) / "stage286.mng").write_bytes(candidate_mng(3))
+            return True, 0, False
+        result = self.run_capture(runner=short_video)
+        self.assertEqual(result["status"], "CAPTURE_FRAME_COUNT_MISMATCH")
+        self.assertTrue(result["candidate_mng_integrity_verified"])
+        self.assertFalse(result["capture_frame_count_matches_request"])
+        self.assertFalse(result["candidate_capture_retained_privately"])
 
     def test_spawn_failure_is_not_success(self):
         result = self.run_capture(runner=lambda *a: (False, None, False))
