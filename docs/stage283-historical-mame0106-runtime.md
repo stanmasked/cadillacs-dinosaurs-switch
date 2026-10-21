@@ -37,6 +37,7 @@ The artifact contains:
 
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
 - `mame0106-source.zip` — the pinned upstream source tree;
+- `dino-driver.xml` — output from a ROM-free `-listxml` smoke test confirming the executable exposes the `dino` driver;
 - `mame0106-build-compat.patch` — a small documented compatibility patch for the old DirectDraw union macro expected by the 2006 source and removed from current MinGW headers;
 - `MAME-0106-LICENSE.txt` — unmodified upstream `docs/license.txt` (the historical tree does not contain `COPYING`);
 - `mame0106-help.txt` — ROM-free invocation of the compiled emulator's `-help` option, checked for `M.A.M.E. v0.106`;
@@ -52,7 +53,7 @@ uses only publicly available source.
 This is a toolchain experiment, not an original gameplay result:
 
 - WolfMAME-specific validation/anti-cheat additions are **not included**.
-- `dino.inp` playback has **not** been run by this build workflow.
+- `dino.inp` playback has **not** been run by this build workflow; the XML smoke test does not load ROM data.
 - `dino.wlf` has **not** been validated by the built executable.
 - The build does not claim that original gameplay frames were produced.
 - It does not claim Nintendo Switch hardware parity.
