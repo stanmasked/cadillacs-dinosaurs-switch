@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage285: bounded, local-only historical MAME INP playback and MNG capture.
+"""Stage286: bounded, local-only historical MAME INP playback and windowed MNG capture.
 
 A successful process and valid candidate MNG are not proof of genuine
 WolfMAME provenance, complete INP playback, input/video alignment or parity.
@@ -166,7 +166,7 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
     report["capture_window_within_recording"] = True
 
     try:
-        with tempfile.TemporaryDirectory(prefix="dino285-private-capture-") as temp:
+        with tempfile.TemporaryDirectory(prefix="dino286-private-capture-") as temp:
             work = Path(temp)
             if not gate.outside_repo(work):
                 raise ValueError("staging must be outside repository")
