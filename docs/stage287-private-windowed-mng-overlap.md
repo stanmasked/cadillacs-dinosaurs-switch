@@ -12,11 +12,11 @@ input/video synchronization, gameplay parity, or execution on physical Switch.
 Capture two overlapping windows in separate private executions with the
 Stage286 tool. Example video windows:
 
-- First: \`--start-frame 10000 --frames 121\` → indices [10000, 10121).
-- Second: \`--start-frame 10060 --frames 121\` → indices [10060, 10181).
+- First: `--start-frame 10000 --frames 121` → indices [10000, 10121).
+- Second: `--start-frame 10060 --frames 121` → indices [10060, 10181).
 - The nominal overlap is **61 video indices**, [10060, 10121).
 
-Supply unique \`--capture-out\` and \`--out\` files for each Stage286 run,
+Supply unique `--capture-out` and `--out` files for each Stage286 run,
 outside the repository. Confirm both capture reports show a zero exit code,
 successful container audit, and exactly 121 frames before comparing. Retain
 no raw captures in GitHub, Actions, an issue, or a PR.
@@ -36,11 +36,11 @@ enter the JSON receipt, stdout or public CI. The overlap calculation depends
 only on the user-supplied *candidate video* start offsets and counted frames,
 not on any assertion about INP record alignment.
 
-Two identical overlap frames are required at minimum. A match involving
-changing images is reported as \`CANDIDATE_OVERLAP_PIXELS_EQUAL_UNAUTHENTICATED\`
+At least two shared candidate video indices are required. A match involving
+changing images is reported as `CANDIDATE_OVERLAP_PIXELS_EQUAL_UNAUTHENTICATED`
 (exit 0); any mismatch returns the first differing **candidate video index**
 (exit 3). If all overlapping frames are static and equal, the result is
-\`STATIC_CANDIDATE_OVERLAP_INCONCLUSIVE\` (exit 4). Non-overlapping windows,
+`STATIC_CANDIDATE_OVERLAP_INCONCLUSIVE` (exit 4). Non-overlapping windows,
 different frame formats, invalid files, symlinks or the same underlying file
 are blocked (exit 2). A duplicate copy at a different path could still pass;
 this tool explicitly never claims it proved independent runs.
