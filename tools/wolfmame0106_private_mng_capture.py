@@ -186,6 +186,8 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
                 "dino", "-playback", "dino",
                 "-rompath", str(Path(rom_dir).resolve()),
                 "-nothrottle",
+                "-noautoframeskip", "-frameskip", "0",
+                "-skip_gameinfo",
                 "-frames_to_run", str(start_frame + frames),
                 "-mngstartframe", str(start_frame),
                 "-mngframes", str(frames),
