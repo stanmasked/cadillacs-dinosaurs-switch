@@ -61,7 +61,7 @@ jobs:
   build-upstream-mame-0106:
     # Isolate the slow historical build from the main Python CI concurrency
     # group. This branch-only gate keeps unrelated PRs from compiling MAME 0.106.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290' || github.head_ref == 'feature/mame0106-synthetic-z80-smoke-295' || github.head_ref == 'feature/mame0106-indexed-mng-decoder-296')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290' || github.head_ref == 'feature/mame0106-synthetic-z80-smoke-295' || github.head_ref == 'feature/mame0106-indexed-mng-decoder-296' || github.head_ref == 'feature/mame0106-synthetic-dual-replay-297')) }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -229,7 +229,16 @@ jobs:
           # synthetic Z80 fixture. Hosted GUI/video may legitimately block
           # recording, so inspect exact status before claiming MNG success.
           python -c "import json; d=json.load(open('stage295-synthetic-only-status.json')); assert d['synthetic_minivader_rom_verification'] is True; assert d['original_dino_rom_or_inp_used'] is False"
+          # Stage297 must pass TWO real historical MAME child replay processes,
+          # with 16 overlapping frames and matching dynamic decoded pixels and
+          # input-read counters. All original ROM/INP/WLF remain absent.
+          python tools/mame0106_synthetic_dual_replay_297.py \
+            --emulator upstream-mame/mame.exe \
+            --rom-root synthetic295-roms \
+            --out stage297-synthetic-only-status.json
+          python -c "import json; d=json.load(open('stage297-synthetic-only-status.json')); assert d['status'] == 'SYNTHETIC_REAL_MAME_DUAL_REPLAY_MATCH_UNAUTHENTICATED'; assert d['overlap_frames_compared'] == 16; assert d['real_dino_rom_or_inp_used'] is False"
           # Only aggregate status may be printed. No synthetic ROM or
           # modified binary gets added to the public runtime artifact.
           test ! -e runtime-artifact/d26-01.bin
           test ! -e runtime-artifact/stage295-synthetic-only-status.json
+          test ! -e runtime-artifact/stage297-synthetic-only-status.json
