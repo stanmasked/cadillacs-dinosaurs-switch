@@ -233,7 +233,8 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         target = self.root / "private-counts.csv"
 
         def traced_runner(cmd, cwd, seconds):
-            self.assertEqual(cmd[cmd.index("-mngcounttrace") + 1], "1")
+            self.assertIn("-mngcounttrace", cmd)
+            self.assertNotIn("1", cmd)
             spawned, code, timeout = self.good_runner(cmd, cwd, seconds)
             count = int(cmd[cmd.index("-mngframes") + 1])
             start = int(cmd[cmd.index("-mngstartframe") + 1])
