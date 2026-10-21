@@ -21,6 +21,8 @@ python3 tools/wolfmame0106_private_binary_gate.py \
   --out /private/audits/stage279-wolfmame-readiness.json
 ```
 
+For historical binaries, the `-help` banner may say either `MAME 0.106` or `WolfMAME 0.106`: the gate checks only the announced engine version, never treats that banner as proof that a WolfMAME build was used. Exact binary identity must be checked independently.
+
 The sample paths are **placeholders** and the script will not create them.
 No copyrighted files are fetched or staged in GitHub. A missing executable
 or ROM directory gets an explicit blocked status. `-help` must visibly
