@@ -85,10 +85,12 @@ class CanonicalGfxBridge304Tests(unittest.TestCase):
                 region = native.read_private_gfx(self.source)
                 self.assertEqual(checked.call_count, 1)
         self.assertEqual(len(region), 4 * 1024 * 1024)
-        self.assertEqual(region[0:8:2], self.gfx[0][:2])
-        self.assertEqual(region[2:8:2], self.gfx[1][:2])
-        self.assertEqual(region[4:8:2], self.gfx[2][:2])
-        self.assertEqual(region[6:8:2], self.gfx[3][:2])
+        self.assertEqual(region[:8], bytes((
+            self.gfx[0][0], self.gfx[0][1],
+            self.gfx[1][0], self.gfx[1][1],
+            self.gfx[2][0], self.gfx[2][1],
+            self.gfx[3][0], self.gfx[3][1],
+        )))
 
     def test_canonical_and_legacy_source_bytes_yield_same_gfx_region(self):
         canon_gfx = self._read()
