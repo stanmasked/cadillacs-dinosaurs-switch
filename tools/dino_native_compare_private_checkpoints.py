@@ -13,11 +13,14 @@ from pathlib import Path
 
 LINE=re.compile(r"DINO278_CHECKPOINT frame=([0-9]+) full_state=([0-9a-f]{16})")
 MAX_LOG=8*1024*1024
+ROOT=Path(__file__).resolve().parents[1]
 
 def parse_log(raw,frames,period):
     if type(frames) is not int or type(period) is not int or not (
             1<=frames<=10000000 and 1<=period<=10000000):
         raise ValueError("invalid bounded frame count or checkpoint interval")
+    if (frames+period-1)//period>200000:
+        raise ValueError("too many checkpoints for bounded private audit")
     if type(raw) is not bytes or len(raw)>MAX_LOG:
         raise ValueError("checkpoint log too large/invalid")
     try:
@@ -76,6 +79,8 @@ def main(argv=None):
     p.add_argument("--checkpoint-every",type=int,required=True)
     p.add_argument("--out",type=Path,required=True)
     a=p.parse_args(argv)
+    if ROOT==a.out.resolve() or ROOT in a.out.resolve().parents:
+        raise ValueError("private receipt output must be outside repository")
     if a.out.exists():
         raise FileExistsError("refusing to replace private checkpoint report")
     result=compare(ordinary_private_log(a.reference),
