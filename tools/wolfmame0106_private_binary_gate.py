@@ -21,7 +21,7 @@ except ImportError:  # direct invocation: python3 tools/wolfmame0106_private_bin
 ROOT = Path(__file__).resolve().parents[1]
 MAX_OUTPUT = 131072
 VERSION = re.compile(r"(?<![0-9])0\.106(?![0-9])", re.I)
-MAME = re.compile(r"(?<![a-z])(?:wolf[\s-]*)?mame(?![a-z])", re.I)
+MAME = re.compile(r"(?<![a-z])(?:wolf[\s-]*)?(?:mame|m\.a\.m\.e\.)(?![a-z])", re.I)
 ROM_GOOD = re.compile(
     r"^romset\s+dino(?:\s+\[[^\]\r\n]*\])?\s+is\s+(?:good|best available)\s*$",
     re.I | re.M,
