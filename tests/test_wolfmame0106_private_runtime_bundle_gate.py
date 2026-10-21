@@ -189,6 +189,35 @@ class RuntimeBundleTests(unittest.TestCase):
         self.assertEqual(json.loads(bad.read_text())["status"],
                          "BLOCKED_PRIVATE_RUNTIME_BUNDLE_INCONSISTENT")
 
+    def test_native_windows_crlf_cli_captures_allowed(self):
+        for filename in ("mame0106-help.txt", "mame0106-showconfig.txt",
+                         "dino-driver.xml"):
+            path = self.bundle / filename
+            path.write_bytes(path.read_bytes().replace(b"\\n", b"\\r\\n"))
+        self.refresh_manifest()
+        self.assertEqual(self.verify()["status"], gate294.STATUS)
+
+    def test_changed_bundle_blocks_experiment_before_launch(self):
+        from tools import wolfmame0106_private_two_window_experiment as coordinator
+        called = []
+        args = [
+            "--emulator", str(self.exe),
+            "--runtime-bundle", str(self.bundle),
+            "--rom-dir", str(self.root),
+            "--inp", str(self.root / "synthetic.inp"),
+            "--wlf", str(self.root / "synthetic.wlf"),
+            "--out-dir", str(self.root / "not-to-be-created"),
+        ]
+        def mock_experiment(*_args, **_kwargs):
+            called.append(True)
+            return {"status": coordinator.MATCH}
+        self.assertEqual(coordinator.main(args, experiment=mock_experiment), 0)
+        self.assertEqual(called, [True])
+        called.clear()
+        (self.bundle / "source-pin.txt").write_text("source_commit=invalid\\n")
+        self.assertEqual(coordinator.main(args, experiment=mock_experiment), 2)
+        self.assertEqual(called, [])
+
 
 if __name__ == "__main__":
     unittest.main()
