@@ -15,8 +15,10 @@ https://github.com/mamedev/historic-mame/tree/mame0106
 
 ## Build and artifact
 
-The manual / PR-only workflow builds a 32-bit Windows executable with
-MinGW from that source. The artifact contains:
+The existing `.github/workflows/python-tests.yml` workflow has an opt-in
+build job: it runs on this specific PR branch and can be run manually after
+that workflow is available on the default branch. It builds a 32-bit Windows
+executable with MinGW from that source. The artifact contains:
 
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
 - `mame0106-source.zip` — the corresponding pinned source tree;
@@ -58,5 +60,7 @@ to continue if the tag resolves to another commit. It uploads the source
 alongside the binary and computes SHA-256 checksums for the binary and
 source archive. The artifact is intentionally short-lived and ROM-free.
 
-Stage283 is stacked on Draft PR #90. It does not modify `main`, original
+Stage283 is stacked on Draft PR #90. The build job is deliberately scoped
+so unrelated PRs do not pay the cost of compiling this 2006 codebase. It does
+not modify `main`, original
 input files, ROM bytes, or approved cover artwork.
