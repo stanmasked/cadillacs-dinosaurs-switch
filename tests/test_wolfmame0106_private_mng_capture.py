@@ -1,4 +1,5 @@
 """Stage286 local-only windowed capture tests; no ROM or original game images."""
+import hashlib
 import os
 import struct
 import sys
@@ -100,6 +101,9 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "CANDIDATE_MNG_VALID_PLAYBACK_UNAUTHENTICATED")
         self.assertTrue(result["private_input_staging_byte_identical"])
         self.assertTrue(result["candidate_mng_integrity_verified"])
+        self.assertEqual(result["capture_mng_byte_count"], len(candidate_mng(121)))
+        self.assertEqual(result["capture_mng_sha256"],
+                         hashlib.sha256(candidate_mng(121)).hexdigest())
         self.assertEqual(result["recorded_input_records"], 314951)
         self.assertEqual(result["candidate_video_frames"], 121)
         self.assertEqual(result["changed_adjacent_pixel_pairs"], 1)
@@ -141,6 +145,7 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "CAPTURE_FRAME_COUNT_MISMATCH")
         self.assertTrue(result["candidate_mng_integrity_verified"])
         self.assertFalse(result["capture_frame_count_matches_request"])
+        self.assertIsNone(result["capture_mng_sha256"])
         self.assertFalse(result["candidate_capture_retained_privately"])
 
     def test_spawn_failure_is_not_success(self):
