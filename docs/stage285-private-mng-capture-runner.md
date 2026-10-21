@@ -57,8 +57,9 @@ repository's tools, request a 1,200-frame candidate window beginning at frame
 This is a generic example; substitute a candidate window selected by the
 private, local input analysis. The runner validates that
 `start_frame + frames` stays within the recorded input-record count, then
-runs playback from the beginning with `-nothrottle` and
-`-frames_to_run (start_frame + frames)`. The patched video writer suppresses
+runs playback from the beginning with `-nothrottle`,
+`-noautoframeskip -frameskip 0` (every rendered callback retained),
+`-skip_gameinfo`, and `-frames_to_run (start_frame + frames)`. The patched video writer suppresses
 MNG writes before the requested window and closes the MNG after the requested
 frame count. The emulator still has to emulate the frames leading up to the
 window, so runtime depends on the machine. The timeout ceiling is 30 minutes to permit windows late in a long recording.
