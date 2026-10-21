@@ -207,7 +207,7 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
                 "-mngwrite", CAPTURE_BASENAME,
             ]
             if trace_out is not None:
-                cmd.extend(("-mngcounttrace", "1"))
+                cmd.append("-mngcounttrace")
             spawned, exit_code, timed_out = runner(cmd, work, seconds)
             report["emulator_process_spawned"] = bool(spawned)
             report["process_exit_code"] = exit_code if type(exit_code) is int else None
