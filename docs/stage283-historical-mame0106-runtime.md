@@ -18,11 +18,19 @@ https://github.com/mamedev/historic-mame/tree/mame0106
 The existing `.github/workflows/switch-bootstrap.yml` workflow has an isolated
 build job: it runs on this specific PR branch and can be run manually after
 that workflow is available on the default branch. Keeping it in the Switch
-workflow separates the slow Windows build from Python CI's cancellation group. It builds a 32-bit Windows
-executable with MinGW from that source. The legacy makefile's old
-`COMPILESYSTEM_CYGWIN` option enables `-mno-cygwin`, which modern MinGW no
-longer supports; the build therefore overrides the NASM executable name
-without enabling that obsolete flag. The build applies only the compatibility patch listed in the artifact; the patch is preserved alongside the pristine source archive so the build can be reconstructed. No game-emulation logic is changed.
+workflow separates the slow Windows build from Python CI's cancellation group.
+It builds a 32-bit Windows executable with MinGW from that source.
+
+The legacy makefile's old `COMPILESYSTEM_CYGWIN` option enables
+`-mno-cygwin`, which modern MinGW no longer supports; the build therefore
+overrides the NASM executable name without enabling that obsolete flag.
+Current MinGW headers also differ from those expected by the 2006 DirectDraw
+code, so the build records a small compatibility patch: it defines the
+numbered-union alias and moves `NONAMELESSUNION` before `windows.h` in two
+DirectDraw renderer files. The patch is preserved alongside the pristine
+source archive so the build can be reconstructed. It does not change game
+emulation logic.
+
 The artifact contains:
 
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
