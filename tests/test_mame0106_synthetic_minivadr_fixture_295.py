@@ -37,6 +37,17 @@ class SyntheticMinivaderFixtureTests(unittest.TestCase):
         self.assertFalse(result["original_dino_gameplay_verified"])
         self.assertNotIn(str(self.root), json.dumps(result))
 
+    def test_z80_writes_inside_real_visible_minivader_scanlines(self):
+        # Upstream 0.106 vidhrdw/minivadr.c maps (address-0xa000)/32 to y.
+        # The visible screen is y=16..240; old address 0xa000 drew y=0.
+        code = fixture.SYNTHETIC_Z80_PROGRAM
+        self.assertEqual(code[:2], bytes.fromhex("f3 21"))
+        address = code[2] | (code[3] << 8)
+        self.assertGreaterEqual(address, 0xa200)
+        self.assertLess(address, 0xa000 + 32 * 240)
+        self.assertTrue(16 <= (address - 0xa000) // 32 <= 240)
+        self.assertIn(bytes.fromhex("77 3c c3"), code)
+
     def test_does_not_patch_changed_or_duplicate_source(self):
         self.driver.write_text("ROM_START( minivadr )\nROM_END\n")
         with self.assertRaisesRegex(ValueError, "exactly one"):
