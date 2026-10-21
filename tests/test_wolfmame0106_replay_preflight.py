@@ -16,7 +16,7 @@ def plan():
         'input_binding_and_exact_video_frame_alignment_verified':False,
         'public_GitHub_raw_capture_export_permitted':False,
         'overview':{'requested_frames':[0,60]},
-        'detail':{'requested_frames':[180,181]},
+        'animation_detail':{'requested_frames':[180,181]},
         'overview_frame_count':2,'detail_frame_count':2,
     }
 
