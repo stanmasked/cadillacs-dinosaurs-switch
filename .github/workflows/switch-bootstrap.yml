@@ -59,7 +59,7 @@ jobs:
   build-upstream-mame-0106:
     # Isolate the slow historical build from the main Python CI concurrency
     # group. This branch-only gate keeps unrelated PRs from compiling MAME 0.106.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'feature/mame0106-reproducible-runtime-283') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285')) }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -118,6 +118,13 @@ jobs:
           ./mame.exe -help > ../runtime-artifact/mame0106-help.txt 2>&1
           grep -q 'M.A.M.E. v0.106' ../runtime-artifact/mame0106-help.txt
           printf 'help_smoke_test=passed\n' >> ../source-pin.txt
+          # Check that the historical options required by the private capture
+          # runner are present, without loading ROMs or executing gameplay.
+          ./mame.exe -showconfig > ../runtime-artifact/mame0106-showconfig.txt 2>&1
+          grep -qi 'playback' ../runtime-artifact/mame0106-showconfig.txt
+          grep -qi 'frames_to_run' ../runtime-artifact/mame0106-showconfig.txt
+          grep -qi 'mngwrite' ../runtime-artifact/mame0106-showconfig.txt
+          printf 'playback_and_mng_options_smoke_test=passed\n' >> ../source-pin.txt
           # Also enumerate the driver table without loading any game ROMs.
           ./mame.exe -listxml > ../runtime-artifact/dino-driver.xml
           grep -q '<game name="dino"' ../runtime-artifact/dino-driver.xml
@@ -127,7 +134,7 @@ jobs:
           cp docs/license.txt ../runtime-artifact/MAME-0106-LICENSE.txt
           git archive --format=zip --prefix=mame0106/ HEAD > ../runtime-artifact/mame0106-source.zip
           cd ../runtime-artifact
-          sha256sum mame0106.exe mame0106-source.zip mame0106-build-compat.patch dino-driver.xml mame0106-help.txt > SHA256SUMS.txt
+          sha256sum mame0106.exe mame0106-source.zip mame0106-build-compat.patch dino-driver.xml mame0106-help.txt mame0106-showconfig.txt > SHA256SUMS.txt
           cp ../source-pin.txt .
           cat > runtime-status.txt <<'EOF'
           Runtime source: mamedev/historic-mame tag mame0106
