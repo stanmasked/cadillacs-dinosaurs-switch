@@ -47,7 +47,7 @@ MANIFEST_LINE = re.compile(r"([0-9a-f]{64})  ([a-zA-Z0-9_.-]+)\Z")
 MAX_BUNDLE_FILE_BYTES = 512 * 1024 * 1024
 MAX_MANIFEST_BYTES = 4096
 MAX_PIN_BYTES = 4096
-MAX_SOURCE_TEXT_BYTES = 8 * 1024 * 1024
+MAX_SOURCE_TEXT_BYTES = 64 * 1024 * 1024
 
 
 def _safe_regular(path, maximum):
