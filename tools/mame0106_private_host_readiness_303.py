@@ -82,7 +82,10 @@ def main(argv=None):
     output = args.out
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("expected fresh private report path")
-    from . import wolfmame0106_private_binary_gate as gate
+    try:
+        from . import wolfmame0106_private_binary_gate as gate
+    except ImportError:
+        import wolfmame0106_private_binary_gate as gate
     if not gate.outside_repo(output):
         raise ValueError("cannot write report into source repository")
     gate.write_private_receipt(output, result)
