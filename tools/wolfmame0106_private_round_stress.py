@@ -40,13 +40,23 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
              str(ROOT/"tools"/"dino_arena_recorded_input_stress.c"),
              "-o",str(binary)],
             capture_output=True,text=True,check=True,timeout=30)
-        rounds=[input_bytes[i:i+round_frames]
+        # Preserve input-edge continuity even while deliberately resetting
+        # the invented arena at every round boundary.
+        rounds=[(i,input_bytes[i:i+round_frames])
                 for i in range(0,len(input_bytes),round_frames)]
+        boundary_held_attack=sum(
+            not (input_bytes[i-1]&16) and not (input_bytes[i]&16)
+            for i in range(round_frames,len(input_bytes),round_frames))
+        boundary_held_jump=sum(
+            not (input_bytes[i-1]&32) and not (input_bytes[i]&32)
+            for i in range(round_frames,len(input_bytes),round_frames))
         outcome={}
         for mode in ("normal","invented_sparring"):
             records=[]
-            for chunk in rounds:
+            for offset,chunk in rounds:
+                prior=input_bytes[offset-1] if offset else 255
                 cmd=[str(binary)]+(["--spar"] if mode=="invented_sparring" else [])
+                cmd.append(f"--prior-active-low={prior:02x}")
                 p=subprocess.run(cmd,input=chunk,capture_output=True,check=True,timeout=30)
                 item=json.loads(p.stdout)
                 if (item.get("nominal_input_records")!=len(chunk) or
@@ -68,6 +78,8 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
                 "jumps":sum(i["actual_training_jumps"] for i in records),
                 "hits":sum(i["successful_training_hits"] for i in records),
                 "player_defeated_rounds":sum(i["player_hp"]==0 for i in records),
+                "continued_held_attack_edges_suppressed":boundary_held_attack,
+                "continued_held_jump_edges_suppressed":boundary_held_jump,
                 "round_state_digest_sha256":hash_digest,
             }
         return outcome
