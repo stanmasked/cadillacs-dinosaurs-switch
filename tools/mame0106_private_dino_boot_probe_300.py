@@ -9,6 +9,7 @@ WolfMAME provenance or physical Nintendo Switch parity.
 import argparse
 from pathlib import Path
 import tempfile
+import zipfile
 
 try:
     from . import wolfmame0106_private_binary_gate as gate
@@ -224,7 +225,7 @@ def main(argv=None):
             args.emulator, args.rom_dir, boot_frames=args.boot_frames,
             seconds=args.seconds, runtime_bundle=args.runtime_bundle,
             capture_out=args.capture_out)
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile):
         result = _empty()
         result["status"] = "BLOCKED_PRIVATE_DINO_BOOT_SETUP"
     gate.write_private_receipt(args.out, result)
