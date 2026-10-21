@@ -34,7 +34,7 @@ def _report(status):
         "synthetic_scene_cases_checked": 0,
         "synthetic_scene_rgba_pixels_compared": 0,
         "c_python_mismatching_rgba_pixels": None,
-        "synthetic_priority_and_palette_metameric_checks_passed": False,
+        "synthetic_priority_and_palette_metamorphic_checks_passed": False,
         "actual_gameplay_palette_or_vram_verified": False,
         "original_game_frame_captured": False,
         "original_dino_mame_execution_verified": False,
@@ -112,7 +112,7 @@ def run(rom, *, verify=canonical.verify_archive,
     result["synthetic_scene_cases_checked"] = len(scene.CASES)
     result["synthetic_scene_rgba_pixels_compared"] = len(scene.CASES) * scene.PIXELS
     result["c_python_mismatching_rgba_pixels"] = 0
-    result["synthetic_priority_and_palette_metameric_checks_passed"] = True
+    result["synthetic_priority_and_palette_metamorphic_checks_passed"] = True
     return result
 
 
