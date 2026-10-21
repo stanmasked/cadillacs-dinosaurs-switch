@@ -93,6 +93,11 @@ jobs:
           # Avoid Windows autocrlf changing historical source lines before patching.
           git -C upstream-mame config core.autocrlf false
           git -C upstream-mame checkout-index --all --force
+          # Git for Windows can leave historical 2006 source files as CRLF,
+          # while our anchored source patch uses LF. Normalize ONLY the
+          # four public upstream source files touched by the patch.
+          perl -pi -e 's/\r\n/\n/g' upstream-mame/src/video.h upstream-mame/src/video.c upstream-mame/src/windows/video.c upstream-mame/src/windows/video.h
+          git -C upstream-mame apply --check ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame diff --check
           printf 'window_capture_patch=mame0106-windowed-mng-capture.patch\n' >> source-pin.txt
