@@ -90,6 +90,9 @@ jobs:
           test "$actual" = "$expected"
           printf 'source_repository=https://github.com/mamedev/historic-mame\nsource_tag=mame0106\nsource_commit=%s\n' "$actual" > source-pin.txt
           mkdir -p runtime-artifact
+          # Avoid Windows autocrlf changing historical source lines before patching.
+          git -C upstream-mame config core.autocrlf false
+          git -C upstream-mame checkout-index --all --force
           git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch
           git -C upstream-mame diff --check
           printf 'window_capture_patch=mame0106-windowed-mng-capture.patch\n' >> source-pin.txt
