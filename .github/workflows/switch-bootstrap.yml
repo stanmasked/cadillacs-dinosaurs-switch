@@ -97,6 +97,9 @@ jobs:
           # while our anchored source patch uses LF. Normalize ONLY the
           # four public upstream source files touched by the patch.
           perl -pi -e 's/\r\n/\n/g' upstream-mame/src/video.h upstream-mame/src/video.c upstream-mame/src/windows/video.c upstream-mame/src/windows/video.h
+          # The PR patch itself is a tracked .txt file; actions/checkout on
+          # Windows may also convert THAT file to CRLF. Normalize both sides.
+          perl -pi -e 's/\r\n/\n/g' mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame apply --check ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame diff --check
