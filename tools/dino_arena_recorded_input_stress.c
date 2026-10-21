@@ -51,12 +51,33 @@ static uint64_t mix_full_state(uint64_t h,const DinoArena *a) {
     for(size_t i=0;i<sizeof(words)/sizeof(words[0]);i++) h=mix(h,words[i]);
     return h;
 }
+static int parse_interval(const char *p,uint32_t *out) {
+    uint32_t n=0u;
+    if(!*p) return 0;
+    for(;*p;p++) {
+        uint32_t digit;
+        if(*p<'0'||*p>'9') return 0;
+        digit=(uint32_t)(*p-'0');
+        if(n>(UINT32_C(10000000)-digit)/10u) return 0;
+        n=n*10u+digit;
+    }
+    if(!n) return 0;
+    *out=n;
+    return 1;
+}
+static void print_checkpoint(uint32_t input_frames,uint64_t full) {
+    fprintf(stderr,"DINO278_CHECKPOINT frame=%u full_state=%016llx\n",
+            input_frames,(unsigned long long)full);
+}
 int main(int argc,char **argv) {
-    int spar=0,seen_prior=0;
+    int spar=0,seen_prior=0,seen_checkpoint=0;
+    uint32_t checkpoint_every=0u,last_checkpoint=0u;
     uint8_t prior=255u;
     for(int a=1;a<argc;a++) {
         const char *prefix="--prior-active-low=";
+        const char *checkprefix="--checkpoint-every=";
         const size_t length=strlen(prefix);
+        const size_t checklen=strlen(checkprefix);
         if(!strcmp(argv[a],"--spar") && !spar) {
             spar=1;
         } else if(!seen_prior && !strncmp(argv[a],prefix,length) &&
@@ -66,8 +87,11 @@ int main(int argc,char **argv) {
             prior=(uint8_t)(hex_digit(argv[a][length])*16+
                             hex_digit(argv[a][length+1]));
             seen_prior=1;
+        } else if(!seen_checkpoint && !strncmp(argv[a],checkprefix,checklen) &&
+                  parse_interval(argv[a]+checklen,&checkpoint_every)) {
+            seen_checkpoint=1;
         } else {
-            fputs("usage: arena_stress [--spar] [--prior-active-low=HH]\n",stderr);
+            fputs("usage: arena_stress [--spar] [--prior-active-low=HH] [--checkpoint-every=N]\n",stderr);
             return 2;
         }
     }
@@ -105,6 +129,10 @@ int main(int argc,char **argv) {
             digest=mix(digest,(uint32_t)arena.events);
             full_state_digest=mix_full_state(full_state_digest,&arena);
             frames++;
+            if(checkpoint_every && frames%checkpoint_every==0u) {
+                print_checkpoint(frames,full_state_digest);
+                last_checkpoint=frames;
+            }
         }
         if(n<sizeof(input)) {
             if(ferror(stdin)) {fputs("stdin read error\n",stderr);return 3;}
@@ -114,6 +142,8 @@ int main(int argc,char **argv) {
     if(!frames || arena.ticks!=frames+(unsigned)spar) {
         fputs("empty or inconsistent simulated frame count\n",stderr);return 3;
     }
+    if(checkpoint_every && last_checkpoint!=frames)
+        print_checkpoint(frames,full_state_digest);
     printf("{\"schema\":\"dino-original-arena-private-input-stress-v1\","
            "\"training_only\":true,\"wolfmame_playback_verified\":false,"
            "\"original_gameplay_parity_verified\":false,"
