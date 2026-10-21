@@ -6,7 +6,7 @@ MAME 0.106 source patch adds two options:
 - `-mngstartframe N`: zero-based candidate video-callback index where capture starts.
 - `-mngframes N`: maximum number of MNG frames to write (2–3601 in the runner).
 
-The patch is included as `mame0106-windowed-mng-capture.patch`; CI applies it
+The patch is included as `mame0106-windowed-mng-capture.patch.txt`; CI applies it
 to the source-pinned upstream tree, builds the Windows runtime, and checks
 that both options appear in `-showconfig`. This is a **custom-patched MAME
 0.106 runtime**, not an attested WolfMAME binary.
