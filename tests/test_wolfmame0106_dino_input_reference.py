@@ -37,7 +37,7 @@ class WolfMameDinoInputTests(unittest.TestCase):
         wlf[:4]=b"WLF\x00"
         struct.pack_into("<I",wlf,4,9)
         wlf[148:153]=b"dino\x00"
-        wlf[157:177]=b"0.106 (May 16 2006)"
+        wlf[157:157+len(b"0.106 (May 16 2006)")]=b"0.106 (May 16 2006)"
         wlf[248:252]=b"ABCD"
         struct.pack_into("<III",wlf,256,1_000_000,1_000_004,self.frames)
         self.wlf.write_bytes(wlf)
