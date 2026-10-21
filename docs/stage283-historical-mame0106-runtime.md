@@ -26,8 +26,10 @@ The legacy makefile's old `COMPILESYSTEM_CYGWIN` option enables
 overrides the NASM executable name without enabling that obsolete flag.
 Current MinGW headers also differ from those expected by the 2006 DirectDraw
 code, so the build records a small compatibility patch: it defines the
-numbered-union alias and moves `NONAMELESSUNION` before `windows.h` in two
-DirectDraw renderer files. The patch is preserved alongside the pristine
+numbered-union alias, moves `NONAMELESSUNION` before `windows.h` in two
+DirectDraw renderer files, and explicitly qualifies the seven named union
+fields used by `D3DTLVERTEX` preprocess vertices. The separate `D3DTLVERTEX2`
+layout remains unchanged. The patch is preserved alongside the pristine
 source archive so the build can be reconstructed. It does not change game
 emulation logic.
 
