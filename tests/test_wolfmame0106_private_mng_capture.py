@@ -54,8 +54,10 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
 
     def run_capture(self, *, runner=None, verifier=None, audit_fn=None,
                     **kwargs):
+        inp = kwargs.pop("inp", self.inp)
+        wlf = kwargs.pop("wlf", self.wlf)
         return capture.capture(
-            self.emulator, self.roms, self.inp, self.wlf,
+            self.emulator, self.roms, inp, wlf,
             verifier=verifier or (lambda *args: dict(self.prerequisites)),
             runner=runner or self.good_runner,
             audit_fn=audit_fn or mng.audit,
