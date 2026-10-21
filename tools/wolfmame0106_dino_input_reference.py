@@ -3,8 +3,10 @@
 
 The output is ONLY aggregate input diagnostics and candidate replay windows.
 It does not bundle or upload a user's INP, WLF, ROM, screenshots or input stream.
-The offset mapping is inferred from the CPS-1 IN1/IN2 port layout; true
-playback/controller mapping MUST still be checked in WolfMAME 0.106.
+The byte offsets are source-grounded against upstream MAME 0.106's big-endian
+32-bit input-port serializer and the dino IN0/IN1/IN2 declaration in cps1.c.
+WolfMAME-specific serializer differences and actual replay/controller mapping
+remain unverified and MUST still be checked with a private playback.
 """
 import argparse
 import json
@@ -14,6 +16,9 @@ from pathlib import Path
 HEADER_BYTES = 32
 FRAME_BYTES = 124
 FPS_APPROX = 60.0
+# IN0 is input-port index 0; IN1 is index 4 (P1 low byte at 19,
+# P2 high byte at 18); IN2 is index 5 (P3 low byte at 23). Upstream
+# inptport.c serializes each 32-bit port value in big-endian byte order.
 PORTS = {"system": 3, "p1": 19, "p2": 18, "p3": 23}
 COMMON = {0:"right", 1:"left", 2:"down", 3:"up",
           4:"attack_button1", 5:"jump_button2"}
@@ -120,6 +125,9 @@ def analyze(inp, wlf):
         "frames":frames,"wall_clock_duration_seconds":elapsed,
         "approximate_frame_rate":FPS_APPROX,
         "port_byte_offsets":PORTS,
+        "port_byte_offsets_source_grounded":True,
+        "upstream_mame_0_106_serializer_source_confirmed":True,
+        "wolfmame_specific_serializer_confirmed":False,
         "variable_byte_offsets":sorted(variable),
         "total_press_onsets":sum(edges.values()),
         "signals":[{"port":port,"name":name,"bit":bit,

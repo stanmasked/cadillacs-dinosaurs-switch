@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage285: bounded, local-only historical MAME INP playback and MNG capture.
+"""Stage286: bounded, local-only historical MAME INP playback and windowed MNG capture.
 
 A successful process and valid candidate MNG are not proof of genuine
 WolfMAME provenance, complete INP playback, input/video alignment or parity.
@@ -24,16 +24,21 @@ except ImportError:
 MAX_INP_BYTES = 128 * 1024 * 1024
 MAX_WLF_BYTES = 1024 * 1024
 MAX_FRAMES = 3601
-MAX_SECONDS = 300
-CAPTURE_BASENAME = "stage285"
-REPORT_SCHEMA = "dino-wolfmame0106-private-mng-capture-attempt-v1"
+MAX_SECONDS = 1800
+CAPTURE_BASENAME = "stage286"
+REPORT_SCHEMA = "dino-wolfmame0106-private-windowed-mng-capture-v1"
 
 
-def _empty_report(frames):
+def _empty_report(frames, start_frame=0):
     return {
         "schema": REPORT_SCHEMA,
         "status": "BLOCKED_NOT_RUN",
         "requested_game_frames": frames,
+        "requested_start_frame": start_frame,
+        "requested_end_frame_exclusive": start_frame + frames if type(start_frame) is int and type(frames) is int else None,
+        "capture_window_within_recording": False,
+        "capture_frame_count_matches_request": False,
+        "capture_start_frame_verified": False,
         "recorded_input_records": None,
         "recording_wolfmame_family_0_106": False,
         "emulator_help_reports_mame_0_106": False,
@@ -129,14 +134,16 @@ def _retain_capture(source, destination):
         raise ValueError("retained capture checksum mismatch")
 
 
-def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
+def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=120,
             capture_out=None, verifier=gate.inspect, runner=_run,
             audit_fn=mng.audit):
     if type(frames) is not int or not 2 <= frames <= MAX_FRAMES:
         raise ValueError("requested frames outside allowed bound")
+    if type(start_frame) is not int or not 0 <= start_frame <= 10000000:
+        raise ValueError("capture start frame outside allowed bound")
     if type(seconds) is not int or not 1 <= seconds <= MAX_SECONDS:
         raise ValueError("timeout outside allowed bound")
-    report = _empty_report(frames)
+    report = _empty_report(frames, start_frame)
     prerequisites = verifier(emulator, rom_dir, inp, wlf)
     report["recorded_input_records"] = prerequisites.get("input_record_count")
     report["recording_wolfmame_family_0_106"] = bool(
@@ -151,8 +158,15 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
         report["status"] = "BLOCKED_PRIVATE_PLAYBACK_PREREQUISITE"
         return report
 
+    recorded_frames = prerequisites.get("input_record_count")
+    if (type(recorded_frames) is not int or recorded_frames <= 0
+            or start_frame + frames > recorded_frames):
+        report["status"] = "BLOCKED_CAPTURE_WINDOW_OUTSIDE_RECORDING"
+        return report
+    report["capture_window_within_recording"] = True
+
     try:
-        with tempfile.TemporaryDirectory(prefix="dino285-private-capture-") as temp:
+        with tempfile.TemporaryDirectory(prefix="dino286-private-capture-") as temp:
             work = Path(temp)
             if not gate.outside_repo(work):
                 raise ValueError("staging must be outside repository")
@@ -171,7 +185,12 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
                 str(Path(emulator).resolve()),
                 "dino", "-playback", "dino",
                 "-rompath", str(Path(rom_dir).resolve()),
-                "-frames_to_run", str(frames),
+                "-nothrottle",
+                "-noautoframeskip", "-frameskip", "0",
+                "-skip_gameinfo",
+                "-frames_to_run", str(start_frame + frames),
+                "-mngstartframe", str(start_frame),
+                "-mngframes", str(frames),
                 "-mngwrite", CAPTURE_BASENAME,
             ]
             spawned, exit_code, timed_out = runner(cmd, work, seconds)
@@ -191,10 +210,27 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
                 return report
             report["candidate_mng_found"] = True
             result = audit_fn(candidate, minimum_frames=2)
+            # A well-formed MNG is candidate evidence only. A custom audit
+            # function must not be able to mark an unverified container valid.
+            container_valid = (
+                result.get("mng_signature_header_end_and_chunk_crcs_valid") is True
+                and result.get("embedded_png_scanlines_and_chunk_crcs_valid") is True
+            )
+            if not container_valid:
+                report["status"] = "CAPTURE_AUDIT_DID_NOT_CONFIRM_CONTAINER"
+                return report
+            frame_count = result["candidate_frame_count"]
+            if type(frame_count) is not int or not 2 <= frame_count <= MAX_FRAMES:
+                raise ValueError("invalid audited candidate frame count")
             report["candidate_mng_integrity_verified"] = True
-            report["candidate_video_frames"] = result["candidate_frame_count"]
+            report["candidate_video_frames"] = frame_count
             report["changed_adjacent_pixel_pairs"] = result["changed_candidate_pairs"]
             report["identical_adjacent_pixel_pairs"] = result["identical_candidate_pairs"]
+            report["capture_frame_count_matches_request"] = (
+                result["candidate_frame_count"] == frames)
+            if not report["capture_frame_count_matches_request"]:
+                report["status"] = "CAPTURE_FRAME_COUNT_MISMATCH"
+                return report
 
             if capture_out is not None:
                 _retain_capture(candidate, capture_out)
@@ -219,7 +255,10 @@ def main(argv=None):
     parser.add_argument("--rom-dir", required=True, type=Path)
     parser.add_argument("--inp", required=True, type=Path)
     parser.add_argument("--wlf", required=True, type=Path)
-    parser.add_argument("--frames", type=int, default=121)
+    parser.add_argument("--frames", type=int, default=121,
+                        help="number of frames to retain in the MNG window")
+    parser.add_argument("--start-frame", type=int, default=0,
+                        help="zero-based candidate video-frame offset; not proof of INP alignment")
     parser.add_argument("--seconds", type=int, default=120)
     parser.add_argument("--capture-out", type=Path,
                         help="optional private retained MNG path, outside repository")
@@ -228,14 +267,24 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = capture(args.emulator, args.rom_dir, args.inp, args.wlf,
-                         frames=args.frames, seconds=args.seconds,
-                         capture_out=args.capture_out)
+                         frames=args.frames, start_frame=args.start_frame,
+                         seconds=args.seconds, capture_out=args.capture_out)
     except (OSError, ValueError, KeyError):
-        report = _empty_report(args.frames if type(args.frames) is int else 0)
+        report = _empty_report(
+            args.frames if type(args.frames) is int else 0,
+            args.start_frame if type(args.start_frame) is int else 0)
         report["status"] = "BLOCKED_INVALID_PRIVATE_ENVIRONMENT"
     gate.write_private_receipt(args.out, report)
     print(report["status"])
-    return 0 if report["candidate_mng_integrity_verified"] else 2
+    # A valid container alone is not a successful capture run: reject
+    # truncated windows, nonzero emulator exits, and timeouts at the CLI.
+    return 0 if (
+        report["status"] == "CANDIDATE_MNG_VALID_PLAYBACK_UNAUTHENTICATED"
+        and report["candidate_mng_integrity_verified"]
+        and report["capture_frame_count_matches_request"]
+        and report["process_exit_code"] == 0
+        and not report["process_timed_out"]
+    ) else 2
 
 
 if __name__ == "__main__":
