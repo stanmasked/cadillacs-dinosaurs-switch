@@ -3,7 +3,7 @@
 ## What this measures
 
 The code-only Windows MAME 0.106 runtime built from the pinned historical
-source now supports opt-in -mngcounttrace 1 alongside Stage286's bounded
+source now supports opt-in -mngcounttrace alongside Stage286's bounded
 -mngstartframe/-mngframes capture.
 
 The source-anchored Stage290 instrumentation counts two events **inside the
