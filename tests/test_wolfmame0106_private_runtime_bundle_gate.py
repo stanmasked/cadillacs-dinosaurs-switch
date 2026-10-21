@@ -189,6 +189,52 @@ class RuntimeBundleTests(unittest.TestCase):
         self.assertEqual(json.loads(bad.read_text())["status"],
                          "BLOCKED_PRIVATE_RUNTIME_BUNDLE_INCONSISTENT")
 
+    def test_actual_historical_windows_artifact_binary_sha256_manifest(self):
+        # Real Stage297 artifact uses the GNU sha256sum "-b" output form:
+        # exactly 64 lowercase hex digits, space, literal *, filename.
+        path = self.bundle / "SHA256SUMS.txt"
+        entries = []
+        for row in path.read_text().splitlines():
+            self.assertRegex(row, r"^[0-9a-f]{64}  [a-zA-Z0-9_.-]+$")
+            entries.append(row[:65] + "*" + row[66:])
+        path.write_text("\n".join(entries) + "\n")
+        self.assertEqual(self.verify()["status"], gate294.STATUS)
+        self.assertEqual(
+            gate294._manifest(self.bundle)["mame0106.exe"],
+            hashlib.sha256(self.exe.read_bytes()).hexdigest())
+
+    def test_mixed_gnu_binary_and_text_manifest_rows(self):
+        path = self.bundle / "SHA256SUMS.txt"
+        rows = path.read_text().splitlines()
+        rows[0] = rows[0][:65] + "*" + rows[0][66:]
+        path.write_text("\n".join(rows) + "\n")
+        self.assertEqual(self.verify()["status"], gate294.STATUS)
+
+    def test_manifest_disallows_unmarked_or_wrong_binary_mode(self):
+        path = self.bundle / "SHA256SUMS.txt"
+        first = path.read_text().splitlines()
+        for replacement in (
+            first[0][:65] + "x" + first[0][66:],
+            first[0][:64] + "*"+ first[0][66:],
+            first[0][:65] + "*/tmp/rom.zip",
+            first[0][:65] + "*../private-dino.zip",
+            first[0][:65] + "*mame0106.exe backup",
+        ):
+            with self.subTest(replacement[-20:]):
+                altered = first.copy()
+                altered[0] = replacement
+                path.write_text("\n".join(altered) + "\n")
+                with self.assertRaisesRegex(ValueError, "SHA256SUMS"):
+                    self.verify()
+
+    def test_binary_checksum_corruption_is_not_hidden_by_marker(self):
+        path = self.bundle / "SHA256SUMS.txt"
+        rows = path.read_text().splitlines()
+        rows[0] = ("0" * 64) + " *" + rows[0][66:]
+        path.write_text("\n".join(rows) + "\n")
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            self.verify()
+
     def test_native_windows_crlf_cli_captures_allowed(self):
         for filename in ("mame0106-help.txt", "mame0106-showconfig.txt",
                          "dino-driver.xml"):
