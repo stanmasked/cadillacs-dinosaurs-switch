@@ -50,6 +50,12 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
         boundary_held_jump=sum(
             not (input_bytes[i-1]&32) and not (input_bytes[i]&32)
             for i in range(round_frames,len(input_bytes),round_frames))
+        expected_attack_edges=sum(
+            not (byte&16) and (i==0 or bool(input_bytes[i-1]&16))
+            for i,byte in enumerate(input_bytes))
+        expected_jump_edges=sum(
+            not (byte&32) and (i==0 or bool(input_bytes[i-1]&32))
+            for i,byte in enumerate(input_bytes))
         outcome={}
         for mode in ("normal","invented_sparring"):
             records=[]
@@ -65,12 +71,17 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
                     item.get("sparring_mode") is not (mode=="invented_sparring")):
                     raise ValueError("bad native input receipt")
                 records.append(item)
+            if (sum(i["attack_press_edges"] for i in records)!=expected_attack_edges or
+                sum(i["jump_press_edges"] for i in records)!=expected_jump_edges):
+                raise ValueError("round boundaries changed authentic P1 press-edge totals")
             hash_digest=hashlib.sha256(
                 (";".join(i["state_digest_fnv64"] for i in records)).encode("ascii")
             ).hexdigest()
             outcome[mode]={
                 "rounds":len(records),
                 "records":sum(i["nominal_input_records"] for i in records),
+                "nominal_attack_press_edges":expected_attack_edges,
+                "nominal_jump_press_edges":expected_jump_edges,
                 "rounds_with_swings":sum(i["actual_training_swings"]>0 for i in records),
                 "rounds_with_jumps":sum(i["actual_training_jumps"]>0 for i in records),
                 "rounds_with_hits":sum(i["successful_training_hits"]>0 for i in records),
