@@ -25,15 +25,17 @@ ORIGINAL_LINE = (
 )
 ROM_NAME = "d26-01.bin"
 ROM_BYTES = 0x2000
-# A synthetic Z80 program, disabling interrupts and repeatedly changing a
-# mapped video RAM byte at 0xa000. It is not derived from any original game.
+# A synthetic Z80 program repeatedly changing a VISIBLE video RAM byte at
+# 0xa200. Minivader vidhrdw maps offset / 32 to y, and visible y starts
+# at 16: 0xa000 would be y=0 and produce a falsely static MNG.
+# It is not derived from any original game.
 # 0000: DI
-# 0001: LD HL,0xa000
+# 0001: LD HL,0xa200
 # 0004: LD A,0x01
 # 0006: LD (HL),A
 # 0007: INC A
 # 0008: JP 0006
-SYNTHETIC_Z80_PROGRAM = bytes.fromhex("f3 21 00 a0 3e 01 77 3c c3 06 00")
+SYNTHETIC_Z80_PROGRAM = bytes.fromhex("f3 21 00 a2 3e 01 77 3c c3 06 00")
 
 
 def generate(root, out_rom_root):
