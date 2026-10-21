@@ -1,7 +1,9 @@
 diff --git a/src/video.h b/src/video.h
 --- a/src/video.h
 +++ b/src/video.h
-@@ -139,6 +139,8 @@
+@@ -137,6 +137,8 @@
+ void save_screen_snapshot(mame_bitmap *bitmap);
+ 
  /* Movie recording */
 +extern int mng_capture_start_frame;
 +extern int mng_capture_frame_count;
@@ -11,9 +13,7 @@ diff --git a/src/video.h b/src/video.h
 diff --git a/src/video.c b/src/video.c
 --- a/src/video.c
 +++ b/src/video.c
-@@ -62,6 +62,9 @@
- static performance_info performance;
- 
+@@ -64,6 +64,9 @@
  /* movie file */
  static mame_file *movie_file = NULL;
  static int movie_frame = 0;
@@ -23,15 +23,15 @@ diff --git a/src/video.c b/src/video.c
  
  /* misc other statics */
  static UINT32 leds_status;
-@@ -1030,6 +1033,7 @@
+@@ -1031,6 +1034,7 @@
+ 		movie_file = mame_fopen_next(FILETYPE_MOVIE);
  
  	movie_frame = 0;
 +	movie_frames_written = 0;
  }
  
  
-@@ -1064,13 +1068,25 @@
- void record_movie_frame(mame_bitmap *bitmap)
+@@ -1065,11 +1069,27 @@
  {
  	if (movie_file != NULL && bitmap != NULL)
  	{
@@ -64,7 +64,7 @@ diff --git a/src/video.c b/src/video.c
 diff --git a/src/windows/video.c b/src/windows/video.c
 --- a/src/windows/video.c
 +++ b/src/windows/video.c
-@@ -222,6 +222,8 @@
+@@ -223,6 +223,8 @@
  	{ "effect", NULL, rc_string, &effect, "none", 0, 0, decode_effect, "specify the blitting effect" },
  	{ "screen_aspect", NULL, rc_string, &aspect, "4:3", 0, 0, decode_aspect, "specify an alternate monitor aspect ratio" },
  	{ "mngwrite", NULL, rc_string, &mngwrite, NULL, 0, 0, NULL, "save video in specified mng file" },
