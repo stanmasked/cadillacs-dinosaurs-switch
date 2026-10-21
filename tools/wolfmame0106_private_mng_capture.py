@@ -158,7 +158,10 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
                 raise ValueError("staging must be outside repository")
             inp_dir = work / "inp"
             inp_dir.mkdir(mode=0o700)
-            for folder in ("cfg", "nvram", "diff", "hi"):
+            # Historical MAME writes FILETYPE_MOVIE under its MNG
+            # output directory and appends the .mng extension. Pin that
+            # directory to the private workspace instead of trusting user INI.
+            for folder in ("cfg", "nvram", "diff", "hi", "mng"):
                 (work / folder).mkdir(mode=0o700)
             _private_copy(inp, inp_dir / "dino.inp", MAX_INP_BYTES)
             _private_copy(wlf, inp_dir / "dino.wlf", MAX_WLF_BYTES)
@@ -168,6 +171,7 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
                 str(Path(emulator).resolve()),
                 "dino", "-playback", "dino",
                 "-rompath", str(Path(rom_dir).resolve()),
+                "-mng_directory", str(work / "mng"),
                 "-frames_to_run", str(frames),
                 "-mngwrite", CAPTURE_BASENAME,
             ]
@@ -179,10 +183,9 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, seconds=120,
                 report["status"] = "BLOCKED_PRIVATE_PROCESS_SPAWN_FAILED"
                 return report
 
-            # Upstream MAME 0.106's FILETYPE_MOVIE uses its current working
-            # directory when no movie path is configured; the temp cwd is
-            # isolated and destroyed on return.
-            candidate = work / (CAPTURE_BASENAME + ".mng")
+            # In upstream MAME 0.106, FILETYPE_MOVIE uses the configured
+            # mng_directory and appends the .mng extension to the basename.
+            candidate = work / "mng" / (CAPTURE_BASENAME + ".mng")
             if candidate.is_symlink() or not candidate.is_file():
                 report["status"] = "CAPTURE_FILE_NOT_CREATED"
                 return report
