@@ -29,6 +29,28 @@ static int hex_digit(char x) {
     if(x>='A' && x<='F') return x-'A'+10;
     return -1;
 }
+/* Stage277: portable, canonical hash of all simulation fields;
+ * no compiler-dependent struct padding, no original ROM contents. */
+static uint64_t mix_full_state(uint64_t h,const DinoArena *a) {
+    const uint32_t words[]={
+        (uint32_t)a->x,(uint32_t)a->y,(uint32_t)a->z,(uint32_t)a->vz,
+        (uint32_t)a->dummy_x,(uint32_t)a->dummy_y,
+        (uint32_t)a->ticks,(uint32_t)a->successful_hits,
+        (uint32_t)a->facing_right,(uint32_t)a->dummy_hp,
+        (uint32_t)a->dummy_hitstun,(uint32_t)a->attack_frames,
+        (uint32_t)a->attack_cooldown,(uint32_t)a->sparring,
+        (uint32_t)a->player_hp,(uint32_t)a->player_hitstun,
+        (uint32_t)a->player_invuln,(uint32_t)a->dummy_windup,
+        (uint32_t)a->dummy_cooldown,(uint32_t)a->dummy_attack_frames,
+        (uint32_t)a->dummy_facing_right,(uint32_t)a->player_hits_taken,
+        (uint32_t)a->player_moving,(uint32_t)a->dummy_moving,
+        (uint32_t)a->combo_hits,(uint32_t)a->combo_timer,
+        (uint32_t)a->finisher_flash,(uint32_t)a->dummy_impact_flash,
+        (uint32_t)a->player_impact_flash,(uint32_t)a->events
+    };
+    for(size_t i=0;i<sizeof(words)/sizeof(words[0]);i++) h=mix(h,words[i]);
+    return h;
+}
 int main(int argc,char **argv) {
     int spar=0,seen_prior=0;
     uint8_t prior=255u;
@@ -55,6 +77,7 @@ int main(int argc,char **argv) {
     uint32_t previous=mapping(prior),frames=0,presses_attack=0,presses_jump=0;
     uint32_t live_attacks=0,live_jumps=0;
     uint64_t digest=UINT64_C(14695981039346656037);
+    uint64_t full_state_digest=UINT64_C(14695981039346656037);
     unsigned char input[32768];
     for(;;) {
         size_t n=fread(input,1,sizeof(input),stdin);
@@ -80,6 +103,7 @@ int main(int argc,char **argv) {
             digest=mix(digest,(uint32_t)arena.z);
             digest=mix(digest,(uint32_t)arena.successful_hits);
             digest=mix(digest,(uint32_t)arena.events);
+            full_state_digest=mix_full_state(full_state_digest,&arena);
             frames++;
         }
         if(n<sizeof(input)) {
@@ -98,10 +122,10 @@ int main(int argc,char **argv) {
            "\"actual_training_swings\":%u,\"actual_training_jumps\":%u,"
            "\"player_hp\":%u,\"target_hp\":%u,"
            "\"successful_training_hits\":%u,\"player_hits_taken\":%u,"
-           "\"state_digest_fnv64\":\"%016llx\"}\n",
+           "\"state_digest_fnv64\":\"%016llx\",\"full_state_digest_fnv64\":\"%016llx\",\"full_state_fields\":30}\n",
            spar?"true":"false",frames,presses_attack,presses_jump,
            live_attacks,live_jumps,arena.player_hp,arena.dummy_hp,
            arena.successful_hits,arena.player_hits_taken,
-           (unsigned long long)digest);
+           (unsigned long long)digest,(unsigned long long)full_state_digest);
     return 0;
 }
