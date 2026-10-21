@@ -89,4 +89,3 @@ jobs:
             tools/cps1_scene_export.py
             tools/cps1_private_native_tile_parity.py
             tools/cps1_private_scene_compositor_parity.py
-
