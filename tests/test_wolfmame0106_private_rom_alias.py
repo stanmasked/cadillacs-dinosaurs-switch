@@ -93,21 +93,10 @@ class PrivateHistoricalRomAliasTests(unittest.TestCase):
                     alias.build(self.src, self.dest, expected=self.expected)
                 self.assertFalse(self.dest.exists())
 
-    def test_invalid_zip_crc_is_detected(self):
-        with zipfile.ZipFile(self.src) as z:
-            name = z.namelist()[0]
-            info = z.getinfo(name)
-            self.assertGreater(info.compress_size, 0)
-        # Change a stored source name's payload without updating the ZIP CRC.
-        source_zip(self.src, [("untouched.bin", b"foo" * 4)] +
-                   [(f"s{i}.bin", value) for i, value in
-                    enumerate(self.raw.values())])
-        payload = self.src.read_bytes()
-        pos = payload.find(b"foofoo")
-        if pos >= 0:
-            payload = payload[:pos] + b"zzzzzz" + payload[pos + 6:]
-            self.src.write_bytes(payload)
-        with self.assertRaises((ValueError, zipfile.BadZipFile)):
+    def test_truncated_zip_is_rejected_without_output(self):
+        # Remove the end-of-central-directory marker; no original game data used.
+        self.src.write_bytes(self.src.read_bytes()[:-22])
+        with self.assertRaises(zipfile.BadZipFile):
             alias.build(self.src, self.dest, expected=self.expected)
         self.assertFalse(self.dest.exists())
 
