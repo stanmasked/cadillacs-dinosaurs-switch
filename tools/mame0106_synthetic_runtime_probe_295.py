@@ -126,7 +126,7 @@ def probe(executable, rom_root):
         # the artificial Minivader CPU; it is not the user's original INP.
         replay = base + [
             "-playback", "test295", "-mngwrite", "test295-replay",
-            "-mngstartframe", "10", "-mngframes", "24", "-mngcounttrace", "1",
+            "-mngstartframe", "10", "-mngframes", "24", "-mngcounttrace",
         ]
         code, _ = _invoke(executable, replay, workspace)
         mng_path = workspace / "test295-replay.mng"
