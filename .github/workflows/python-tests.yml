@@ -126,10 +126,22 @@ jobs:
         run: |
           set -euo pipefail
           cd upstream-mame
+          # Modern MinGW's DirectDraw headers renamed the numbered-union macro.
+          # Restore the alias expected by this 2006 source tree as a tiny,
+          # recorded build-only patch; no gameplay code or ROM data is touched.
+          cat >> src/windows/winprefix.h <<'EOF'
+          #ifndef DUMMYUNIONNAMEN
+          #define DUMMYUNIONNAMEN(n) DUMMYUNIONNAME##n
+          #endif
+          EOF
+          git diff --check
+          git diff -- src/windows/winprefix.h > ../runtime-artifact/mame0106-build-compat.patch
+          test -s ../runtime-artifact/mame0106-build-compat.patch
+          printf 'build_compat_patch=mame0106-build-compat.patch\n' >> ../source-pin.txt
           # SYMBOLS=1 avoids the 2006 makefile's -Werror default, which is
           # incompatible with diagnostics from current MinGW compilers.
-          # Override the legacy NASM executable name without enabling the old Cygwin
-          # mode, which adds -mno-cygwin (removed from modern MinGW GCC).
+          # Override ASM directly; do not set COMPILESYSTEM_CYGWIN because that
+          # activates the obsolete -mno-cygwin flag removed from modern MinGW.
           make -f makefile TARGET=mame MAMEOS=windows ASM=@nasm SYMBOLS=1 -j2
           test -s mame.exe
           objdump -f mame.exe | grep -q 'pei-i386'
