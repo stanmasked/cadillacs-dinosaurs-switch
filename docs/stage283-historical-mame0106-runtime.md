@@ -21,11 +21,12 @@ that workflow is available on the default branch. It builds a 32-bit Windows
 executable with MinGW from that source. The legacy makefile's old
 `COMPILESYSTEM_CYGWIN` option enables `-mno-cygwin`, which modern MinGW no
 longer supports; the build therefore overrides the NASM executable name
-without enabling that obsolete flag. The upstream source itself is not patched.
+without enabling that obsolete flag. The build applies only the compatibility patch listed in the artifact; the patch is preserved alongside the pristine source archive so the build can be reconstructed. No game-emulation logic is changed.
 The artifact contains:
 
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
-- `mame0106-source.zip` — the corresponding pinned source tree;
+- `mame0106-source.zip` — the pinned upstream source tree;
+- `mame0106-build-compat.patch` — a small documented compatibility patch for the old DirectDraw union macro expected by the 2006 source and removed from current MinGW headers;
 - `COPYING` — upstream licence text;
 - `source-pin.txt` and `SHA256SUMS.txt` — source and binary provenance;
 - `runtime-status.txt` — explicit limits of the artifact.
