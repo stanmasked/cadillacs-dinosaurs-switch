@@ -61,7 +61,7 @@ jobs:
   build-upstream-mame-0106:
     # Isolate the slow historical build from the main Python CI concurrency
     # group. This branch-only gate keeps unrelated PRs from compiling MAME 0.106.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290' || github.head_ref == 'feature/mame0106-synthetic-z80-smoke-295')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290' || github.head_ref == 'feature/mame0106-synthetic-z80-smoke-295' || github.head_ref == 'feature/mame0106-packed-indexed-mng-296')) }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
