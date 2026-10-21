@@ -5,7 +5,7 @@ on:
     paths:
       - 'source/**'
       - 'Makefile'
-      - 'mame0106-windowed-mng-capture.patch'
+      - 'mame0106-windowed-mng-capture.patch.txt'
       - '.github/workflows/switch-bootstrap.yml'
   pull_request:
     # Verify the NRO on every code-or-test PR, including diagnostic-only
@@ -15,7 +15,7 @@ on:
       - 'Makefile'
       - 'tools/**'
       - 'tests/**'
-      - 'mame0106-windowed-mng-capture.patch'
+      - 'mame0106-windowed-mng-capture.patch.txt'
       - '.github/workflows/switch-bootstrap.yml'
   workflow_dispatch:
 
@@ -93,7 +93,7 @@ jobs:
           # Avoid Windows autocrlf changing historical source lines before patching.
           git -C upstream-mame config core.autocrlf false
           git -C upstream-mame checkout-index --all --force
-          git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch
+          git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame diff --check
           printf 'window_capture_patch=mame0106-windowed-mng-capture.patch\n' >> source-pin.txt
 
