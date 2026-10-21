@@ -120,7 +120,7 @@ jobs:
           printf 'help_smoke_test=passed\n' >> ../source-pin.txt
           # Also enumerate the driver table without loading any game ROMs.
           ./mame.exe -listxml > ../runtime-artifact/dino-driver.xml
-          grep -q '<machine name="dino"' ../runtime-artifact/dino-driver.xml
+          grep -q '<game name="dino"' ../runtime-artifact/dino-driver.xml
           printf 'listxml_smoke_test=passed\ndino_driver_listed=yes\n' >> ../source-pin.txt
           cp mame.exe ../runtime-artifact/mame0106.exe
           # The mame0106 tree has docs/license.txt, not a COPYING file.
