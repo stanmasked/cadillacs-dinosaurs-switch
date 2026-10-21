@@ -117,7 +117,7 @@ class ExhaustiveCPS1Tiles306Tests(unittest.TestCase):
                     "original_rom_or_derived_pixel_bytes_exported"):
             self.assertIs(d[key],False)
         self.assertNotIn(str(self.root),json.dumps(d))
-        self.assertNotIn("sha1",json.dumps(d))
+        self.assertNotRegex(json.dumps(d), r"(?i)\b[0-9a-f]{40}\b")
 
     def test_private_gate_requires_complete_source_rom_hashes_before_compile(self):
         called=[]
