@@ -32,9 +32,12 @@ the repository's tools:
       --out C:\private\audits\stage285.json
 
 The runner copies the input pair byte-for-byte into a temporary private
-workspace, runs the dino playback command with -frames_to_run 121 and
--mngwrite stage285, then audits the produced MNG before optional private
-retention. The working directory is temporary and removed after the run.
+workspace, creates a private MNG output directory, and explicitly sets
+-mng_directory to that directory. It runs the dino playback command with
+-frames_to_run 121 and -mngwrite stage285. Historical MAME 0.106 appends
+the .mng extension and uses the configured MNG directory, so the runner
+audits mng/stage285.mng before optional private retention. The working
+directory is temporary and removed after the run.
 The raw emulator stdout/stderr are discarded; the report does not contain
 private paths, raw frames or input events. The report file is exclusive,
 private, and mode 0600. The optional MNG output is also exclusive and mode
