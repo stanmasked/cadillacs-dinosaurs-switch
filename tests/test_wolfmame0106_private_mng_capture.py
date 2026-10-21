@@ -100,6 +100,10 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         result = self.run_capture()
         self.assertEqual(result["status"], "CANDIDATE_MNG_VALID_PLAYBACK_UNAUTHENTICATED")
         self.assertTrue(result["private_input_staging_byte_identical"])
+        self.assertEqual(result["private_inp_sha256"],
+                         hashlib.sha256(self.inp.read_bytes()).hexdigest())
+        self.assertEqual(result["private_wlf_sha256"],
+                         hashlib.sha256(self.wlf.read_bytes()).hexdigest())
         self.assertTrue(result["candidate_mng_integrity_verified"])
         self.assertEqual(result["capture_mng_byte_count"], len(candidate_mng(121)))
         self.assertEqual(result["capture_mng_sha256"],
@@ -282,6 +286,8 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         result = self.run_capture(inp=alias)
         self.assertEqual(result["status"], "BLOCKED_PRIVATE_STAGING_OR_CAPTURE_AUDIT_FAILED")
         self.assertFalse(result["private_input_staging_byte_identical"])
+        self.assertIsNone(result["private_inp_sha256"])
+        self.assertIsNone(result["private_wlf_sha256"])
 
     def test_report_has_no_private_path(self):
         result = self.run_capture()
