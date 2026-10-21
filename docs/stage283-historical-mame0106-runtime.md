@@ -38,7 +38,8 @@ The artifact contains:
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
 - `mame0106-source.zip` — the pinned upstream source tree;
 - `mame0106-build-compat.patch` — a small documented compatibility patch for the old DirectDraw union macro expected by the 2006 source and removed from current MinGW headers;
-- `COPYING` — upstream licence text;
+- `MAME-0106-LICENSE.txt` — unmodified upstream `docs/license.txt` (the historical tree does not contain `COPYING`);
+- `mame0106-help.txt` — ROM-free invocation of the compiled emulator's `-help` option, checked for `M.A.M.E. v0.106`;
 - `source-pin.txt` and `SHA256SUMS.txt` — source and binary provenance;
 - `runtime-status.txt` — explicit limits of the artifact.
 
@@ -71,7 +72,7 @@ private workstation for any future ROM audit or replay attempt.
 
 ## Verification
 
-The workflow checks the exact upstream commit before building and refuses
+The workflow verifies that the resulting Windows executable actually starts and identifies itself as `M.A.M.E. v0.106` when invoked with `-help`, without any ROM. It still does not test game execution, recorded input playback, or the WolfMAME executable. The workflow checks the exact upstream commit before building and refuses
 to continue if the tag resolves to another commit. It uploads the source
 alongside the binary and computes SHA-256 checksums for the binary and
 source archive. The artifact is intentionally short-lived and ROM-free.
