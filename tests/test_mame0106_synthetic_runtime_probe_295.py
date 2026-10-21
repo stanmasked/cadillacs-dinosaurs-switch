@@ -1,0 +1,68 @@
+"""Stage295 ROM-free actual-MAME synthetic probe safety/regression tests."""
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from tools import mame0106_synthetic_runtime_probe_295 as probe
+
+
+class SyntheticRealMameProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="dino295-probe-tests-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_missing_valid_rom_loader_response_blocks_gameplay(self):
+        with patch.object(probe, "_invoke", return_value=(0, "not verified")) as stub:
+            result = probe.probe(self.root / "no-mame.exe", self.root)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_ROM_LOADER")
+        self.assertFalse(result["synthetic_minivader_rom_verification"])
+        self.assertFalse(result["original_dino_rom_or_inp_used"])
+        self.assertEqual(stub.call_count, 1)
+
+    def test_accepted_rom_loader_does_not_claim_recording_without_data(self):
+        with patch.object(probe, "_invoke", side_effect=[
+                (0, "romset minivadr is good\n"),
+                (0, "process exited normally\n"),
+        ]) as stub:
+            result = probe.probe(self.root / "synthetic.exe", self.root)
+        self.assertTrue(result["synthetic_minivader_rom_verification"])
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_RECORDING_WINDOW_OR_GUI")
+        self.assertFalse(result["synthetic_mame_recording_executed"])
+        self.assertFalse(result["original_gameplay_verified"])
+        self.assertEqual(stub.call_count, 2)
+
+    def test_nonzero_recording_process_is_not_a_success(self):
+        with patch.object(probe, "_invoke", side_effect=[
+            (0, "romset minivadr is good\n"), (17, "blocked window"),
+        ]):
+            result = probe.probe(self.root / "synthetic.exe", self.root)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_RECORDING_WINDOW_OR_GUI")
+        self.assertFalse(result["synthetic_mame_playback_executed"])
+        self.assertFalse(result["exact_input_video_alignment_verified"])
+
+    def test_trace_requires_exact_callback_count_and_monotonicity(self):
+        path = self.root / "test.csv"
+        header = probe.TRACE_HEAD
+        body = "\n".join(f"{100+i},{101+i},{(101+i)*31}" for i in range(24))
+        path.write_text(header + "\n" + body + "\n")
+        self.assertTrue(probe._check_trace(path, 100, 24))
+        self.assertFalse(probe._check_trace(path, 101, 24))
+        self.assertFalse(probe._check_trace(path, 100, 23))
+        path.write_text(header + "\n" + body.replace("112,113,3503", "112,1,31") + "\n")
+        self.assertFalse(probe._check_trace(path, 100, 24))
+
+    def test_full_probe_does_not_use_or_export_any_original_game_material(self):
+        with patch.object(probe, "_invoke", return_value=(None, "")):
+            result = probe.probe(self.root / "none.exe", self.root)
+        for key in ("original_dino_rom_or_inp_used", "original_gameplay_verified",
+                    "wolfmame_binary_authenticity_verified",
+                    "exact_input_video_alignment_verified",
+                    "physical_nintendo_switch_tested"):
+            self.assertFalse(result[key])
+        self.assertNotIn(str(self.root), str(result))
+
+
+if __name__ == "__main__":
+    unittest.main()
