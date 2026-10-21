@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tools import wolfmame0106_private_mng_capture as capture
 from tools import wolfmame0106_private_mng_audit as mng
@@ -175,6 +175,50 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED_PRIVATE_STAGING_OR_CAPTURE_AUDIT_FAILED")
         self.assertTrue(result["candidate_mng_found"])
         self.assertFalse(result["candidate_mng_integrity_verified"])
+
+    def test_auditor_must_confirm_both_mng_and_embedded_png(self):
+        for bad_key in (
+                "mng_signature_header_end_and_chunk_crcs_valid",
+                "embedded_png_scanlines_and_chunk_crcs_valid"):
+            with self.subTest(bad_key=bad_key):
+                def incomplete_audit(path, minimum_frames):
+                    result = mng.audit(path, minimum_frames)
+                    result[bad_key] = False
+                    return result
+                result = self.run_capture(audit_fn=incomplete_audit)
+                self.assertEqual(
+                    result["status"], "CAPTURE_AUDIT_DID_NOT_CONFIRM_CONTAINER")
+                self.assertFalse(result["candidate_mng_integrity_verified"])
+                self.assertFalse(result["candidate_capture_retained_privately"])
+
+    def test_cli_exit_requires_complete_candidate_window_and_clean_process(self):
+        args = [
+            "--emulator", str(self.emulator), "--rom-dir", str(self.roms),
+            "--inp", str(self.inp), "--wlf", str(self.wlf),
+            "--out", str(self.root / "receipt.json"),
+        ]
+        scenarios = [
+            ("CANDIDATE_MNG_VALID_PLAYBACK_UNAUTHENTICATED", True, True, 0, False, 0),
+            ("CAPTURE_FRAME_COUNT_MISMATCH", True, False, 0, False, 2),
+            ("CANDIDATE_MNG_VALID_BUT_PROCESS_TIMED_OUT", True, True, None, True, 2),
+            ("CANDIDATE_MNG_VALID_BUT_PROCESS_EXIT_NONZERO", True, True, 7, False, 2),
+            ("CAPTURE_AUDIT_DID_NOT_CONFIRM_CONTAINER", False, False, 0, False, 2),
+        ]
+        for status, integrity, count_match, process_exit, timed_out, expected in scenarios:
+            with self.subTest(status=status):
+                report = capture._empty_report(121)
+                report.update(
+                    status=status,
+                    candidate_mng_integrity_verified=integrity,
+                    capture_frame_count_matches_request=count_match,
+                    process_exit_code=process_exit,
+                    process_timed_out=timed_out,
+                )
+                with patch.object(capture, "capture", return_value=report), \
+                        patch.object(capture.gate, "write_private_receipt") as receipt, \
+                        patch("builtins.print"):
+                    self.assertEqual(capture.main(args), expected)
+                    receipt.assert_called_once()
 
     def test_capture_can_be_retained_only_to_explicit_private_path(self):
         target = self.root / "retained.mng"
