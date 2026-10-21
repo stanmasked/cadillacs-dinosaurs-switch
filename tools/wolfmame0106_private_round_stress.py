@@ -70,12 +70,20 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
                     item.get("wolfmame_playback_verified") is not False or
                     item.get("sparring_mode") is not (mode=="invented_sparring")):
                     raise ValueError("bad native input receipt")
+                full_digest=item.get("full_state_digest_fnv64")
+                if (item.get("full_state_fields")!=30 or
+                    not isinstance(full_digest,str) or len(full_digest)!=16 or
+                    any(ch not in "0123456789abcdef" for ch in full_digest)):
+                    raise ValueError("missing or malformed full native combat-state witness")
                 records.append(item)
             if (sum(i["attack_press_edges"] for i in records)!=expected_attack_edges or
                 sum(i["jump_press_edges"] for i in records)!=expected_jump_edges):
                 raise ValueError("round boundaries changed authentic P1 press-edge totals")
             hash_digest=hashlib.sha256(
                 (";".join(i["state_digest_fnv64"] for i in records)).encode("ascii")
+            ).hexdigest()
+            full_digest_sha256=hashlib.sha256(
+                (";".join(i["full_state_digest_fnv64"] for i in records)).encode("ascii")
             ).hexdigest()
             outcome[mode]={
                 "rounds":len(records),
@@ -92,6 +100,8 @@ def run_rounds(input_bytes,compiler,round_frames=1200):
                 "continued_held_attack_edges_suppressed":boundary_held_attack,
                 "continued_held_jump_edges_suppressed":boundary_held_jump,
                 "round_state_digest_sha256":hash_digest,
+                "round_full_state_digest_sha256":full_digest_sha256,
+                "full_state_fields_witnessed":30,
             }
         return outcome
 
