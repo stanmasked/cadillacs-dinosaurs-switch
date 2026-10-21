@@ -46,7 +46,7 @@ artifact upload:
    interactive display; this must be reported as blocked, not success.
 5. If a real synthetic INP was recorded, replay **only that artificial
    recording** in the real MAME with `-mngstartframe 10`,
-   `-mngframes 24` and `-mngcounttrace 1`, then decode the resulting
+   `-mngframes 24` and `-mngcounttrace`, then decode the resulting
    MNG and validate its callback-indexed port read counts.
 6. Emit a single restricted JSON status. Do not upload generated
    recordings, MNGs, original game assets, modified driver executable,
