@@ -17,8 +17,20 @@ import zipfile
 
 try:
     from tools.cps1_gfx import LANES, ROM_SIZE, assemble_gfx
+    from tools import mame0106_private_dino_rom_canonicalize_299 as canonical
 except ModuleNotFoundError:
     from cps1_gfx import LANES, ROM_SIZE, assemble_gfx
+    import mame0106_private_dino_rom_canonicalize_299 as canonical
+
+# Stage299's source-pinned MAME 0.106 dino.zip uses different filenames
+# from the older, content-identical ROM aliases historically used in this
+# graphics importer. Preserve the established ROM order and lane offsets.
+CANONICAL_GFX_LANES = (
+    "cd_gfx01.rom", "cd_gfx03.rom", "cd_gfx02.rom", "cd_gfx04.rom",
+    "cd_gfx05.rom", "cd_gfx07.rom", "cd_gfx06.rom", "cd_gfx08.rom",
+)
+LEGACY_TO_CANONICAL = dict(zip((name for name, _ in LANES),
+                               CANONICAL_GFX_LANES))
 
 TILE_BYTES=128
 TILE_PIXELS=256
@@ -53,16 +65,42 @@ def python_reference_tile(region,code):
 
 
 def read_private_gfx(archive_path):
-    """Bound ZIP extraction to the eight 512-KiB original GFX lanes."""
+    """Import eight original graphics lanes without assuming one ROM naming era.
+
+    Canonical Stage299 dino.zip must pass ALL 16 public source CRC32/SHA-1
+    identities before decoding even one byte. Older legacy-named ZIPs keep
+    the established 8-lane reader, but cannot silently mix name schemes.
+    The source ROM bytes never appear in reports or output artifacts.
+    """
     with zipfile.ZipFile(archive_path) as z:
-        names=z.namelist()
-        if any(names.count(name)!=1 for name,_ in LANES):
-            raise ValueError('Private graphics ROM lanes absent or ambiguous')
-        if any(z.getinfo(name).file_size!=ROM_SIZE for name,_ in LANES):
-            raise ValueError('Private graphics ROM lane length mismatch')
-        region=assemble_gfx(z.read)
-    if len(region)!=GFX_BYTES:
-        raise ValueError('Assembled private graphics size invalid')
+        names = z.namelist()
+        old_names = tuple(name for name, _ in LANES)
+        old_present = all(names.count(name) == 1 for name in old_names)
+        new_present = all(names.count(name) == 1 for name in CANONICAL_GFX_LANES)
+        if old_present and new_present:
+            raise ValueError("Mixed or ambiguous private graphics ROM aliases")
+        if new_present:
+            canonical_names = {name for name, *_ in canonical.MANIFEST}
+            if len(names) != len(canonical_names) or set(names) != canonical_names:
+                raise ValueError("Canonical dino ZIP has extra or missing ROM names")
+            checked = canonical.verify_archive(archive_path)
+            if (checked.get("status") != canonical.MATCH or
+                    checked.get("required_rom_members_matched_by_crc32_sha1")
+                    != len(canonical.MANIFEST) or
+                    checked.get("required_payloads_crc_sha1_integrity_checked") is not True):
+                raise ValueError("Canonical original dino SHA1/CRC verification failed")
+            if any(z.getinfo(name).file_size != ROM_SIZE
+                   for name in CANONICAL_GFX_LANES):
+                raise ValueError("Canonical original graphics ROM length mismatch")
+            region = assemble_gfx(lambda name: z.read(LEGACY_TO_CANONICAL[name]))
+        else:
+            if not old_present:
+                raise ValueError("Private graphics ROM lanes absent or ambiguous")
+            if any(z.getinfo(name).file_size != ROM_SIZE for name in old_names):
+                raise ValueError("Private graphics ROM lane length mismatch")
+            region = assemble_gfx(z.read)
+    if len(region) != GFX_BYTES:
+        raise ValueError("Assembled private graphics size invalid")
     return region
 
 
