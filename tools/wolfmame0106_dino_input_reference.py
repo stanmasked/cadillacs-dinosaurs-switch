@@ -20,7 +20,7 @@ COMMON = {0:"right", 1:"left", 2:"down", 3:"up",
 NAMES = {
     "system": {0:"coin1",1:"coin2",2:"service1",4:"start1",5:"start2"},
     "p1": COMMON, "p2": COMMON,
-    "p3": dict(COMMON, **{6:"coin3",7:"start3"}),
+    "p3": {**COMMON, 6:"coin3", 7:"start3"},
 }
 ALIASES = (
     (("p1", "right"),("p2", "left")),
@@ -63,7 +63,7 @@ def analyze(inp, wlf):
     active_overlap={i:0 for i in range(len(ALIASES))}
     active_union={i:0 for i in range(len(ALIASES))}
     action_buckets={}
-    variable=[]
+    variable=set()
     first_record=None
     with inp.open("rb") as handle:
         handle.seek(HEADER_BYTES)
@@ -75,7 +75,7 @@ def analyze(inp, wlf):
                 first_record=raw
             for offset in range(FRAME_BYTES):
                 if raw[offset]!=first_record[offset]:
-                    variable.append(offset)
+                    variable.add(offset)
             current={}
             for port,name,bit in signals:
                 pressed=(raw[PORTS[port]]&(1<<bit))==0
@@ -120,7 +120,7 @@ def analyze(inp, wlf):
         "frames":frames,"wall_clock_duration_seconds":elapsed,
         "approximate_frame_rate":FPS_APPROX,
         "port_byte_offsets":PORTS,
-        "variable_byte_offsets":sorted(set(variable)),
+        "variable_byte_offsets":sorted(variable),
         "total_press_onsets":sum(edges.values()),
         "signals":[{"port":port,"name":name,"bit":bit,
                     "held_frames":held[(port,name)],
