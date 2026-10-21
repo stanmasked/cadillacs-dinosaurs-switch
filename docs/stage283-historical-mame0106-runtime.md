@@ -37,7 +37,8 @@ The artifact contains:
 
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
 - `mame0106-source.zip` — the pinned upstream source tree;
-- `dino-driver.xml` — output from a ROM-free `-listxml` smoke test confirming the executable exposes the `dino` driver;
+- `mame0106-help.txt` — captured help output from the executable's first command-line smoke test;
+- `dino-driver.xml` — output from a second ROM-free `-listxml` smoke test confirming the executable exposes the `dino` driver;
 - `mame0106-build-compat.patch` — a small documented compatibility patch for the old DirectDraw union macro expected by the 2006 source and removed from current MinGW headers;
 - `MAME-0106-LICENSE.txt` — unmodified upstream `docs/license.txt` (the historical tree does not contain `COPYING`);
 - `mame0106-help.txt` — ROM-free invocation of the compiled emulator's `-help` option, checked for `M.A.M.E. v0.106`;
@@ -75,8 +76,8 @@ private workstation for any future ROM audit or replay attempt.
 
 The workflow verifies that the resulting Windows executable actually starts and identifies itself as `M.A.M.E. v0.106` when invoked with `-help`, without any ROM. It still does not test game execution, recorded input playback, or the WolfMAME executable. The workflow checks the exact upstream commit before building and refuses
 to continue if the tag resolves to another commit. It uploads the source
-alongside the binary and computes SHA-256 checksums for the binary and
-source archive. The artifact is intentionally short-lived and ROM-free.
+alongside the binary and computes SHA-256 checksums for the binary, source archive, compatibility
+patch, help output, and driver-list output. The artifact is intentionally short-lived and ROM-free.
 
 Stage283 is stacked on Draft PR #90. The build job is deliberately scoped
 so unrelated PRs do not pay the cost of compiling this 2006 codebase. It does
