@@ -66,7 +66,7 @@ def main():
     if mode == "corrupt-mng":
         data = data[:-4] + b"\x00\x00\x00\x00"
     Path(name + ".mng").write_bytes(data)
-    if "-mngcounttrace" in args and option(args, "-mngcounttrace") == "1":
+    if "-mngcounttrace" in args:
         if mode != "no-trace":
             rows = ["callback_index,first_port_reads,playback_words"]
             for frame in range(start, start + count):
