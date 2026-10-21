@@ -11,6 +11,20 @@ to the source-pinned upstream tree, builds the Windows runtime, and checks
 that both options appear in `-showconfig`. This is a **custom-patched MAME
 0.106 runtime**, not an attested WolfMAME binary.
 
+## Source-grounded INP byte layout
+
+The source-pinned upstream MAME 0.106 `src/inptport.c` writes each input-port
+value as a big-endian 32-bit integer. In `src/drivers/cps1.c`, dino declares
+IN0, DSWA, DSWB, DSWC, IN1 and IN2 in that order. This explains the byte lanes
+used by the aggregate-only analyzer: system controls at byte 3; P1 at byte 19
+(low byte of IN1); P2 at byte 18 (high byte of IN1); and P3 at byte 23 (low
+byte of IN2).
+
+This grounds the offsets to the upstream MAME source, but it does not prove
+that WolfMAME-specific code is identical, nor does it prove input/video
+alignment or distinct human players. The private playback check remains
+necessary.
+
 ## Required private workstation inputs
 
 Keep these outside the public repository:
