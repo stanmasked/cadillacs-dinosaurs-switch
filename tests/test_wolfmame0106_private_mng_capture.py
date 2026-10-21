@@ -196,7 +196,7 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertFalse(result["candidate_capture_retained_privately"])
 
     def test_invalid_frame_or_timeout_limits_refused(self):
-        for frames, seconds in ((1, 5), (3602, 5), (True, 5), (121, 0), (121, 301)):
+        for frames, seconds in ((1, 5), (3602, 5), (True, 5), (121, 0), (121, 1801)):
             with self.subTest(frames=frames, seconds=seconds), self.assertRaises(ValueError):
                 self.run_capture(frames=frames, seconds=seconds)
 
