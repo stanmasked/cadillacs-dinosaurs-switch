@@ -61,7 +61,7 @@ jobs:
   build-upstream-mame-0106:
     # Isolate the slow historical build from the main Python CI concurrency
     # group. This branch-only gate keeps unrelated PRs from compiling MAME 0.106.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290')) }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -76,6 +76,7 @@ jobs:
           install: >-
             git
             make
+            python
             mingw-w64-i686-gcc
             mingw-w64-i686-binutils
             nasm
@@ -103,7 +104,12 @@ jobs:
           git -C upstream-mame apply --check ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch.txt
           git -C upstream-mame diff --check
+          # Stage290 is anchored to the exact upstream tree after Stage286.
+          # The trace contains ONLY monotone input-read/video-callback counters.
+          python tools/mame0106_stage290_trace_patch.py --root upstream-mame
+          git -C upstream-mame diff --check
           printf 'window_capture_patch=mame0106-windowed-mng-capture.patch\n' >> source-pin.txt
+          printf 'inprocess_counter_trace=enabled_on_request\n' >> source-pin.txt
 
       - name: Build upstream MAME 0.106 command-line runtime
         shell: msys2 {0}
@@ -134,7 +140,13 @@ jobs:
           for source in src/video.c src/video.h src/windows/video.c src/windows/video.h; do
             grep -Fq "diff --git a/${source} b/${source}" ../runtime-artifact/mame0106-windowed-mng-capture.patch
           done
+          git diff -- src/inptport.c src/video.c src/video.h src/windows/video.c src/windows/video.h > ../runtime-artifact/mame0106-inprocess-count-trace-combined.patch
+          test -s ../runtime-artifact/mame0106-inprocess-count-trace-combined.patch
+          for source in src/inptport.c src/video.c src/video.h src/windows/video.c src/windows/video.h; do
+            grep -Fq "diff --git a/${source} b/${source}" ../runtime-artifact/mame0106-inprocess-count-trace-combined.patch
+          done
           printf 'build_compat_patch=mame0106-build-compat.patch\n' >> ../source-pin.txt
+          printf 'inprocess_counter_source_patch=mame0106-inprocess-count-trace-combined.patch\n' >> ../source-pin.txt
           # SYMBOLS=1 avoids old -Werror; ASM override avoids removed -mno-cygwin.
           make -f makefile TARGET=mame MAMEOS=windows ASM=@nasm SYMBOLS=1 -j2
           test -s mame.exe
@@ -151,6 +163,7 @@ jobs:
           grep -qi 'mngwrite' ../runtime-artifact/mame0106-showconfig.txt
           grep -qi 'mngstartframe' ../runtime-artifact/mame0106-showconfig.txt
           grep -qi 'mngframes' ../runtime-artifact/mame0106-showconfig.txt
+          grep -qi 'mngcounttrace' ../runtime-artifact/mame0106-showconfig.txt
           grep -qi 'throttle' ../runtime-artifact/mame0106-showconfig.txt
           printf 'playback_and_windowed_mng_options_smoke_test=passed\n' >> ../source-pin.txt
           # Also enumerate the driver table without loading any game ROMs.
@@ -162,7 +175,7 @@ jobs:
           cp docs/license.txt ../runtime-artifact/MAME-0106-LICENSE.txt
           git archive --format=zip --prefix=mame0106/ HEAD > ../runtime-artifact/mame0106-source.zip
           cd ../runtime-artifact
-          sha256sum mame0106.exe mame0106-source.zip mame0106-build-compat.patch mame0106-windowed-mng-capture.patch dino-driver.xml mame0106-help.txt mame0106-showconfig.txt > SHA256SUMS.txt
+          sha256sum mame0106.exe mame0106-source.zip mame0106-build-compat.patch mame0106-windowed-mng-capture.patch mame0106-inprocess-count-trace-combined.patch dino-driver.xml mame0106-help.txt mame0106-showconfig.txt > SHA256SUMS.txt
           cp ../source-pin.txt .
           cat > runtime-status.txt <<'EOF'
           Runtime source: mamedev/historic-mame tag mame0106
@@ -176,6 +189,7 @@ jobs:
           ROM files included: NO
           Original game frames included: NO
           Bounded MNG frame-window options: YES (source patch included)
+          In-process input/video count trace: YES (opt-in, no private CI playback)
           Input-to-video frame alignment independently verified: NO
           Physical Nintendo Switch tested: NO
           EOF
