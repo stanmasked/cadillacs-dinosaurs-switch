@@ -101,7 +101,11 @@ jobs:
           #endif
           EOF
           perl -0pi -e 's/#define WIN32_LEAN_AND_MEAN\n#include <windows\.h>\n\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <ddraw\.h>/#define WIN32_LEAN_AND_MEAN\n#ifdef __GNUC__\n #define NONAMELESSUNION\n#endif\n#include <windows.h>\n#include <ddraw.h>/g' src/windows/wind3d.c src/windows/wind3dfx.c
-          grep -q -B3 '#include <windows.h>' src/windows/wind3d.c
+          # The current MinGW d3dtypes.h leaves DUMMYUNIONNAME1..8 as literal
+          # members of D3DTLVERTEX. Qualify the seven fields used by MAME's
+          # preprocess vertices; D3DTLVERTEX2 in d3d_extra.h remains unchanged.
+          perl -0pi -e 's/(preprocess_vertex\[[^\]]+\])\.sx/$1.DUMMYUNIONNAME1.sx/g; s/(preprocess_vertex\[[^\]]+\])\.sy/$1.DUMMYUNIONNAME2.sy/g; s/(preprocess_vertex\[[^\]]+\])\.rhw/$1.DUMMYUNIONNAME4.rhw/g; s/(preprocess_vertex\[[^\]]+\])\.color/$1.DUMMYUNIONNAME5.color/g; s/(preprocess_vertex\[[^\]]+\])\.specular/$1.DUMMYUNIONNAME6.specular/g; s/(preprocess_vertex\[[^\]]+\])\.tu/$1.DUMMYUNIONNAME7.tu/g; s/(preprocess_vertex\[[^\]]+\])\.tv/$1.DUMMYUNIONNAME8.tv/g' src/windows/wind3d.c
+          grep -q 'preprocess_vertex\[0\]\.DUMMYUNIONNAME1\.sx' src/windows/wind3d.c
           git diff --check
           git diff -- src/windows/winprefix.h src/windows/wind3d.c src/windows/wind3dfx.c > ../runtime-artifact/mame0106-build-compat.patch
           test -s ../runtime-artifact/mame0106-build-compat.patch
