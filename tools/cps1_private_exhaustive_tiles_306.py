@@ -159,7 +159,7 @@ def private_audit(rom, *, verify=canonical.verify_archive,
             or source.get("required_rom_members_matched_by_crc32_sha1")
             != len(canonical.MANIFEST)
             or source.get("required_payloads_crc_sha1_integrity_checked") is not True):
-        raise ValueError("original game ROM provenance checksum gate failed")
+        raise ValueError("original MAME source ROM checksum gate failed")
     gfx = load(rom)
     if len(gfx) != EXPECTED_GFX_BYTES:
         raise ValueError("private canonical CPS-1 graphics region is incomplete")
