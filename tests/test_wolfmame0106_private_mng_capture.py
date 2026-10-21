@@ -1,7 +1,6 @@
 """Stage285 local-only capture orchestration tests; no ROM or game images."""
 import os
 import struct
-import subprocess
 import sys
 import tempfile
 import unittest
