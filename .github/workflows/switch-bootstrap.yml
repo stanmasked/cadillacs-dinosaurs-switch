@@ -15,6 +15,7 @@ on:
       - 'Makefile'
       - 'tools/**'
       - 'tests/**'
+      - 'mame0106-windowed-mng-capture.patch'
       - '.github/workflows/switch-bootstrap.yml'
   workflow_dispatch:
 
@@ -89,9 +90,9 @@ jobs:
           test "$actual" = "$expected"
           printf 'source_repository=https://github.com/mamedev/historic-mame\nsource_tag=mame0106\nsource_commit=%s\n' "$actual" > source-pin.txt
           mkdir -p runtime-artifact
-          git apply ../mame0106-windowed-mng-capture.patch
-          git diff --check
-          printf 'window_capture_patch=mame0106-windowed-mng-capture.patch\n' >> ../source-pin.txt
+          git -C upstream-mame apply ../mame0106-windowed-mng-capture.patch
+          git -C upstream-mame diff --check
+          printf 'window_capture_patch=mame0106-windowed-mng-capture.patch\n' >> source-pin.txt
 
       - name: Build upstream MAME 0.106 command-line runtime
         shell: msys2 {0}
