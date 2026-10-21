@@ -15,12 +15,14 @@ try:
     from . import wolfmame0106_private_dual_trace_consistency as dual
     from . import wolfmame0106_private_window_overlap as overlap
     from . import wolfmame0106_private_runtime_bundle_gate as runtime_gate
+    from . import wolfmame0106_private_active_window_298 as active_window
 except ImportError:
     import wolfmame0106_private_binary_gate as gate
     import wolfmame0106_private_mng_capture as capture
     import wolfmame0106_private_dual_trace_consistency as dual
     import wolfmame0106_private_window_overlap as overlap
     import wolfmame0106_private_runtime_bundle_gate as runtime_gate
+    import wolfmame0106_private_active_window_298 as active_window
 
 SCHEMA = "dino-private-mame0106-two-window-experiment-v1"
 MATCH = "TWO_CAPTURE_PIXEL_AND_COUNT_CONSISTENCY_CANDIDATE_ONLY"
@@ -38,6 +40,9 @@ def _empty_report(start, frames, shift):
         "requested_second_callback_start": start + shift,
         "requested_frames_per_window": frames,
         "requested_overlap_frames": frames - shift,
+        "window_selection_strategy": "manual",
+        "source_inferred_overlap_press_onsets": None,
+        "wolfmame_input_signal_mapping_independently_verified": False,
         "first_capture_complete": False,
         "second_capture_complete": False,
         "cross_capture_evidence_checked": False,
@@ -133,7 +138,8 @@ def _dual_clean(verification):
 def run_experiment(emulator, rom_dir, inp, wlf, output_dir, *,
                    first_start=36000, frames=1200, shift=600, seconds=1800,
                    metadata_fn=gate.private_inputs, capture_fn=capture.capture,
-                   compare_fn=dual.compare):
+                   compare_fn=dual.compare, auto_window=False,
+                   minimum_edges=3, selector_fn=active_window.select):
     """Run two candidate captures and write only bounded private output files.
 
     On downstream failure, keep the first and/or second candidate files
@@ -144,9 +150,26 @@ def run_experiment(emulator, rom_dir, inp, wlf, output_dir, *,
     n, recording_version, _elapsed = metadata_fn(Path(inp), Path(wlf))
     if type(recording_version) is not str or not recording_version.startswith("0.106 "):
         raise ValueError("recording version incompatible with private experiment")
+    auto_edges = None
+    if auto_window:
+        if type(minimum_edges) is not int or not 1 <= minimum_edges <= 64:
+            raise ValueError("invalid private minimum onset count")
+        selection = selector_fn(
+            inp, wlf, frames=frames, shift=shift,
+            minimum_edges=minimum_edges)
+        if (type(selection) is not tuple or len(selection) != 2 or
+                type(selection[0]) is not int or
+                type(selection[1]) is not int or
+                not minimum_edges <= selection[1] <=
+                active_window.MAX_EDGES_PER_RECORD * (frames - shift)):
+            raise ValueError("invalid private source-derived window selection")
+        first_start, auto_edges = selection
     _validate_config(first_start, frames, shift, seconds, n)
     output_dir = _private_fresh_directory(output_dir)
     result = _empty_report(first_start, frames, shift)
+    if auto_window:
+        result["window_selection_strategy"] = "source_inferred_local_inp"
+        result["source_inferred_overlap_press_onsets"] = auto_edges
 
     left = (
         output_dir / "first.mng", output_dir / "first-counts.csv",
@@ -234,6 +257,10 @@ def main(argv=None, *, experiment=run_experiment):
     parser.add_argument("--frames", type=int, default=1200)
     parser.add_argument("--shift", type=int, default=600)
     parser.add_argument("--seconds", type=int, default=1800)
+    parser.add_argument("--auto-window", action="store_true",
+                        help="choose both windows by local inferred input-onset activity")
+    parser.add_argument("--minimum-edges", type=int, default=3,
+                        help="minimum inferred input press transitions within common window")
     args = parser.parse_args(argv)
     try:
         if args.runtime_bundle is not None:
@@ -243,7 +270,8 @@ def main(argv=None, *, experiment=run_experiment):
         report = experiment(
             args.emulator, args.rom_dir, args.inp, args.wlf, args.out_dir,
             first_start=args.first_start, frames=args.frames,
-            shift=args.shift, seconds=args.seconds)
+            shift=args.shift, seconds=args.seconds,
+            auto_window=args.auto_window, minimum_edges=args.minimum_edges)
         status = report["status"]
     except (OSError, ValueError, KeyError, TypeError, UnicodeError):
         status = "BLOCKED_PRIVATE_EXPERIMENT_SETUP"
