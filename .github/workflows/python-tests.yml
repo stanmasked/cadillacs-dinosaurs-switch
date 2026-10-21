@@ -128,8 +128,9 @@ jobs:
           cd upstream-mame
           # SYMBOLS=1 avoids the 2006 makefile's -Werror default, which is
           # incompatible with diagnostics from current MinGW compilers.
-          # COMPILESYSTEM_CYGWIN selects the installed NASM executable name.
-          make -f makefile TARGET=mame MAMEOS=windows COMPILESYSTEM_CYGWIN=1 SYMBOLS=1 -j2
+          # Override the legacy NASM executable name without enabling the old Cygwin
+          # mode, which adds -mno-cygwin (removed from modern MinGW GCC).
+          make -f makefile TARGET=mame MAMEOS=windows ASM=@nasm SYMBOLS=1 -j2
           test -s mame.exe
           objdump -f mame.exe | grep -q 'pei-i386'
           cp mame.exe ../runtime-artifact/mame0106.exe
