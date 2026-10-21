@@ -127,6 +127,26 @@ class WolfMameBinaryGateTests(unittest.TestCase):
         self.assertTrue(receipt["dino_rom_verifyroms_passed"])
         self.assertFalse(receipt["actual_inp_playback_verified"])
 
+    def test_symlink_binary_is_blocked_before_execution(self):
+        link = self.root / "emulator-link"
+        link.symlink_to(self.exe)
+        report = gate.inspect(link, self.roms, self.inp, self.wlf, probe=self.response())
+        self.assertEqual(report["status"], "BLOCKED_NO_EXECUTABLE_WOLFMAME")
+
+    def test_bounded_raw_probe_output_does_not_leak_banner(self):
+        self.exe.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = '-help' ]; then head -c 131073 /dev/zero | tr '\\000' 'x'; exit 0; fi\n"
+            "exit 4\n"
+        )
+        self.exe.chmod(0o700)
+        status, captured, timed_out = gate.bounded_probe(
+            self.exe, ["-help"], self.root, 10,
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(captured, "")
+        self.assertFalse(timed_out)
+
     def test_version_banner_spoof_is_not_provenance(self):
         receipt = self.inspect(probe=self.response())
         self.assertTrue(receipt["emulator_help_reports_wolfmame_0_106"])
