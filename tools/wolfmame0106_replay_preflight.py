@@ -80,46 +80,91 @@ def make_request(plan,anchor=None):
         'physical_switch_verified':False,
     }
 
+MAX_DECODED_PNG_BYTES=64*1024*1024
+PNG_CHANNELS={0:1,2:3,3:1,4:2,6:4}
+
 def png_integrity(raw):
+    """Inspect complete 8-bit noninterlaced PNG scanline structure.
+
+    These checks authenticate well-formed image *bytes*, not what game,
+    emulator, time or input event the pixels depict.
+    """
     if raw[:8]!=PNG_SIG:raise ValueError('invalid PNG signature')
-    pos=8;ihdr=None;idat=[];iend=False
+    pos=8
+    ihdr=None
+    idat=[]
+    seen_palette=False
+    idat_started=False
+    idat_finished=False
+    iend=False
     for _ in range(100000):
         if pos+12>len(raw):raise ValueError('truncated PNG chunk')
         length=struct.unpack('>I',raw[pos:pos+4])[0]
         name=raw[pos+4:pos+8]
-        if length>8*1024*1024 or pos+length+12>len(raw):
-            raise ValueError('bad PNG chunk length')
+        if (length>8*1024*1024 or pos+length+12>len(raw) or
+            len(name)!=4 or any(not(65<=v<=90 or 97<=v<=122) for v in name)):
+            raise ValueError('bad PNG chunk length/type')
         data=raw[pos+8:pos+8+length]
         crc=struct.unpack('>I',raw[pos+8+length:pos+12+length])[0]
         if zlib.crc32(name+data)&0xffffffff!=crc:
             raise ValueError('bad PNG chunk CRC')
         pos+=12+length
+        if ihdr is None and name!=b'IHDR':
+            raise ValueError('PNG must begin with IHDR')
         if name==b'IHDR':
             if ihdr is not None or length!=13:raise ValueError('repeated/invalid IHDR')
             w,h,depth,colour,comp,filt,interlace=struct.unpack('>IIBBBBB',data)
             if not(1<=w<=4096 and 1<=h<=4096 and w*h<=16000000 and
-                   depth==8 and colour in (0,2,3,4,6) and
+                   depth==8 and colour in PNG_CHANNELS and
                    comp==0 and filt==0 and interlace==0):
                 raise ValueError('unsupported PNG dimensions/mode')
             ihdr=(w,h,colour)
+        elif name==b'PLTE':
+            if seen_palette or idat_started or not length or length%3 or length>768:
+                raise ValueError('invalid PNG palette')
+            seen_palette=True
         elif name==b'IDAT':
-            if ihdr is None:raise ValueError('IDAT before IHDR')
+            if idat_finished:raise ValueError('noncontiguous PNG IDAT')
+            idat_started=True
             idat.append(data)
         elif name==b'IEND':
-            if length or pos!=len(raw):raise ValueError('bad PNG end')
+            if length or pos!=len(raw) or not idat_started:
+                raise ValueError('bad PNG end')
             iend=True
             break
-    if not iend or not idat or ihdr is None:raise ValueError('incomplete PNG')
+        elif name[0]&32==0:
+            raise ValueError('unsupported critical PNG chunk')
+        if idat_started and name!=b'IDAT':
+            idat_finished=True
+    if not iend or not idat or ihdr is None:
+        raise ValueError('incomplete PNG')
+    w,h,colour=ihdr
+    if colour==3 and not seen_palette:
+        raise ValueError('indexed PNG has no palette')
+    row_stride=1+w*PNG_CHANNELS[colour]
+    expected=row_stride*h
+    if expected>MAX_DECODED_PNG_BYTES:
+        raise ValueError('image scanlines too large')
     stream=zlib.decompressobj()
+    decoded=bytearray()
     try:
-        decoded=stream.decompress(b''.join(idat),64000001)
-        decoded+=stream.flush()
-    except zlib.error as exc:raise ValueError('corrupted PNG IDAT') from exc
-    if (not stream.eof or stream.unused_data or stream.unconsumed_tail or
-        len(decoded)>64000000):
-        raise ValueError('invalid compressed image data')
-    return {'width':ihdr[0],'height':ihdr[1],
-            'png_color_type':ihdr[2],'idat_decoded_bytes':len(decoded)}
+        for chunk in idat:
+            remaining=expected+1-len(decoded)
+            if remaining<=0:raise ValueError('PNG inflated beyond dimensions')
+            decoded.extend(stream.decompress(chunk,remaining))
+            if stream.unconsumed_tail or stream.unused_data:
+                raise ValueError('PNG inflated beyond dimensions/trailing zlib stream')
+        if not stream.eof:raise ValueError('incomplete PNG deflate stream')
+        decoded.extend(stream.flush())
+    except zlib.error as exc:
+        raise ValueError('corrupted PNG IDAT') from exc
+    if len(decoded)!=expected:
+        raise ValueError('PNG scanline data length does not match IHDR')
+    if any(decoded[y*row_stride]>4 for y in range(h)):
+        raise ValueError('invalid PNG scanline filter')
+    return {'width':w,'height':h,'png_color_type':colour,
+            'idat_decoded_bytes':len(decoded),
+            'scanline_size_and_filters_verified':True}
 
 def audit_captures(request,folder,expected_width=None,expected_height=None):
     if (request.get('schema')!=REQUEST_SCHEMA or
