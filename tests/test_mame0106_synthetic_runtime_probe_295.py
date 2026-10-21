@@ -53,6 +53,40 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         path.write_text(header + "\n" + body.replace("112,113,3503", "112,1,31") + "\n")
         self.assertFalse(probe._check_trace(path, 100, 24))
 
+    def test_real_recording_then_replay_nonzero_exit_is_distinct_block(self):
+        calls = []
+        def runner(_exe, _argv, cwd, **_kwargs):
+            calls.append(True)
+            if len(calls) == 1:
+                return 0, "romset minivadr is good\n"
+            if len(calls) == 2:
+                (Path(cwd) / "inp" / "test295.inp").write_bytes(bytes(64))
+                return 0, "recorded artificial frames"
+            return 3, "GUI unavailable"
+        with patch.object(probe, "_invoke", side_effect=runner):
+            result = probe.probe(self.root / "fake.exe", self.root)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_PROCESS_EXIT")
+        self.assertTrue(result["synthetic_mame_recording_executed"])
+        self.assertFalse(result["synthetic_replay_process_exit_zero"])
+        self.assertFalse(result["synthetic_replay_trace_file_present"])
+        self.assertFalse(result["original_gameplay_verified"])
+
+    def test_replay_zero_exit_missing_video_is_not_conflated_with_trace(self):
+        calls = []
+        def runner(_exe, _argv, cwd, **_kwargs):
+            calls.append(True)
+            if len(calls) == 1:
+                return 0, "romset minivadr is good\n"
+            if len(calls) == 2:
+                (Path(cwd) / "inp" / "test295.inp").write_bytes(bytes(64))
+                return 0, ""
+            return 0, ""
+        with patch.object(probe, "_invoke", side_effect=runner):
+            result = probe.probe(self.root / "fake.exe", self.root)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_MNG_MISSING")
+        self.assertTrue(result["synthetic_replay_process_exit_zero"])
+        self.assertFalse(result["synthetic_replay_mng_file_present"])
+
     def test_full_probe_does_not_use_or_export_any_original_game_material(self):
         with patch.object(probe, "_invoke", return_value=(None, "")):
             result = probe.probe(self.root / "none.exe", self.root)
