@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Stage275: run *invented* native training bouts on private WolfMAME P1 bytes.
+
+This does not run the original arcade game, use proprietary ROMs, or derive
+authentic game physics. No original input stream or per-frame trace is saved.
+"""
+import argparse
+import hashlib
+import json
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+if __package__:
+    from tools.wolfmame0106_dino_input_reference import metadata, HEADER_BYTES, FRAME_BYTES, PORTS
+else:
+    from wolfmame0106_dino_input_reference import metadata, HEADER_BYTES, FRAME_BYTES, PORTS
+
+ROOT=Path(__file__).resolve().parents[1]
+SCHEMA="dino-private-independent-native-sparring-rounds-v1"
+
+def checked_positive_int(value,label):
+    if type(value) is not int or not 1<=value<=12000:
+        raise ValueError("invalid "+label)
+    return value
+
+def run_rounds(input_bytes,compiler,round_frames=1200):
+    checked_positive_int(round_frames,"round-frame count")
+    if type(input_bytes) is not bytes or not 1<=len(input_bytes)<=10000000:
+        raise ValueError("invalid bounded active-low input stream")
+    executable=shutil.which(compiler)
+    if not executable or compiler not in ("gcc","clang"):
+        raise ValueError("compiler unavailable/not permitted")
+    with tempfile.TemporaryDirectory(prefix="dino275-") as folder:
+        binary=Path(folder)/"arena_stress"
+        subprocess.run(
+            [executable,"-std=c99","-O2","-Wall","-Wextra","-Werror",
+             "-I",str(ROOT/"source"),str(ROOT/"source"/"dino_arena.c"),
+             str(ROOT/"tools"/"dino_arena_recorded_input_stress.c"),
+             "-o",str(binary)],
+            capture_output=True,text=True,check=True,timeout=30)
+        rounds=[input_bytes[i:i+round_frames]
+                for i in range(0,len(input_bytes),round_frames)]
+        outcome={}
+        for mode in ("normal","invented_sparring"):
+            records=[]
+            for chunk in rounds:
+                cmd=[str(binary)]+(["--spar"] if mode=="invented_sparring" else [])
+                p=subprocess.run(cmd,input=chunk,capture_output=True,check=True,timeout=30)
+                item=json.loads(p.stdout)
+                if (item.get("nominal_input_records")!=len(chunk) or
+                    item.get("training_only") is not True or
+                    item.get("wolfmame_playback_verified") is not False or
+                    item.get("sparring_mode") is not (mode=="invented_sparring")):
+                    raise ValueError("bad native input receipt")
+                records.append(item)
+            hash_digest=hashlib.sha256(
+                (";".join(i["state_digest_fnv64"] for i in records)).encode("ascii")
+            ).hexdigest()
+            outcome[mode]={
+                "rounds":len(records),
+                "records":sum(i["nominal_input_records"] for i in records),
+                "rounds_with_swings":sum(i["actual_training_swings"]>0 for i in records),
+                "rounds_with_jumps":sum(i["actual_training_jumps"]>0 for i in records),
+                "rounds_with_hits":sum(i["successful_training_hits"]>0 for i in records),
+                "swings":sum(i["actual_training_swings"] for i in records),
+                "jumps":sum(i["actual_training_jumps"] for i in records),
+                "hits":sum(i["successful_training_hits"] for i in records),
+                "player_defeated_rounds":sum(i["player_hp"]==0 for i in records),
+                "round_state_digest_sha256":hash_digest,
+            }
+        return outcome
+
+def compare_private_input(inp,wlf,round_frames=1200,compilers=("gcc","clang")):
+    checked_positive_int(round_frames,"round-frame count")
+    if inp.is_symlink() or wlf.is_symlink():
+        raise ValueError("do not follow private input symlinks")
+    n,version,_duration=metadata(inp,wlf)
+    full=inp.read_bytes()
+    if len(full)!=HEADER_BYTES+FRAME_BYTES*n:
+        raise ValueError("private input changed during read")
+    stream=full[HEADER_BYTES+PORTS["p1"]::FRAME_BYTES]
+    if len(stream)!=n:raise ValueError("P1 extraction mismatch")
+    if not compilers or len(set(compilers))!=len(compilers):
+        raise ValueError("invalid compiler set")
+    results={compiler:run_rounds(stream,compiler,round_frames)
+             for compiler in compilers}
+    first=next(iter(results.values()))
+    matching=all(result==first for result in results.values())
+    if not matching:
+        raise ValueError("native round state mismatch across compilers")
+    return {
+        "schema":SCHEMA,
+        "status":"EXACT_NATIVE_TRAINING_ROUNDS_NOT_ARCADE_REPLAY",
+        "game":"dino",
+        "nominal_wolfmame_version":version,
+        "input_records":n,"round_frame_limit":round_frames,
+        "compiler_variants":list(compilers),
+        "cross_compiler_exact_result_match":matching,
+        "aggregates":first,
+        "rounds_reset_independently":True,
+        "frame_index_video_alignment_verified":False,
+        "original_emulator_executed":False,
+        "original_game_physics_or_sprites_verified":False,
+        "full_original_input_stream_in_report":False,
+    }
+
+def main(argv=None):
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--inp",type=Path,required=True)
+    p.add_argument("--wlf",type=Path,required=True)
+    p.add_argument("--out",type=Path,required=True)
+    p.add_argument("--round-frames",type=int,default=1200)
+    p.add_argument("--compiler",action="append",choices=("gcc","clang"))
+    args=p.parse_args(argv)
+    if ROOT in args.out.resolve().parents:
+        raise ValueError("private derived report must stay outside tracked repo")
+    report=compare_private_input(
+        args.inp,args.wlf,args.round_frames,tuple(args.compiler or ("gcc","clang")))
+    with args.out.open("x",encoding="utf-8") as f:
+        json.dump(report,f,indent=2)
+        f.write("\n")
+    print(report["status"],report["input_records"])
+
+if __name__=="__main__":
+    main()
