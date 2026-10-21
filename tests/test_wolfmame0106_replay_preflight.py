@@ -95,9 +95,8 @@ class WolfmameBootstrapTests(unittest.TestCase):
             for name in q['image_names']:
                 (Path(folder)/name).write_bytes(png())
             original=Path(folder)/q['image_names'][0]
-            spare=Path(folder)/'spare.png'
-            original.rename(spare)
-            original.symlink_to(spare)
+            original.unlink()
+            original.symlink_to(Path(folder)/q['image_names'][1])
             with self.assertRaisesRegex(ValueError,'ordinary'):
                 pre.audit_captures(q,folder)
 
