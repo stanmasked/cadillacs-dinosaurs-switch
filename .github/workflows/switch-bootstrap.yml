@@ -114,8 +114,12 @@ jobs:
           make -f makefile TARGET=mame MAMEOS=windows ASM=@nasm SYMBOLS=1 -j2
           test -s mame.exe
           objdump -f mame.exe | grep -q 'pei-i386'
+          # Verify that this binary actually executes without private ROMs.
+          ./mame.exe -help > ../runtime-artifact/mame0106-help.txt 2>&1
+          grep -q 'M.A.M.E. v0.106' ../runtime-artifact/mame0106-help.txt
           cp mame.exe ../runtime-artifact/mame0106.exe
-          cp COPYING ../runtime-artifact/COPYING
+          # The mame0106 tree has docs/license.txt, not a COPYING file.
+          cp docs/license.txt ../runtime-artifact/MAME-0106-LICENSE.txt
           git archive --format=zip --prefix=mame0106/ HEAD > ../runtime-artifact/mame0106-source.zip
           cd ../runtime-artifact
           sha256sum mame0106.exe mame0106-source.zip > SHA256SUMS.txt
