@@ -31,7 +31,7 @@ diff --git a/src/video.c b/src/video.c
  }
  
  
-@@ -1065,11 +1069,27 @@
+@@ -1065,12 +1069,28 @@
  {
  	if (movie_file != NULL && bitmap != NULL)
  	{
@@ -64,7 +64,7 @@ diff --git a/src/video.c b/src/video.c
 diff --git a/src/windows/video.c b/src/windows/video.c
 --- a/src/windows/video.c
 +++ b/src/windows/video.c
-@@ -223,6 +223,8 @@
+@@ -223,5 +223,7 @@
  	{ "effect", NULL, rc_string, &effect, "none", 0, 0, decode_effect, "specify the blitting effect" },
  	{ "screen_aspect", NULL, rc_string, &aspect, "4:3", 0, 0, decode_aspect, "specify an alternate monitor aspect ratio" },
  	{ "mngwrite", NULL, rc_string, &mngwrite, NULL, 0, 0, NULL, "save video in specified mng file" },
