@@ -93,5 +93,46 @@ class NativeRecordedInputStressTests(unittest.TestCase):
             self.assertEqual((a.returncode,b.returncode),(0,0))
             self.assertEqual(ra,rb)
 
+
+    def test_private_driver_executable_help(self):
+        import sys
+        driver=ROOT/'tools'/'wolfmame0106_private_arena_stress.py'
+        p=subprocess.run([sys.executable,str(driver),'--help'],
+                         cwd=str(ROOT),capture_output=True,text=True,timeout=15)
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertIn('--inp',p.stdout)
+
+    def test_private_driver_synthetic_0106_pair(self):
+        import struct
+        from tools import wolfmame0106_private_arena_stress as private
+        frames=120
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)
+            inp=folder/'synthetic.inp'
+            wlf=folder/'synthetic.wlf'
+            header=bytearray(32)
+            header[:4]=b'dino'
+            header[16:20]=b'ABCD'
+            rows=[]
+            for tick in range(frames):
+                record=bytearray([0xff]*124)
+                if tick in (8,9,60):record[19]=239
+                rows.append(record)
+            inp.write_bytes(header+b''.join(rows))
+            info=bytearray(598)
+            info[:4]=b'WLF\x00'
+            struct.pack_into('<I',info,4,9)
+            info[148:153]=b'dino\x00'
+            label=b'0.106 (May 16 2006)'
+            info[157:157+len(label)]=label
+            info[248:252]=b'ABCD'
+            struct.pack_into('<III',info,256,1000000,1000002,frames)
+            wlf.write_bytes(info)
+            result=private.private_replay(inp,wlf)
+            self.assertEqual(result['recording_frame_count'],frames)
+            self.assertEqual([x['attack_press_edges'] for x in result['training_runs']],
+                             [2,2])
+            self.assertFalse(result['original_gameplay_emulated'])
+
 if __name__=='__main__':
     unittest.main()
