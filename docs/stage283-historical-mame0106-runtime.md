@@ -18,7 +18,11 @@ https://github.com/mamedev/historic-mame/tree/mame0106
 The existing `.github/workflows/python-tests.yml` workflow has an opt-in
 build job: it runs on this specific PR branch and can be run manually after
 that workflow is available on the default branch. It builds a 32-bit Windows
-executable with MinGW from that source. The artifact contains:
+executable with MinGW from that source. The legacy makefile's old
+`COMPILESYSTEM_CYGWIN` option enables `-mno-cygwin`, which modern MinGW no
+longer supports; the build therefore overrides the NASM executable name
+without enabling that obsolete flag. The upstream source itself is not patched.
+The artifact contains:
 
 - `mame0106.exe` — compiled upstream MAME 0.106, **not WolfMAME**;
 - `mame0106-source.zip` — the corresponding pinned source tree;
