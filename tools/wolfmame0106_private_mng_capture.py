@@ -24,7 +24,7 @@ except ImportError:
 MAX_INP_BYTES = 128 * 1024 * 1024
 MAX_WLF_BYTES = 1024 * 1024
 MAX_FRAMES = 3601
-MAX_SECONDS = 300
+MAX_SECONDS = 1800
 CAPTURE_BASENAME = "stage286"
 REPORT_SCHEMA = "dino-wolfmame0106-private-windowed-mng-capture-v1"
 
