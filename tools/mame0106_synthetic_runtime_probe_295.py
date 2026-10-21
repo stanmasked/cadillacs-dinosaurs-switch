@@ -130,7 +130,10 @@ def probe(executable, rom_root):
             return report
         report["synthetic_mame_playback_executed"] = True
         try:
-            from tools import wolfmame0106_private_mng_audit as audit_tool
+            try:
+                from . import wolfmame0106_private_mng_audit as audit_tool
+            except ImportError:
+                import wolfmame0106_private_mng_audit as audit_tool
             audited = audit_tool.audit(mng_path, minimum_frames=2)
             count = audited["candidate_frame_count"]
         except (OSError, ValueError, KeyError):
