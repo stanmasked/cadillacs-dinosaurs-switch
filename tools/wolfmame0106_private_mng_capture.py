@@ -44,6 +44,8 @@ def _empty_report(frames, start_frame=0):
         "emulator_help_reports_mame_0_106": False,
         "dino_rom_verifyroms_passed": False,
         "private_input_staging_byte_identical": False,
+        "private_inp_sha256": None,
+        "private_wlf_sha256": None,
         "emulator_process_spawned": False,
         "process_exit_code": None,
         "process_timed_out": False,
@@ -183,6 +185,11 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
             _private_copy(inp, inp_dir / "dino.inp", MAX_INP_BYTES)
             _private_copy(wlf, inp_dir / "dino.wlf", MAX_WLF_BYTES)
             report["private_input_staging_byte_identical"] = True
+            # These are PRIVATE content bindings, never publish either digest.
+            # They let a later local audit verify the same INP/WLF was supplied
+            # for both independently requested candidate capture windows.
+            report["private_inp_sha256"] = _sha256(inp_dir / "dino.inp").hex()
+            report["private_wlf_sha256"] = _sha256(inp_dir / "dino.wlf").hex()
 
             cmd = [
                 str(Path(emulator).resolve()),
