@@ -58,6 +58,9 @@ def _empty_report(frames, start_frame=0):
         "changed_adjacent_pixel_pairs": 0,
         "identical_adjacent_pixel_pairs": 0,
         "candidate_capture_retained_privately": False,
+        "candidate_count_trace_retained_privately": False,
+        "candidate_count_trace_sha256": None,
+        "candidate_count_trace_byte_count": None,
         "emulator_binary_provenance_verified": False,
         "actual_inp_playback_verified": False,
         "complete_original_recording_played": False,
@@ -140,7 +143,7 @@ def _retain_capture(source, destination):
 
 
 def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=120,
-            capture_out=None, verifier=gate.inspect, runner=_run,
+            capture_out=None, trace_out=None, verifier=gate.inspect, runner=_run,
             audit_fn=mng.audit):
     if type(frames) is not int or not 2 <= frames <= MAX_FRAMES:
         raise ValueError("requested frames outside allowed bound")
@@ -203,6 +206,8 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
                 "-mngframes", str(frames),
                 "-mngwrite", CAPTURE_BASENAME,
             ]
+            if trace_out is not None:
+                cmd.extend(("-mngcounttrace", "1"))
             spawned, exit_code, timed_out = runner(cmd, work, seconds)
             report["emulator_process_spawned"] = bool(spawned)
             report["process_exit_code"] = exit_code if type(exit_code) is int else None
@@ -251,6 +256,18 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
                 _retain_capture(candidate, capture_out)
                 report["candidate_capture_retained_privately"] = True
 
+            if trace_out is not None:
+                trace_file = work / "stage290-mng-counts.csv"
+                if trace_file.is_symlink() or not trace_file.is_file():
+                    report["status"] = "COUNT_TRACE_FILE_NOT_CREATED"
+                    return report
+                if not 50 <= trace_file.stat().st_size <= 256 * 1024:
+                    raise ValueError("private counter trace size outside budget")
+                _retain_capture(trace_file, trace_out)
+                report["candidate_count_trace_retained_privately"] = True
+                report["candidate_count_trace_byte_count"] = trace_file.stat().st_size
+                report["candidate_count_trace_sha256"] = _sha256(trace_file).hex()
+
             if not result.get("mng_signature_header_end_and_chunk_crcs_valid", False):
                 report["status"] = "CAPTURE_AUDIT_DID_NOT_CONFIRM_CONTAINER"
             elif timed_out:
@@ -275,6 +292,8 @@ def main(argv=None):
     parser.add_argument("--start-frame", type=int, default=0,
                         help="zero-based candidate video-frame offset; not proof of INP alignment")
     parser.add_argument("--seconds", type=int, default=120)
+    parser.add_argument("--trace-out", type=Path,
+                        help="optional private Stage290 per-frame count trace path")
     parser.add_argument("--capture-out", type=Path,
                         help="optional private retained MNG path, outside repository")
     parser.add_argument("--out", required=True, type=Path,
@@ -283,7 +302,8 @@ def main(argv=None):
     try:
         report = capture(args.emulator, args.rom_dir, args.inp, args.wlf,
                          frames=args.frames, start_frame=args.start_frame,
-                         seconds=args.seconds, capture_out=args.capture_out)
+                         seconds=args.seconds, capture_out=args.capture_out,
+                         trace_out=args.trace_out)
     except (OSError, ValueError, KeyError):
         report = _empty_report(
             args.frames if type(args.frames) is int else 0,
