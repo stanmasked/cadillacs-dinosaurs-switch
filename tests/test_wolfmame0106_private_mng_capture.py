@@ -137,7 +137,7 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
 
     def test_timeout_with_valid_video_is_qualified(self):
         def timed_out_but_video(cmd, cwd, seconds):
-            (Path(cwd) / "mng" / "stage285.mng").write_bytes(candidate_mng())
+            (Path(cwd) / "stage285.mng").write_bytes(candidate_mng())
             return True, None, True
         result = self.run_capture(runner=timed_out_but_video)
         self.assertEqual(result["status"], "CANDIDATE_MNG_VALID_BUT_PROCESS_TIMED_OUT")
