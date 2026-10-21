@@ -83,7 +83,11 @@ def read_private_gfx(archive_path):
             canonical_names = {name for name, *_ in canonical.MANIFEST}
             if len(names) != len(canonical_names) or set(names) != canonical_names:
                 raise ValueError("Canonical dino ZIP has extra or missing ROM names")
-            checked = canonical.verify_archive(archive_path)
+            # Pass the manifest explicitly: the existing verifier binds its
+            # default manifest at function definition time. This also makes
+            # independently injected ROM-free manifests test the exact path.
+            checked = canonical.verify_archive(
+                archive_path, manifest=canonical.MANIFEST)
             if (checked.get("status") != canonical.MATCH or
                     checked.get("required_rom_members_matched_by_crc32_sha1")
                     != len(canonical.MANIFEST) or
