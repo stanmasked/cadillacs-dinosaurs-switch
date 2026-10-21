@@ -229,6 +229,38 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
                     self.assertEqual(capture.main(args), expected)
                     receipt.assert_called_once()
 
+    def test_optional_stage290_trace_is_private_and_bound_to_receipt(self):
+        target = self.root / "private-counts.csv"
+
+        def traced_runner(cmd, cwd, seconds):
+            self.assertEqual(cmd[cmd.index("-mngcounttrace") + 1], "1")
+            spawned, code, timeout = self.good_runner(cmd, cwd, seconds)
+            count = int(cmd[cmd.index("-mngframes") + 1])
+            start = int(cmd[cmd.index("-mngstartframe") + 1])
+            rows = ["callback_index,first_port_reads,playback_words"]
+            rows += [f"{start+i},{start+i+1},{(start+i+1)*31}"
+                     for i in range(count)]
+            (Path(cwd) / "stage290-mng-counts.csv").write_text(
+                "\n".join(rows) + "\n", encoding="ascii")
+            return spawned, code, timeout
+
+        result = self.run_capture(runner=traced_runner, trace_out=target)
+        self.assertEqual(result["status"],
+                         "CANDIDATE_MNG_VALID_PLAYBACK_UNAUTHENTICATED")
+        self.assertTrue(result["candidate_count_trace_retained_privately"])
+        self.assertEqual(result["candidate_count_trace_byte_count"],
+                         target.stat().st_size)
+        self.assertEqual(result["candidate_count_trace_sha256"],
+                         hashlib.sha256(target.read_bytes()).hexdigest())
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_missing_opt_in_count_trace_never_reports_capture_success(self):
+        target = self.root / "missing-counts.csv"
+        result = self.run_capture(trace_out=target)
+        self.assertEqual(result["status"], "COUNT_TRACE_FILE_NOT_CREATED")
+        self.assertFalse(result["candidate_count_trace_retained_privately"])
+        self.assertFalse(target.exists())
+
     def test_capture_can_be_retained_only_to_explicit_private_path(self):
         target = self.root / "retained.mng"
         result = self.run_capture(capture_out=target)
