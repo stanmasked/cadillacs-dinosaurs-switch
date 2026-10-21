@@ -66,6 +66,9 @@ class WolfMameDinoInputTests(unittest.TestCase):
         self.assertTrue(by_name[("p1.jump_button2","p3.right")]["looks_correlated"])
         self.assertFalse(report["distinct_human_players_confirmed"])
         self.assertFalse(report["original_0_106_serializer_confirmed"])
+        self.assertTrue(report["port_byte_offsets_source_grounded"])
+        self.assertTrue(report["upstream_mame_0_106_serializer_source_confirmed"])
+        self.assertFalse(report["wolfmame_specific_serializer_confirmed"])
         self.assertFalse(report["safe_to_publish_original_files"])
 
     def test_rejects_wrong_game(self):
