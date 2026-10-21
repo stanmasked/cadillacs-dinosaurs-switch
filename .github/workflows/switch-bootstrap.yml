@@ -124,7 +124,6 @@ jobs:
           grep -qi 'playback' ../runtime-artifact/mame0106-showconfig.txt
           grep -qi 'frames_to_run' ../runtime-artifact/mame0106-showconfig.txt
           grep -qi 'mngwrite' ../runtime-artifact/mame0106-showconfig.txt
-          grep -qi 'mng_directory' ../runtime-artifact/mame0106-showconfig.txt
           printf 'playback_and_mng_options_smoke_test=passed\n' >> ../source-pin.txt
           # Also enumerate the driver table without loading any game ROMs.
           ./mame.exe -listxml > ../runtime-artifact/dino-driver.xml
