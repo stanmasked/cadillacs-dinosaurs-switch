@@ -68,12 +68,16 @@ def _private_folder(folder):
     return folder
 
 
-def _text(path, limit):
+def _text(path, limit, *, captured_windows_output=False):
     raw = _safe_regular(path, limit).read_bytes()
     try:
         value = raw.decode("utf-8")
     except UnicodeError as exc:
         raise ValueError("binary data where text expected") from exc
+    if captured_windows_output:
+        # Native MinGW executable redirects stdout in Windows text mode.
+        # Allow CRLF in help/config/listxml, never a bare CR.
+        value = value.replace("\r\n", "\n")
     if "\r" in value or not value.endswith("\n"):
         raise ValueError("non-canonical runtime metadata line endings")
     return value
@@ -154,7 +158,7 @@ def _verify_patch(bundle):
 
 def _verify_cli(bundle):
     config = _text(bundle / "mame0106-showconfig.txt",
-                   MAX_SOURCE_TEXT_BYTES).lower()
+                   MAX_SOURCE_TEXT_BYTES, captured_windows_output=True).lower()
     for option in (
         "playback", "mngwrite", "mngstartframe", "mngframes",
         "mngcounttrace", "frames_to_run",
@@ -162,10 +166,10 @@ def _verify_cli(bundle):
         if option not in config:
             raise ValueError("expected runtime command-line option absent")
     help_text = _text(bundle / "mame0106-help.txt",
-                      MAX_SOURCE_TEXT_BYTES).lower()
+                      MAX_SOURCE_TEXT_BYTES, captured_windows_output=True).lower()
     if "m.a.m.e. v0.106" not in help_text:
         raise ValueError("runtime help version inconsistent")
-    drivers = _text(bundle / "dino-driver.xml", MAX_SOURCE_TEXT_BYTES)
+    drivers = _text(bundle / "dino-driver.xml", MAX_SOURCE_TEXT_BYTES, captured_windows_output=True)
     if '<game name="dino"' not in drivers:
         raise ValueError("historical runtime driver index lacks dino")
 
