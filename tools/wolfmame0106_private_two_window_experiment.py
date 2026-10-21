@@ -14,11 +14,13 @@ try:
     from . import wolfmame0106_private_mng_capture as capture
     from . import wolfmame0106_private_dual_trace_consistency as dual
     from . import wolfmame0106_private_window_overlap as overlap
+    from . import wolfmame0106_private_runtime_bundle_gate as runtime_gate
 except ImportError:
     import wolfmame0106_private_binary_gate as gate
     import wolfmame0106_private_mng_capture as capture
     import wolfmame0106_private_dual_trace_consistency as dual
     import wolfmame0106_private_window_overlap as overlap
+    import wolfmame0106_private_runtime_bundle_gate as runtime_gate
 
 SCHEMA = "dino-private-mame0106-two-window-experiment-v1"
 MATCH = "TWO_CAPTURE_PIXEL_AND_COUNT_CONSISTENCY_CANDIDATE_ONLY"
@@ -222,6 +224,8 @@ def main(argv=None, *, experiment=run_experiment):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--emulator", type=Path, required=True)
     parser.add_argument("--rom-dir", type=Path, required=True)
+    parser.add_argument("--runtime-bundle", type=Path,
+                        help="optional private Stage290 extracted candidate runtime bundle; fail closed if supplied")
     parser.add_argument("--inp", type=Path, required=True)
     parser.add_argument("--wlf", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True,
@@ -232,6 +236,10 @@ def main(argv=None, *, experiment=run_experiment):
     parser.add_argument("--seconds", type=int, default=1800)
     args = parser.parse_args(argv)
     try:
+        if args.runtime_bundle is not None:
+            provenance = runtime_gate.audit(args.runtime_bundle, args.emulator)
+            if provenance["status"] != runtime_gate.STATUS:
+                raise ValueError("private candidate runtime bundle did not validate")
         report = experiment(
             args.emulator, args.rom_dir, args.inp, args.wlf, args.out_dir,
             first_start=args.first_start, frames=args.frames,
