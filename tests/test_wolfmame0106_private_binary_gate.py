@@ -158,6 +158,32 @@ class WolfMameBinaryGateTests(unittest.TestCase):
         self.assertFalse(receipt["emulator_binary_provenance_verified"])
         self.assertFalse(receipt["actual_inp_playback_verified"])
 
+    def test_rom_verification_timeout_cannot_claim_readiness(self):
+        def rom_timeout(_binary, argv, _cwd, _seconds):
+            if argv == ["-help"]:
+                return 0, "MAME 0.106", False
+            return None, "", True
+        receipt = self.inspect(probe=rom_timeout)
+        self.assertEqual(receipt["status"], "BLOCKED_ROM_VERIFICATION_TIMEOUT")
+        self.assertFalse(receipt["dino_rom_verifyroms_passed"])
+        self.assertFalse(receipt["actual_inp_playback_verified"])
+
+    def test_fake_success_exit_without_good_romset_is_rejected(self):
+        def misleading(_binary, argv, _cwd, _seconds):
+            if argv == ["-help"]:
+                return 0, "MAME 0.106", False
+            return 0, "1 romsets found, 1 were OK", False
+        receipt = self.inspect(probe=misleading)
+        self.assertEqual(receipt["status"], "BLOCKED_ROM_VERIFICATION_FAILED")
+        self.assertFalse(receipt["dino_rom_verifyroms_passed"])
+
+    def test_symlink_rom_directory_is_rejected(self):
+        shortcut = self.root / "rom-link"
+        shortcut.symlink_to(self.roms, target_is_directory=True)
+        receipt = gate.inspect(self.exe, shortcut, self.inp, self.wlf,
+                               probe=self.response())
+        self.assertEqual(receipt["status"], "BLOCKED_NO_PRIVATE_ROM_DIRECTORY")
+
     def test_version_banner_spoof_is_not_provenance(self):
         receipt = self.inspect(probe=self.response())
         self.assertTrue(receipt["emulator_help_reports_mame_0_106"])
