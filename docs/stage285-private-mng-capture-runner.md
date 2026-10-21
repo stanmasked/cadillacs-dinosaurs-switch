@@ -91,6 +91,18 @@ original replay. It does not prove binary provenance, complete original
 recording playback, exact input/video alignment, original gameplay parity or
 physical Nintendo Switch execution.
 
+The command-line program exits with status **0** only for a structurally valid
+candidate MNG whose frame count exactly matches the requested window **and**
+whose emulator process exited normally with code 0. A valid MNG alongside a
+timeout, nonzero emulator exit or frame-count mismatch produces exit code 2,
+with the qualified status written to the private receipt. Exit 0 confirms
+only this limited technical capture condition, never original gameplay parity.
+
+The GitHub build artifact includes the four-file MNG source patch, including
+`src/windows/video.h`, and the build checks every file is present. The
+artifact is a ROM-free engineering reproducibility kit, not an authenticated
+WolfMAME distribution.
+
 ## ROM-free tests
 
     python -m unittest discover -s tests -p 'test_wolfmame0106_private_mng_capture.py' -v
