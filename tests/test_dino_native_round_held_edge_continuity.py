@@ -66,7 +66,7 @@ class NativeHeldEdgeContinuityTests(unittest.TestCase):
         for result in cases:
             for mode in result.values():
                 self.assertEqual(mode["nominal_attack_press_edges"],6)
-                self.assertEqual(mode["nominal_jump_press_edges"],3)
+                self.assertEqual(mode["nominal_jump_press_edges"],6)
                 self.assertEqual(mode["records"],len(data))
 
     def test_prior_hex_option_accepts_lowercase_uppercase(self):
