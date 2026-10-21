@@ -43,7 +43,10 @@ EXPECTED_METADATA = {
     "listxml_smoke_test": "passed",
     "dino_driver_listed": "yes",
 }
-MANIFEST_LINE = re.compile(r"([0-9a-f]{64})  ([a-zA-Z0-9_.-]+)\Z")
+# GNU sha256sum outputs double-space (text) or space-asterisk (binary).
+# Actual Stage290/297 Windows artifacts use the binary marker.
+# Accept both exact forms, but never paths, duplicate or unexpected names.
+MANIFEST_LINE = re.compile(r"([0-9a-f]{64}) (?: |\*)([a-zA-Z0-9_.-]+)\Z")
 MAX_BUNDLE_FILE_BYTES = 512 * 1024 * 1024
 MAX_MANIFEST_BYTES = 4096
 MAX_PIN_BYTES = 4096
