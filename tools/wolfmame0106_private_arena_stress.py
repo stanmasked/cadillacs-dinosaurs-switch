@@ -11,8 +11,12 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from tools.wolfmame0106_dino_input_reference import (
-    metadata, HEADER_BYTES, FRAME_BYTES, PORTS)
+if __package__:
+    from tools.wolfmame0106_dino_input_reference import (
+        metadata, HEADER_BYTES, FRAME_BYTES, PORTS)
+else:
+    from wolfmame0106_dino_input_reference import (
+        metadata, HEADER_BYTES, FRAME_BYTES, PORTS)
 
 ROOT=Path(__file__).resolve().parents[1]
 
