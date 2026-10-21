@@ -128,8 +128,12 @@ jobs:
           git diff --check
           git diff -- src/windows/winprefix.h src/windows/wind3d.c src/windows/wind3dfx.c src/windows/winddraw.c > ../runtime-artifact/mame0106-build-compat.patch
           test -s ../runtime-artifact/mame0106-build-compat.patch
-          git diff -- src/video.c src/video.h src/windows/video.c > ../runtime-artifact/mame0106-windowed-mng-capture.patch
+          git diff -- src/video.c src/video.h src/windows/video.c src/windows/video.h > ../runtime-artifact/mame0106-windowed-mng-capture.patch
           test -s ../runtime-artifact/mame0106-windowed-mng-capture.patch
+          # Reproduction artifact must include every patched source file.
+          for source in src/video.c src/video.h src/windows/video.c src/windows/video.h; do
+            grep -Fq "diff --git a/${source} b/${source}" ../runtime-artifact/mame0106-windowed-mng-capture.patch
+          done
           printf 'build_compat_patch=mame0106-build-compat.patch\n' >> ../source-pin.txt
           # SYMBOLS=1 avoids old -Werror; ASM override avoids removed -mno-cygwin.
           make -f makefile TARGET=mame MAMEOS=windows ASM=@nasm SYMBOLS=1 -j2
