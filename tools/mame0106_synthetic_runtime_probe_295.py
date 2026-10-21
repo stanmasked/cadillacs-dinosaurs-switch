@@ -84,6 +84,12 @@ def probe(executable, rom_root):
         "synthetic_mng_and_counter_trace_observed": False,
         "synthetic_mng_audited_frames": 0,
         "synthetic_trace_audited_rows": 0,
+        "synthetic_replay_process_exit_zero": False,
+        "synthetic_replay_mng_file_present": False,
+        "synthetic_replay_trace_file_present": False,
+        "synthetic_replay_trace_csv_rows": None,
+        "synthetic_replay_trace_first_callback": None,
+        "synthetic_replay_trace_last_callback": None,
         "status": "BLOCKED_TEST_NOT_RUN",
         "original_dino_rom_or_inp_used": False,
         "original_gameplay_verified": False,
@@ -125,8 +131,32 @@ def probe(executable, rom_root):
         code, _ = _invoke(executable, replay, workspace)
         mng_path = workspace / "test295-replay.mng"
         trace_path = workspace / "stage290-mng-counts.csv"
-        if code != 0 or not mng_path.is_file() or not _check_trace(trace_path, 10, 24):
-            report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_MOVIE_OR_TRACE"
+        report["synthetic_replay_process_exit_zero"] = (code == 0)
+        report["synthetic_replay_mng_file_present"] = mng_path.is_file()
+        report["synthetic_replay_trace_file_present"] = trace_path.is_file()
+        if trace_path.is_file() and trace_path.stat().st_size <= MAX_BYTES:
+            try:
+                rows = trace_path.read_text(encoding="ascii").splitlines()
+                if rows and rows[0] == TRACE_HEAD and len(rows) > 1:
+                    report["synthetic_replay_trace_csv_rows"] = len(rows) - 1
+                    first = rows[1].split(",")
+                    last = rows[-1].split(",")
+                    if len(first) == len(last) == 3 and first[0].isdecimal() and last[0].isdecimal():
+                        report["synthetic_replay_trace_first_callback"] = int(first[0])
+                        report["synthetic_replay_trace_last_callback"] = int(last[0])
+            except (OSError, UnicodeError):
+                pass
+        if code != 0:
+            report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_PROCESS_EXIT"
+            return report
+        if not mng_path.is_file():
+            report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_MNG_MISSING"
+            return report
+        if not trace_path.is_file():
+            report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_MISSING"
+            return report
+        if not _check_trace(trace_path, 10, 24):
+            report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_STRUCTURE"
             return report
         report["synthetic_mame_playback_executed"] = True
         try:
