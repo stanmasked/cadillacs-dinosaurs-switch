@@ -193,7 +193,7 @@ class RuntimeBundleTests(unittest.TestCase):
         for filename in ("mame0106-help.txt", "mame0106-showconfig.txt",
                          "dino-driver.xml"):
             path = self.bundle / filename
-            path.write_bytes(path.read_bytes().replace(b"\\n", b"\\r\\n"))
+            path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
         self.refresh_manifest()
         self.assertEqual(self.verify()["status"], gate294.STATUS)
 
@@ -214,7 +214,7 @@ class RuntimeBundleTests(unittest.TestCase):
         self.assertEqual(coordinator.main(args, experiment=mock_experiment), 0)
         self.assertEqual(called, [True])
         called.clear()
-        (self.bundle / "source-pin.txt").write_text("source_commit=invalid\\n")
+        (self.bundle / "source-pin.txt").write_text("source_commit=invalid\n")
         self.assertEqual(coordinator.main(args, experiment=mock_experiment), 2)
         self.assertEqual(called, [])
 
