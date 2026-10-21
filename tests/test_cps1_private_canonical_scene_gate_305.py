@@ -70,7 +70,7 @@ class CanonicalSceneGate305Tests(unittest.TestCase):
         self.assertEqual(r["synthetic_scene_rgba_pixels_compared"],
                          14 * 384 * 224)
         self.assertEqual(r["c_python_mismatching_rgba_pixels"], 0)
-        self.assertTrue(r["synthetic_priority_and_palette_metameric_checks_passed"])
+        self.assertTrue(r["synthetic_priority_and_palette_metamorphic_checks_passed"])
         self.assertEqual(self.compositor_calls, 1)
         self.assertNotIn(str(self.root), json.dumps(r))
 
