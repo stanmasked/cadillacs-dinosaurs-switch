@@ -72,3 +72,16 @@ diff --git a/src/windows/video.c b/src/windows/video.c
 +	{ "mngframes", NULL, rc_int, &mng_capture_frame_count, "0", 0, 3601, NULL, "number of MNG frames to capture (0 means unlimited)" },
  
  	{ NULL, NULL, rc_link, win_d3d_opts, NULL, 0, 0, NULL, NULL },
+diff --git a/src/windows/video.h b/src/windows/video.h
+--- a/src/windows/video.h
++++ b/src/windows/video.h
+@@ -32,7 +32,9 @@
+ 
+ // speed throttling
+ extern int			throttle;
++extern int mng_capture_start_frame;
++extern int mng_capture_frame_count;
+ 
+ // palette lookups
+ extern UINT8		palette_lookups_invalid;
+ extern UINT32 		palette_16bit_lookup[];
