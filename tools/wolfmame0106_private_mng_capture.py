@@ -50,6 +50,9 @@ def _empty_report(frames, start_frame=0):
         "candidate_mng_found": False,
         "candidate_mng_integrity_verified": False,
         "candidate_video_frames": 0,
+        # Private receipt only; never print or commit this content fingerprint.
+        "capture_mng_sha256": None,
+        "capture_mng_byte_count": None,
         "changed_adjacent_pixel_pairs": 0,
         "identical_adjacent_pixel_pairs": 0,
         "candidate_capture_retained_privately": False,
@@ -231,6 +234,11 @@ def capture(emulator, rom_dir, inp, wlf, *, frames=121, start_frame=0, seconds=1
             if not report["capture_frame_count_matches_request"]:
                 report["status"] = "CAPTURE_FRAME_COUNT_MISMATCH"
                 return report
+
+            # Bind the private candidate MNG to this receipt. The fingerprint
+            # is written only to the caller's exclusive private JSON path.
+            report["capture_mng_byte_count"] = candidate.stat().st_size
+            report["capture_mng_sha256"] = _sha256(candidate).hex()
 
             if capture_out is not None:
                 _retain_capture(candidate, capture_out)
