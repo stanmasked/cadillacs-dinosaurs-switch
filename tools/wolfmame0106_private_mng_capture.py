@@ -39,7 +39,6 @@ def _empty_report(frames, start_frame=0):
         "capture_window_within_recording": False,
         "capture_frame_count_matches_request": False,
         "capture_start_frame_verified": False,
-        "input_video_alignment_verified": False,
         "recorded_input_records": None,
         "recording_wolfmame_family_0_106": False,
         "emulator_help_reports_mame_0_106": False,
