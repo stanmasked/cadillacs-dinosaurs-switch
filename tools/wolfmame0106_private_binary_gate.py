@@ -55,19 +55,22 @@ def private_inputs(inp, wlf):
 def bounded_probe(binary, argv, cwd, timeout):
     """Capture no more than MAX_OUTPUT plus one byte; never forward raw output."""
     try:
-        with subprocess.Popen(
-            [str(Path(binary).resolve()), *argv], cwd=cwd, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        ) as proc:
-            try:
-                data, _ = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                return None, "", True
-            if len(data) > MAX_OUTPUT:
-                return proc.returncode, "", False
-            return proc.returncode, data.decode("utf-8", errors="replace"), False
+        with tempfile.TemporaryFile() as captured:
+            with subprocess.Popen(
+                [str(Path(binary).resolve()), *argv], cwd=cwd, stdin=subprocess.DEVNULL,
+                stdout=captured, stderr=subprocess.STDOUT,
+            ) as proc:
+                try:
+                    code = proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    return None, "", True
+            if captured.tell() > MAX_OUTPUT:
+                return code, "", False
+            captured.seek(0)
+            data = captured.read(MAX_OUTPUT + 1)
+            return code, data.decode("utf-8", errors="replace"), False
     except OSError:
         return None, "", False
 
