@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage280: ROM-free, private temporal consistency check for candidate PNG captures.
 
-Normalizes PNG scanline filters and supported 8-bit pixel modes before
+Normalizes PNG scanline filters and supported packed-indexed/8-bit pixel modes before
 comparison. Does NOT attest emulator provenance, actual INP replay, or
 input-to-video synchronization; different pixels alone prove none of these.
 """
@@ -33,6 +33,7 @@ def normalized_rgba(raw):
     """Decode tested PNG bytes into uncomposited RGBA8, not screen evidence."""
     info = pre.png_integrity(raw)
     w, h, kind = info["width"], info["height"], info["png_color_type"]
+    depth = info["png_bit_depth"]
     if w * h > PIXEL_LIMIT:
         raise ValueError("capture exceeds Stage280 pixel budget")
     chunks, pos = [], 8
@@ -47,8 +48,9 @@ def normalized_rgba(raw):
     palette = next((data for tag, data in chunks if tag == b"PLTE"), b"")
     compressed = b"".join(data for tag, data in chunks if tag == b"IDAT")
     decoded = zlib.decompress(compressed)  # pre.png_integrity bounded and checked it
-    bpp = pre.PNG_CHANNELS[kind]
-    stride = w * bpp
+    bpp = pre.PNG_CHANNELS[kind]  # byte-distance for Sub/Paeth predictors
+    stride = ((w * depth + 7) // 8 if kind == 3 and depth < 8
+              else w * bpp)
     previous = bytearray(stride)
     result = bytearray()
     offset = 0
@@ -84,7 +86,18 @@ def normalized_rgba(raw):
             for x in range(0, stride, 2):
                 result.extend((row[x], row[x], row[x], row[x + 1]))
         elif kind == 3:
-            for index in row:
+            # Historical MAME 0.106 packs 1/2/4-bit palette indices
+            # MSB-first inside scanline bytes, with possible end padding.
+            # Filtering above operates on the packed bytes; unpack only
+            # after the PNG scanline filters have been reversed.
+            for pixel_index in range(w):
+                if depth == 8:
+                    index = row[pixel_index]
+                else:
+                    bit_offset = pixel_index * depth
+                    packed = row[bit_offset // 8]
+                    shift = 8 - depth - (bit_offset % 8)
+                    index = (packed >> shift) & ((1 << depth) - 1)
                 i = 3 * index
                 if i + 2 >= len(palette):
                     raise ValueError("palette entry out of range")
