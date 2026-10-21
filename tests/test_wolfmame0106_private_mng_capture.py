@@ -72,18 +72,15 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
         self.assertTrue((work / "nvram").is_dir())
         self.assertTrue((work / "diff").is_dir())
         self.assertTrue((work / "hi").is_dir())
-        self.assertTrue((work / "mng").is_dir())
         self.assertIn("dino", cmd)
         self.assertIn("-playback", cmd)
         self.assertIn("-frames_to_run", cmd)
-        self.assertIn("-mng_directory", cmd)
-        self.assertEqual(Path(cmd[cmd.index("-mng_directory") + 1]), work / "mng")
         self.assertIn("-mngwrite", cmd)
         self.assertEqual(cmd[cmd.index("-mngwrite") + 1], "stage285")
         self.assertEqual(seconds, 120)
         self.assertFalse(any(str(self.root) in item for item in cmd if item == "stage285"))
         self.staging_path = work
-        (work / "mng" / "stage285.mng").write_bytes(candidate_mng())
+        (work / "stage285.mng").write_bytes(candidate_mng())
         return True, 0, False
 
     def test_valid_capture_is_only_candidate_evidence(self):
@@ -131,7 +128,7 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
 
     def test_nonzero_exit_with_valid_video_is_qualified(self):
         def failed_but_video(cmd, cwd, seconds):
-            (Path(cwd) / "mng" / "stage285.mng").write_bytes(candidate_mng())
+            (Path(cwd) / "stage285.mng").write_bytes(candidate_mng())
             return True, 1, False
         result = self.run_capture(runner=failed_but_video)
         self.assertEqual(result["status"], "CANDIDATE_MNG_VALID_BUT_PROCESS_EXIT_NONZERO")
@@ -148,7 +145,7 @@ class PrivateCaptureRunnerTests(unittest.TestCase):
 
     def test_malformed_candidate_is_not_accepted(self):
         def bad_video(cmd, cwd, seconds):
-            (Path(cwd) / "mng" / "stage285.mng").write_bytes(b"not an MNG")
+            (Path(cwd) / "stage285.mng").write_bytes(b"not an MNG")
             return True, 0, False
         result = self.run_capture(runner=bad_video)
         self.assertEqual(result["status"], "BLOCKED_PRIVATE_STAGING_OR_CAPTURE_AUDIT_FAILED")
