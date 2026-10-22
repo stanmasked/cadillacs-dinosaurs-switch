@@ -52,11 +52,19 @@ jobs:
           root = Path('wine32-offline/debs')
           rows = []
           for package in sorted(root.glob('*.deb')):
-              values = subprocess.check_output(
+              fields = subprocess.check_output(
                   ['dpkg-deb', '-f', str(package), 'Package', 'Version', 'Architecture'],
                   text=True
               ).splitlines()
-              if len(values) != 3:
+              parsed = []
+              for field in fields:
+                  if ': ' not in field:
+                      raise SystemExit(f'Invalid package metadata in {package.name}')
+                  parsed.append(field.split(': ', 1))
+              if [key for key, _ in parsed] != ['Package', 'Version', 'Architecture']:
+                  raise SystemExit(f'Unexpected package metadata fields in {package.name}')
+              values = [value for _, value in parsed]
+              if len(values) != 3 or any(not value for value in values):
                   raise SystemExit(f'Invalid package metadata in {package.name}')
               rows.append('\t'.join([package.name, *values, str(package.stat().st_size)]))
           if not rows:
