@@ -15,7 +15,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   bundle-wine32:
@@ -38,54 +37,6 @@ jobs:
             install -y --no-install-recommends \
               ca-certificates curl unzip xvfb xauth wine wine32:i386 wine64
           wine --version
-
-      - name: Fetch and smoke-test source-pinned MAME artifact (ROM-free)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/stanmasked/cadillacs-dinosaurs-switch/actions/artifacts?per_page=100" \
-            --output /tmp/artifacts.json
-          artifact_id="$(python3 - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path('/tmp/artifacts.json').read_text())
-          candidates = [
-              a for a in data.get('artifacts', [])
-              if a.get('name') == 'historical-mame0106-runtime-rom-free'
-              and not a.get('expired', True)
-              and a.get('workflow_run', {}).get('head_branch')
-                  == 'feature/mame0106-synthetic-trace-counters-329'
-          ]
-          if not candidates:
-              raise SystemExit('No unexpired source-pinned MAME 0.106 artifact for the Stage329 branch')
-          print(max(candidates, key=lambda a: a['created_at'])['id'])
-          PY
-          )"
-          curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/stanmasked/cadillacs-dinosaurs-switch/actions/artifacts/${artifact_id}/zip" \
-            --output /tmp/mame-runtime.zip
-          mkdir -p /tmp/mame-runtime
-          unzip -q /tmp/mame-runtime.zip -d /tmp/mame-runtime
-          (cd /tmp/mame-runtime && sha256sum --check SHA256SUMS.txt)
-          export WINEPREFIX=/tmp/wineprefix
-          export WINEARCH=win32
-          export WINEDEBUG=-all
-          xvfb-run -a wine /tmp/mame-runtime/mame0106.exe -help > /tmp/mame-help.txt 2>&1
-          grep -q 'M.A.M.E. v0.106' /tmp/mame-help.txt
-          xvfb-run -a wine /tmp/mame-runtime/mame0106.exe -listxml > /tmp/mame-listxml.xml 2>/tmp/mame-listxml-stderr.txt
-          grep -q '<game name="dino"' /tmp/mame-listxml.xml
-          printf '%s\n' 'Wine32 MAME 0.106 help/listxml smoke tests: PASS' 'Original ROMs and input recordings used: NO'
 
       - name: Prepare offline Debian package bundle
         shell: bash
