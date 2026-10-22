@@ -196,7 +196,9 @@ def probe(executable, rom_root):
         # Record process execution independently from later artifact/trace
         # acceptance. A static or malformed trace must not rewrite history
         # and claim the replay process never ran.
-        report["synthetic_mame_playback_executed"] = (code == 0)
+        # A completed process invocation is distinct from a zero exit
+        # and from trace acceptance; preserve that evidence on later blocks.
+        report["synthetic_mame_playback_executed"] = (code is not None)
         mng_path = workspace / "test295-replay.mng"
         trace_path = workspace / "stage290-mng-counts.csv"
         report["synthetic_replay_process_exit_zero"] = (code == 0)
