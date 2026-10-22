@@ -124,8 +124,8 @@ def run(rom,nro,archive,receipt,*,execute=subprocess.run):
         try:
             result=execute(
                 ["bash",str(script),str(rom),str(nro),str(exe),str(receipt)],
-                cwd=root,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,timeout=240,check=False)
+                cwd=root,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,timeout=150,check=False)
         except (subprocess.TimeoutExpired,OSError) as err:
             raise ValueError("bounded private X11 run failed") from None
     if result.returncode!=0 or not receipt.is_file() or receipt.is_symlink():
