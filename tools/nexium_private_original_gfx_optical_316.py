@@ -292,7 +292,7 @@ def main(argv=None):
         with tempfile.TemporaryDirectory(prefix="private-gfx-ne-xium-316-") as d:
             summary=_run(args.exe.resolve(),args.nro.resolve(),
                          args.sd_root.resolve(),Path(d),gfx,
-                         time.monotonic()+160)
+                         time.monotonic()+80)
         code=0
     except Exception:
         # No exception text or raw guest framebuffer bytes leave local host.
