@@ -57,7 +57,7 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         path = self.root / "test.csv"
         rows = ["callback_index,first_port_reads,playback_words"]
         rows += [f"{10+i},{100+i},{300+5*i}" for i in range(24)]
-        path.write_text("\\n".join(rows) + "\\n", encoding="ascii")
+        path.write_text("\n".join(rows) + "\n", encoding="ascii")
         summary = probe._audit_trace(path, 10, 24)
         self.assertEqual(summary["rows"], 24)
         self.assertEqual(summary["first_callback"], 10)
@@ -73,7 +73,7 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         path = self.root / "static.csv"
         rows = ["callback_index,first_port_reads,playback_words"]
         rows += [f"{10+i},100,300" for i in range(24)]
-        path.write_text("\\n".join(rows) + "\\n", encoding="ascii")
+        path.write_text("\n".join(rows) + "\n", encoding="ascii")
         summary = probe._audit_trace(path, 10, 24)
         self.assertIsNotNone(summary)
         self.assertFalse(summary["first_port_reads_advanced"])
