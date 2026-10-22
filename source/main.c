@@ -1608,7 +1608,11 @@ int main(int argc, char **argv) {
                  * observe these from the displayed emulator window.
                  * Optical pixels never contaminate the scene RGBA hash. */
                 const unsigned pitch=(unsigned)(stride/sizeof(uint32_t));
+                /* Far locator spans the framebuffer width to calibrate
+                 * real host viewport scaling with subpixel precision.
+                 * Both optical markers are outside the scene rectangle. */
                 rectangle(frame,pitch,8,188,18,18,rgb(255,0,255));
+                rectangle(frame,pitch,1250,188,18,18,rgb(255,0,255));
                 for (unsigned bit=0;bit<4u;++bit)
                     rectangle(frame,pitch,8,214+(int)(bit*26u),18,18,
                               (playback.index&(1u<<bit))
