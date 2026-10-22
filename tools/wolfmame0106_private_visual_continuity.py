@@ -33,6 +33,7 @@ def normalized_rgba(raw):
     """Decode tested PNG bytes into uncomposited RGBA8, not screen evidence."""
     info = pre.png_integrity(raw)
     w, h, kind = info["width"], info["height"], info["png_color_type"]
+    depth = info.get("png_bit_depth", 8)
     if w * h > PIXEL_LIMIT:
         raise ValueError("capture exceeds Stage280 pixel budget")
     chunks, pos = [], 8
@@ -47,8 +48,16 @@ def normalized_rgba(raw):
     palette = next((data for tag, data in chunks if tag == b"PLTE"), b"")
     compressed = b"".join(data for tag, data in chunks if tag == b"IDAT")
     decoded = zlib.decompress(compressed)  # pre.png_integrity bounded and checked it
-    bpp = pre.PNG_CHANNELS[kind]
-    stride = w * bpp
+    if kind == 3:
+        # MAME 0.106 packs indexed palette pixels at 1/2/4/8 bits per pixel.
+        # PNG filtering still operates on bytes, so the filter bpp is one.
+        stride = (w * depth + 7) // 8
+        bpp = 1
+    else:
+        if depth != 8:
+            raise ValueError("non-indexed sub-8-bit PNG unsupported")
+        bpp = pre.PNG_CHANNELS[kind]
+        stride = w * bpp
     previous = bytearray(stride)
     result = bytearray()
     offset = 0
@@ -84,7 +93,13 @@ def normalized_rgba(raw):
             for x in range(0, stride, 2):
                 result.extend((row[x], row[x], row[x], row[x + 1]))
         elif kind == 3:
-            for index in row:
+            # Unpack most-significant-bit first, as required by PNG for
+            # indexed depths below eight bits. Ignore unused row padding bits.
+            for x in range(w):
+                bit_offset = x * depth
+                byte_index = bit_offset // 8
+                shift = 8 - depth - (bit_offset % 8)
+                index = (row[byte_index] >> shift) & ((1 << depth) - 1)
                 i = 3 * index
                 if i + 2 >= len(palette):
                     raise ValueError("palette entry out of range")
