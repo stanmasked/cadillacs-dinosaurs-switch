@@ -77,14 +77,40 @@ jobs:
           bash -n tools/nexium_optical_scene_guest_probe_313.sh
           python3 -m unittest discover -s tests -p 'test_nexium_optical_frame_capture_313.py' -v
           python3 -m unittest discover -s tests -p 'test_nexium_optical_cold_repeat_314.py' -v
-      - name: Install software Vulkan and X11 graphics
+      - name: Install software Vulkan and X11 graphics with bounded retries
+        timeout-minutes: 7
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
-            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
-            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+          set -euo pipefail
+          # A stalled Ubuntu mirror on one independent runner must never
+          # silently hold the full two-boot proof without a bounded result.
+          # Retain ALL exact X11/Vulkan dependencies, no weaker guest checks.
+          packages=(
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1
             libegl1 libgles2 libgl1 libpulse0
+          )
+          for attempt in 1 2; do
+            if timeout 100s sudo apt-get \
+                -o Acquire::Retries=2 \
+                -o Acquire::http::Timeout=15 \
+                -o Acquire::https::Timeout=15 update -qq && \
+                timeout 100s sudo apt-get \
+                -o DPkg::Lock::Timeout=20 \
+                -o Acquire::Retries=2 \
+                -o Acquire::http::Timeout=15 \
+                -o Acquire::https::Timeout=15 \
+                install -y -qq "${packages[@]}"; then
+              echo "ROM_FREE_NE_XIUM_X11_SOFTWARE_VULKAN_READY"
+              exit 0
+            fi
+            echo "INSTALL_DEPENDENCIES_RETRY_ATTEMPT_${attempt}" >&2
+            sleep 3
+          done
+          echo "BLOCKED_X11_VULKAN_DEPENDENCIES_UNAVAILABLE" >&2
+          exit 2
       - name: Require 14 synthetic guest and host frames in this fresh NeXium process
         run: |
           set -euo pipefail
