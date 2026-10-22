@@ -10,8 +10,10 @@ import os
 import re
 import stat
 import signal
+import selectors
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 try:
@@ -67,36 +69,94 @@ def _terminate_probe_group(proc):
         os.killpg(proc.pid,signal.SIGKILL)
     except ProcessLookupError:
         pass
-    if proc.poll() is None:
-        proc.wait(timeout=2)
+    try:
+        if proc.poll() is None:
+            proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        return False
+    return proc.poll() is not None
 
 
 def bounded_probe(binary, argv, cwd, timeout):
-    """Capture bounded emulator output and never leave probe children running."""
+    """Stream output under a strict memory cap and never leave probe children running."""
     try:
-        with tempfile.TemporaryFile() as captured:
-            proc = subprocess.Popen(
-                [str(Path(binary).resolve()), *argv], cwd=cwd,
-                stdin=subprocess.DEVNULL, stdout=captured,
-                stderr=subprocess.STDOUT, start_new_session=True,
-            )
-            try:
-                try:
-                    code = proc.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    return None, "", True
-            finally:
-                _terminate_probe_group(proc)
-            if captured.tell() > MAX_OUTPUT:
-                return code, "", False
-            captured.seek(0)
-            data = captured.read(MAX_OUTPUT + 1)
-            return code, data.decode("utf-8", errors="replace"), False
-    except subprocess.TimeoutExpired:
-        return None, "", True
+        timeout_value=float(timeout)
+    except (TypeError,ValueError):
+        return None,"",False
+    deadline=time.monotonic()+max(0.0,timeout_value)
+    try:
+        proc = subprocess.Popen(
+            [str(Path(binary).resolve()), *argv], cwd=cwd,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, start_new_session=True, bufsize=0,
+        )
     except OSError:
-        return None, "", False
-
+        return None,"",False
+    output=bytearray()
+    overflow=False
+    timed_out=False
+    read_error=False
+    code=None
+    selector=None
+    cleanup_ok=False
+    try:
+        try:
+            selector=selectors.DefaultSelector()
+            selector.register(proc.stdout,selectors.EVENT_READ)
+            while selector.get_map():
+                remaining=deadline-time.monotonic()
+                if remaining<=0:
+                    timed_out=True
+                    break
+                events=selector.select(min(remaining,0.1))
+                if not events:
+                    if proc.poll() is not None:
+                        break
+                    if time.monotonic()>=deadline:
+                        timed_out=True
+                        break
+                    continue
+                for key,_ in events:
+                    try:
+                        chunk=os.read(key.fd,65536)
+                    except OSError:
+                        read_error=True
+                        break
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    if not overflow:
+                        capacity=MAX_OUTPUT+1-len(output)
+                        if capacity>0:
+                            output.extend(chunk[:capacity])
+                        if len(output)>MAX_OUTPUT:
+                            overflow=True
+                if read_error:
+                    break
+            if not timed_out and not read_error:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:
+                    timed_out=True
+                else:
+                    try:
+                        code=proc.wait(timeout=remaining)
+                    except subprocess.TimeoutExpired:
+                        timed_out=True
+        except (OSError,ValueError):
+            read_error=True
+    finally:
+        if selector is not None:
+            selector.close()
+        cleanup_ok=_terminate_probe_group(proc)
+        if proc.stdout is not None:
+            proc.stdout.close()
+    if timed_out or not cleanup_ok:
+        return None,"",True
+    if read_error or code is None:
+        return None,"",False
+    if overflow:
+        return code,"",False
+    return code,output.decode("utf-8",errors="replace"),False
 
 def inspect(emulator, rom_dir, inp, wlf, *, probe=bounded_probe):
     frames, version, _ = private_inputs(inp, wlf)
