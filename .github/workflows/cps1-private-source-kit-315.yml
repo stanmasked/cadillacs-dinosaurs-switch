@@ -1,0 +1,64 @@
+name: Stage315 public code-only private-source staging kit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/cps1_private_original_gfx_synthetic_sd_315.py'
+      - 'tests/test_cps1_private_original_gfx_synthetic_sd_315.py'
+      - '.github/workflows/cps1-private-source-kit-315.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cps1-stage315-code-only-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code-only-local-private-kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage315 safety regressions with MOCK ROM-free bytes
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_cps1_private_original_gfx_synthetic_sd_315.py' -v
+      - name: Bundle PUBLIC PYTHON CODE ONLY for private local execution
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          import hashlib
+          public_files = sorted(Path('tools').glob('*.py'))
+          assert len(public_files)>30
+          assert all(path.is_file() and not path.is_symlink()
+                     and path.suffix=='.py'
+                     and path.stat().st_size<256*1024
+                     for path in public_files)
+          # Never package the original ROM or any generated gfx.bin /
+          # sequence.bin, even if accidentally left in the checkout.
+          with zipfile.ZipFile('stage315-public-code-only.zip','w',
+                               compression=zipfile.ZIP_DEFLATED) as out:
+              for path in public_files:
+                  out.write(path,path.as_posix())
+          with zipfile.ZipFile('stage315-public-code-only.zip') as archive:
+              entries=archive.namelist()
+              assert len(entries)==len(public_files)
+              assert all(name.startswith('tools/') and name.endswith('.py')
+                         and '/' not in name[len('tools/'):]
+                         for name in entries)
+              assert 'tools/cps1_private_original_gfx_synthetic_sd_315.py' in entries
+              assert 'tools/mame0106_private_dino_rom_canonicalize_299.py' in entries
+              assert 'tools/cps1_synthetic_scene_sequence_307.py' in entries
+          print('STAGE315_PUBLIC_CODE_ONLY_LOCAL_KIT_CREATED')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage315-public-source-code-only-for-local-private-use
+          path: stage315-public-code-only.zip
+          if-no-files-found: error
+          retention-days: 2
