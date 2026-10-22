@@ -30,6 +30,8 @@ jobs:
           dpkg --add-architecture i386
           apt-get update
           mkdir -p /tmp/wine-debs/partial
+          chown _apt:root /tmp/wine-debs/partial
+          chmod 700 /tmp/wine-debs/partial
           rm -f /tmp/wine-debs/*.deb
           DEBIAN_FRONTEND=noninteractive apt-get \
             -o Dir::Cache::archives=/tmp/wine-debs/ \
