@@ -30,19 +30,28 @@ RECEIPT_NAME = "rom-free-install-ready.json"
 
 def _validate(gfx, sequence):
     """Accept only the explicit, unambiguous, expected synthetic file pair."""
-    if (type(gfx) is not bytes or len(gfx) != graphics.REGION_BYTES
-            or gfx[:len(graphics.MARKER)] != graphics.MARKER
-            or gfx != gfx[:graphics.PERIOD_BYTES] *
-            (graphics.REGION_BYTES // graphics.PERIOD_BYTES)):
-        raise ValueError("gfx data is not the Stage308 artificial pattern")
+    # Framing, marker and repetitive layout alone CANNOT prove provenance:
+    # an unrelated (possibly game-derived) 32-KiB period can be repeated
+    # with the marker intact. Require byte-exact equality to a fresh known
+    # ROM-free generator output, never to user-controlled external bytes.
+    expected_gfx, expected_gfx_report = graphics.build()
+    if (type(gfx) is not bytes or gfx != expected_gfx or
+            expected_gfx_report.get("graphics_are_artificial") is not True or
+            expected_gfx_report.get("original_rom_was_read") is not False):
+        raise ValueError("gfx data is not the canonical artificial Stage308 fixture")
     if type(sequence) is not bytes:
         raise ValueError("scene sequence is not a byte string")
     details = timeline._inspect(
         sequence, fps=2, frames=timeline.SCENE_COUNT)
-    if (details["status"] != timeline.PASS or
+    # A CRC32 can be recalculated over arbitrary binary scene contents.
+    # Validate the exact canonical sequence, not merely its valid envelope.
+    expected_sequence, expected_scene_report = timeline.build(fps=2)
+    if (sequence != expected_sequence or
+            expected_scene_report.get("frame_states_are_synthetic") is not True or
+            details["status"] != timeline.PASS or
             details["frame_states_are_synthetic"] is not True or
             details["original_gfx_rom_is_not_embedded"] is not True):
-        raise ValueError("sequence is not Stage307 synthetic diagnostic data")
+        raise ValueError("sequence is not the canonical artificial Stage307 fixture")
     return details
 
 
