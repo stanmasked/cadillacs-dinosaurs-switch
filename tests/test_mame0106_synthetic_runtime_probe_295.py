@@ -89,7 +89,9 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertEqual(summary["first_port_read_delta"], 0)
         self.assertEqual(summary["playback_word_delta"], 0)
 
-    def _probe_with_synthetic_trace(self, *, static=False, oversized=False):
+    def _probe_with_synthetic_trace(
+            self, *, static=False, static_port=False, static_words=False,
+            oversized=False):
         calls = []
 
         def runner(_exe, _argv, cwd, **_kwargs):
@@ -102,7 +104,8 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
             (Path(cwd) / "test295-replay.mng").write_bytes(b"synthetic MNG placeholder")
             rows = [probe.TRACE_HEAD]
             for i in range(24):
-                port0, words = (100, 300) if static else (100 + i, 300 + 5 * i)
+                port0 = 100 if static or static_port else 100 + i
+                words = 300 if static or static_words else 300 + 5 * i
                 rows.append(f"{10+i},{port0},{words}")
             if oversized:
                 rows[1] = "10," + ("9" * 21) + ",300"
@@ -126,6 +129,22 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertFalse(result["synthetic_trace_first_port_reads_advanced"])
         self.assertFalse(result["synthetic_trace_playback_words_advanced"])
         self.assertEqual(result["synthetic_trace_first_port_read_delta"], 0)
+        self.assertEqual(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_rejects_static_port_counter_independently(self):
+        result = self._probe_with_synthetic_trace(static_port=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
+        self.assertTrue(result["synthetic_trace_playback_words_advanced"])
+        self.assertFalse(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertEqual(result["synthetic_trace_first_port_read_delta"], 0)
+        self.assertGreater(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_rejects_static_playback_word_counter_independently(self):
+        result = self._probe_with_synthetic_trace(static_words=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
+        self.assertTrue(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertFalse(result["synthetic_trace_playback_words_advanced"])
+        self.assertGreater(result["synthetic_trace_first_port_read_delta"], 0)
         self.assertEqual(result["synthetic_trace_playback_word_delta"], 0)
 
     def test_full_probe_rejects_oversized_counter_without_echoing_trace(self):
