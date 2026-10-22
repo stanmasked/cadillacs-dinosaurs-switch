@@ -1,0 +1,82 @@
+name: Stage320 private original GFX host-only real X11 proof (ROM-free public tests)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/cps1_private_original_gfx_host_x11_320.py'
+      - 'tests/test_cps1_private_original_gfx_host_x11_320.py'
+      - '.github/workflows/cps1-private-original-gfx-host-x11-320.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage320-host-x11-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-code-only-synthetic-optical-regressions:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Python image decoder for invented scene tests only
+        run: python3 -m pip install Pillow==11.3.0
+      - name: Execute ROM-free host optical tests, never original data
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_cps1_private_original_gfx_host_x11_320.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_x11_process_window_319.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_private_original_gfx_optical_316.py' -v
+      - name: Compile actual portable native CPS-1 scene code
+        run: |
+          set -euo pipefail
+          mkdir -p stage320-compiled-temporary
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -Isource source/cps1_scene.c source/cps1_tile.c \
+            -o stage320-compiled-temporary/libcps1scene.so
+          test -s stage320-compiled-temporary/libcps1scene.so
+      - name: Generate strictly PUBLIC C/Python reproducer package
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          files=sorted(
+            list(Path('tools').glob('*.py'))+[
+              Path('tools/run_private_original_gfx_optical_316.sh'),
+              Path('source/cps1_scene.c'),Path('source/cps1_scene.h'),
+              Path('source/cps1_tile.c'),Path('source/cps1_tile.h')])
+          assert len(files)>=160
+          assert len(set(p.as_posix() for p in files))==len(files)
+          assert all(p.is_file() and not p.is_symlink() and
+              0<p.stat().st_size<262144 and
+              p.suffix in {'.py','.c','.h','.sh'} for p in files)
+          assert sum(p.stat().st_size for p in files)<3*1024*1024
+          name='stage320-public-c-python-host-x11-kit.zip'
+          with zipfile.ZipFile(name,'w',zipfile.ZIP_DEFLATED) as archive:
+            for p in files: archive.write(p,p.as_posix())
+          with zipfile.ZipFile(name) as archive:
+            assert 'tools/cps1_private_original_gfx_host_x11_320.py' in archive.namelist()
+            assert 'tools/nexium_x11_process_window_319.py' in archive.namelist()
+            assert 'source/cps1_scene.c' in archive.namelist()
+            assert all(p.endswith(('.py','.sh','.c','.h'))
+                       for p in archive.namelist())
+          print('STAGE320_PUBLIC_SOURCE_ONLY_HOST_X11_KIT_READY')
+          PY
+      - name: Ensure public Git tree is ROM-free
+        run: python3 tools/check_public_tree_rom_free.py
+      - name: Upload source-only code, no original ROM or X11 screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage320-public-c-python-private-original-gfx-host-x11-source
+          path: stage320-public-c-python-host-x11-kit.zip
+          retention-days: 2
+          if-no-files-found: error
