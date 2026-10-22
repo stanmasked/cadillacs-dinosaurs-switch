@@ -69,6 +69,33 @@ def _base_args(rom_root):
     ]
 
 
+def _classify_mng_audit_error(error):
+    """Map parser failures to a fixed, path-free diagnostic code."""
+    message = str(error).lower()
+    rules = (
+        ("signature", "INVALID_SIGNATURE"),
+        ("truncated", "TRUNCATED_STREAM"),
+        ("chunk length or type", "INVALID_CHUNK"),
+        ("crc mismatch", "CHUNK_CRC_MISMATCH"),
+        ("dimensions differ", "DIMENSION_MISMATCH"),
+        ("unexpected global chunk", "UNEXPECTED_GLOBAL_CHUNK"),
+        ("nested png frame", "NESTED_FRAME"),
+        ("too many frames", "FRAME_LIMIT"),
+        ("fewer candidate frames", "FRAME_COUNT_TOO_LOW"),
+        ("trailing bytes", "TRAILING_DATA"),
+        ("incomplete frame", "INCOMPLETE_FRAME"),
+        ("mhdr", "INVALID_MHDR"),
+        ("mame mng must begin", "INVALID_MHDR"),
+        ("corrupted png", "INVALID_EMBEDDED_PNG"),
+        ("invalid png", "INVALID_EMBEDDED_PNG"),
+        ("private regular file", "INVALID_PRIVATE_PATH"),
+    )
+    for fragment, code in rules:
+        if fragment in message:
+            return code
+    return "UNCLASSIFIED_AUDIT_ERROR"
+
+
 def probe(executable, rom_root):
     """Require real MAME to load fixture ROM; attempt gameplay if GUI allows.
 
@@ -83,6 +110,7 @@ def probe(executable, rom_root):
         "synthetic_mame_playback_executed": False,
         "synthetic_mng_and_counter_trace_observed": False,
         "synthetic_mng_audited_frames": 0,
+        "synthetic_mng_audit_failure_code": None,
         "synthetic_trace_audited_rows": 0,
         "synthetic_replay_process_exit_zero": False,
         "synthetic_replay_mng_file_present": False,
@@ -166,7 +194,8 @@ def probe(executable, rom_root):
                 import wolfmame0106_private_mng_audit as audit_tool
             audited = audit_tool.audit(mng_path, minimum_frames=2)
             count = audited["candidate_frame_count"]
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError) as exc:
+            report["synthetic_mng_audit_failure_code"] = _classify_mng_audit_error(exc)
             report["status"] = "BLOCKED_SYNTHETIC_MNG_DECODING"
             return report
         if count != 24:
