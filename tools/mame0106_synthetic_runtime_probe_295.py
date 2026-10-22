@@ -52,9 +52,18 @@ def _audit_trace(path, first_frame, count):
     last_counts = None
     for offset, row in enumerate(lines[1:]):
         bits = row.split(",")
-        if len(bits) != 3 or any(not value.isdecimal() for value in bits):
+        # MAME's counters fit within unsigned 64-bit range. Bound decimal
+        # width before int() so a hostile oversized CSV field cannot trigger
+        # Python's integer-string conversion limit or consume excess CPU.
+        if (len(bits) != 3 or
+                any(not value.isdecimal() or len(value) > 20 for value in bits)):
             return None
-        callback, port0, words = map(int, bits)
+        try:
+            callback, port0, words = map(int, bits)
+        except ValueError:
+            return None
+        if any(value > 0xFFFFFFFFFFFFFFFF for value in (callback, port0, words)):
+            return None
         if callback != first_frame + offset or words < port0:
             return None
         if previous is not None and (port0 < previous[0] or words < previous[1]):
@@ -184,6 +193,10 @@ def probe(executable, rom_root):
             "-mngstartframe", "10", "-mngframes", "24", "-mngcounttrace",
         ]
         code, _ = _invoke(executable, replay, workspace)
+        # Record process execution independently from later artifact/trace
+        # acceptance. A static or malformed trace must not rewrite history
+        # and claim the replay process never ran.
+        report["synthetic_mame_playback_executed"] = (code == 0)
         mng_path = workspace / "test295-replay.mng"
         trace_path = workspace / "stage290-mng-counts.csv"
         report["synthetic_replay_process_exit_zero"] = (code == 0)
@@ -222,7 +235,6 @@ def probe(executable, rom_root):
         if not trace_audit["first_port_reads_advanced"] or not trace_audit["playback_words_advanced"]:
             report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC"
             return report
-        report["synthetic_mame_playback_executed"] = True
         try:
             try:
                 from . import wolfmame0106_private_mng_audit as audit_tool
