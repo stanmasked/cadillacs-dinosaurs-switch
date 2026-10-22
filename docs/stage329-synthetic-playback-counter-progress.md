@@ -14,7 +14,7 @@ The report contains only aggregate deltas and booleans:
 - `synthetic_trace_first_port_read_delta`
 - `synthetic_trace_playback_word_delta`
 
-Raw CSV rows, input bits, pixels, private paths, and original game material are never printed or uploaded. A structurally valid but static trace now stops with `BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC`. The report marks `synthetic_mame_playback_executed` from the subprocess's zero exit independently of trace acceptance, so a later audit failure does not falsely claim that replay never ran. Numeric fields are capped at 20 decimal digits and unsigned 64-bit range before acceptance.
+Raw CSV rows, input bits, pixels, private paths, and original game material are never printed or uploaded. A structurally valid but static trace now stops with `BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC`. The report marks `synthetic_mame_playback_executed` from the subprocess's zero exit independently of trace acceptance, so a later audit failure does not falsely claim that replay never ran. Numeric fields are capped at 20 decimal digits and unsigned 64-bit range before acceptance. Regression tests now exercise each counter independently: either counter remaining static must block acceptance even while the other advances.
 
 ## Evidence boundary
 
