@@ -77,10 +77,8 @@ jobs:
           set -euo pipefail
           python3 tools/stage322_verify_public_host_archive.py \
             --archive stage322-public-host/nexium-linux-x86_64.tar.gz \
-            --out stage322-public-host/host-manifest.json
-          mkdir -p stage322-installed
-          tar -xzf stage322-public-host/nexium-linux-x86_64.tar.gz \
-            -C stage322-installed --no-same-owner
+            --out stage322-public-host/host-manifest.json \
+            --install-dir stage322-installed
           exe="$(find stage322-installed -type f \
                  \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
           test -n "$exe"
