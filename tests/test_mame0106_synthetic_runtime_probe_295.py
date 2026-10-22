@@ -69,6 +69,14 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertNotIn("100", str(summary))
         self.assertNotIn("300", str(summary))
 
+    def test_trace_audit_rejects_integer_fields_over_unsigned_64_bit_width(self):
+        path = self.root / "oversized.csv"
+        rows = ["callback_index,first_port_reads,playback_words"]
+        rows += [f"{10+i},{100+i},{300+5*i}" for i in range(24)]
+        rows[1] = "10," + ("9" * 21) + ",300"
+        path.write_text("\n".join(rows) + "\n", encoding="ascii")
+        self.assertIsNone(probe._audit_trace(path, 10, 24))
+
     def test_static_counters_are_structural_but_not_progress_evidence(self):
         path = self.root / "static.csv"
         rows = ["callback_index,first_port_reads,playback_words"]
@@ -108,7 +116,10 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
     def test_full_probe_blocks_structurally_valid_but_static_counters(self):
         result = self._probe_with_synthetic_trace(static=True)
         self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
-        self.assertFalse(result["synthetic_mame_playback_executed"])
+        # The emulator did run and exit zero; the independent trace gate
+        # blocks acceptance because its counters did not advance.
+        self.assertTrue(result["synthetic_mame_playback_executed"])
+        self.assertTrue(result["synthetic_replay_process_exit_zero"])
         self.assertEqual(result["synthetic_trace_audited_rows"], 24)
         self.assertFalse(result["synthetic_trace_first_port_reads_advanced"])
         self.assertFalse(result["synthetic_trace_playback_words_advanced"])
