@@ -12,6 +12,7 @@ PRIVATE Stage315 SD staging root, and a locally pinned NeXium executable.
 import argparse
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
@@ -181,6 +182,29 @@ def _verify_isolated_linkage(exe, command):
             raise ValueError("NeXium did not resolve glibc from isolated sysroot")
 
 
+def _terminate_process_group(proc):
+    """Stop NeXium and any helper processes so Xvfb-run cannot hang.
+
+    The emulator is started in a new session, making proc.pid its process
+    group ID. Signal the entire group even if the leader already exited;
+    NeXium/FFmpeg helpers must not outlive the private capture run.
+    """
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=6)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if proc.poll() is None:
+        proc.wait(timeout=6)
+
+
 def _run(exe,nro,sd_root,root,gfx,deadline):
     trace=sd_root/"cadillacs-synthetic-scene-guest.csv"
     if trace.exists() or trace.is_symlink():
@@ -200,7 +224,8 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
         _verify_isolated_linkage(exe,command)
     with open(root/"private-ne-xium-console.txt","wb") as console:
         with subprocess.Popen(command,stdout=console,
-                              stderr=subprocess.STDOUT) as proc:
+                              stderr=subprocess.STDOUT,
+                              start_new_session=True) as proc:
             try:
                 for index,reference in enumerate(refs):
                     while not _check_guest_row(trace,index,reference):
@@ -246,12 +271,7 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
                     "original_graphics_uploaded_to_public_github":False,
                 }
             finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try: proc.wait(timeout=6)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait(timeout=6)
+                _terminate_process_group(proc)
 
 
 def main(argv=None):
