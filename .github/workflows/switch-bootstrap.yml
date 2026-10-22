@@ -1,5 +1,4 @@
 name: Nintendo Switch native bootstrap
-# Stage330 Wine32 provisioning is isolated in wine32-offline-runtime.yml.
 
 on:
   push:
