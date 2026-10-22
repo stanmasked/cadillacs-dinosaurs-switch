@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Stage318: pinned-input gate BEFORE exposing private original CPS-1 assets.
+
+Validate the EXACT Stage316 opt-in NRO and EXACT release-pinned NeXium
+archive, then extract it into an isolated ephemeral folder using Python's
+safe tar filter. Only afterwards invoke the existing private Stage316 runner,
+which verifies the user's original ROM and holds frames until real X11 proof.
+
+Public CI exercises this validator with invented tiny files and injected
+expected hashes; never commits or uploads original ROM or derived graphics.
+"""
+import argparse
+import hashlib
+import os
+from pathlib import Path, PurePosixPath
+import stat
+import subprocess
+import tarfile
+import tempfile
+
+try:
+    from . import wolfmame0106_private_binary_gate as guard
+except ImportError:
+    import wolfmame0106_private_binary_gate as guard
+
+NRO_SHA256 = "8ff351fe9c5bf31d31ab2510908bcdb45bb965c4ea375c024d8b77395a67d0ac"
+NRO_BYTES = 313541
+NEXIUM_SHA256 = "d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde"
+NEXIUM_BYTES = 114560520
+PASSED = "PRIVATE_PINNED_NEXIUM_OPTICAL_ORIGINAL_GFX_X11_CONFIRMED"
+BLOCKED = "BLOCKED_PRIVATE_PINNED_NEXIUM_OPTICAL_PREFLIGHT"
+STAGE316_PASS = "PRIVATE_ORIGINAL_CPS1_GFX_SYNTHETIC_SCENES_14_HOST_X11_MATCH"
+MAX_ARCHIVE_MEMBERS = 4096
+MAX_ARCHIVE_UNPACKED = 3*1024*1024*1024
+
+
+def _secure_regular(path, size, digest):
+    """No symlinked files or ancestors, no public-repo inputs, exact bytes."""
+    path = Path(path)
+    if (not guard.outside_repo(path) or not guard.is_regular(path)
+            or any(p.is_symlink() for p in path.parents)
+            or path.stat().st_size != size
+            or type(digest) is not str or len(digest) != 64):
+        raise ValueError("pinned private executable input absent or unsafe")
+    checksum = hashlib.sha256()
+    with path.open("rb") as inp:
+        for chunk in iter(lambda: inp.read(1024*1024), b""):
+            checksum.update(chunk)
+    if checksum.hexdigest() != digest:
+        raise ValueError("NRO or emulator archive differs from exact pin")
+    return path
+
+
+def _safe_members(handle):
+    """Restrict package structure before any guest/private data is handled."""
+    members=handle.getmembers()
+    if not 1<=len(members)<=MAX_ARCHIVE_MEMBERS:
+        raise ValueError("unexpected NeXium archive member count")
+    total=0
+    for member in members:
+        name=PurePosixPath(member.name)
+        if (name.is_absolute() or not name.parts or
+                any(x in ("..", ".") for x in name.parts) or
+                "\\" in member.name or not member.name.strip()):
+            raise ValueError("NeXium archive has unsafe path")
+        if not (member.isfile() or member.isdir() or
+                member.issym() or member.islnk()):
+            raise ValueError("NeXium archive has unsupported special entry")
+        if member.isfile():
+            total+=member.size
+            if member.size < 0 or total>MAX_ARCHIVE_UNPACKED:
+                raise ValueError("NeXium archive expansion exceeds limit")
+    return members
+
+
+def _extract_verified_executable(archive, scratch):
+    """Extract pinned archive with Python 3.12+ data filter, not raw tar."""
+    if not hasattr(tarfile,"data_filter"):
+        raise ValueError("requires Python tar safe data filter")
+    scratch=Path(scratch)
+    dest=scratch/"pinned-nexium"
+    dest.mkdir(mode=0o700)
+    with tarfile.open(archive,"r:gz") as tar:
+        _safe_members(tar)
+        tar.extractall(dest,filter="data")
+    found={}
+    for name in ("nexium-gui","nexium"):
+        files=[p for p in dest.rglob(name) if p.is_file() and
+               not p.is_symlink() and
+               all(not a.is_symlink() for a in p.parents)]
+        if len(files)>1:
+            raise ValueError("ambiguous NeXium executable name")
+        if files:
+            found[name]=files[0]
+    exe=found.get("nexium-gui") or found.get("nexium")
+    if exe is None:
+        raise ValueError("no native NeXium host executable in pinned archive")
+    exe.chmod((exe.stat().st_mode&0o666)|0o100)
+    if not os.access(exe,os.X_OK):
+        raise ValueError("NeXium executable cannot be launched")
+    return exe
+
+
+def preflight(nro, archive):
+    """Read-only immutable input verification: no game inputs are examined."""
+    _secure_regular(nro,NRO_BYTES,NRO_SHA256)
+    _secure_regular(archive,NEXIUM_BYTES,NEXIUM_SHA256)
+    return True
+
+
+def run(rom,nro,archive,receipt,*,execute=subprocess.run):
+    preflight(nro,archive)
+    receipt=Path(receipt)
+    if (not guard.outside_repo(receipt) or receipt.exists()
+            or receipt.is_symlink() or not receipt.parent.is_dir()
+            or any(x.is_symlink() for x in receipt.parents)):
+        raise ValueError("receipt must be a new private regular path")
+    root=Path(__file__).resolve().parents[1]
+    script=root/"tools"/"run_private_original_gfx_optical_316.sh"
+    if not script.is_file() or script.is_symlink():
+        raise ValueError("Stage316 local private runner unavailable")
+    with tempfile.TemporaryDirectory(prefix="stage318-pinned-host-") as temp:
+        exe=_extract_verified_executable(archive,temp)
+        try:
+            result=execute(
+                ["bash",str(script),str(rom),str(nro),str(exe),str(receipt)],
+                cwd=root,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,timeout=240,check=False)
+        except (subprocess.TimeoutExpired,OSError) as err:
+            raise ValueError("bounded private X11 run failed") from None
+    if result.returncode!=0 or not receipt.is_file() or receipt.is_symlink():
+        raise ValueError("no complete private host-visible proof")
+    if not (0<receipt.stat().st_size<8192
+            and (receipt.stat().st_mode&0o777)==0o600):
+        raise ValueError("private proof receipt has unsafe attributes")
+    import json
+    record=json.loads(receipt.read_text("utf-8"))
+    if (type(record) is not dict or record.get("status")!=STAGE316_PASS
+            or record.get("guest_submitted_original_graphics_synthetic_frames")!=14
+            or record.get("host_x11_optical_original_graphics_synthetic_frames")!=14
+            or record.get("original_graphics_uploaded_to_public_github") is not False
+            or record.get("actual_original_game_executed") is not False
+            or record.get("physical_nintendo_switch_display_verified") is not False):
+        raise ValueError("incomplete or overclaimed private X11 receipt")
+    return True
+
+
+def main(argv=None):
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--rom",required=True,type=Path)
+    p.add_argument("--nro",required=True,type=Path)
+    p.add_argument("--nexium-archive",required=True,type=Path)
+    p.add_argument("--receipt",required=True,type=Path)
+    args=p.parse_args(argv)
+    try:
+        run(args.rom,args.nro,args.nexium_archive,args.receipt)
+    except Exception:
+        # NEVER print argv, private filenames, archive contents, frame bytes,
+        # PIN hashes or subprocess logs into public/user-shared artifacts.
+        print(BLOCKED)
+        return 2
+    print(PASSED)
+    return 0
+
+
+if __name__=="__main__":
+    raise SystemExit(main())
