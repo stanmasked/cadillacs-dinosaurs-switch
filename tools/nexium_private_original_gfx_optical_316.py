@@ -25,6 +25,7 @@ try:
     from . import cps1_frame
     from . import verify_nexium_synthetic_scene_guest_312 as guest
     from . import nexium_optical_frame_capture_313 as optical
+    from . import nexium_x11_process_window_319 as x11
     from . import wolfmame0106_private_binary_gate as guard
 except ImportError:
     import mame0106_private_dino_rom_canonicalize_299 as canonical
@@ -34,6 +35,7 @@ except ImportError:
     import cps1_frame
     import verify_nexium_synthetic_scene_guest_312 as guest
     import nexium_optical_frame_capture_313 as optical
+    import nexium_x11_process_window_319 as x11
     import wolfmame0106_private_binary_gate as guard
 
 SCHEMA = "dino-stage316-private-original-gfx-synthetic-ne-xium-optical-v1"
@@ -147,7 +149,7 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
                     while matched<10:
                         if proc.poll() is not None or time.monotonic()>deadline:
                             raise ValueError("real private host X11 pixels missing")
-                        wid=optical._window()
+                        wid=x11.window_for_process(proc.pid)
                         if wid:
                             try:
                                 host=optical._capture(wid,root/"host-window.png")
