@@ -127,7 +127,7 @@ class Stage318PinnedPrivateNeXiumSafety(unittest.TestCase):
             self.assertEqual(Path(cmd[5]),self.receipt)
             self.assertEqual(kwargs["stdout"],subprocess.DEVNULL)
             self.assertEqual(kwargs["stderr"],subprocess.STDOUT)
-            self.assertEqual(kwargs["timeout"],150)
+            self.assertEqual(kwargs["timeout"],stage.RUN_TIMEOUT_SECONDS)
             self.receipt.write_text(json.dumps(approved_receipt()))
             self.receipt.chmod(0o600)
             return SimpleNamespace(returncode=0)
