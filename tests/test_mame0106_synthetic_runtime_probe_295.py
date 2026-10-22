@@ -87,7 +87,7 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         def runner(_exe, _argv, cwd, **_kwargs):
             calls.append(True)
             if len(calls) == 1:
-                return 0, "romset minivadr is good\\n"
+                return 0, "romset minivadr is good\n"
             if len(calls) == 2:
                 (Path(cwd) / "inp" / "test295.inp").write_bytes(bytes(64))
                 return 0, "synthetic recording complete"
@@ -97,10 +97,10 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
                 port0, words = (100, 300) if static else (100 + i, 300 + 5 * i)
                 rows.append(f"{10+i},{port0},{words}")
             (Path(cwd) / "stage290-mng-counts.csv").write_text(
-                "\\n".join(rows) + "\\n", encoding="ascii")
+                "\n".join(rows) + "\n", encoding="ascii")
             return 0, "synthetic replay complete"
 
-        with patch.object(probe, "_invoke", side_effect=runner), \\
+        with patch.object(probe, "_invoke", side_effect=runner), \
              patch("tools.wolfmame0106_private_mng_audit.audit",
                    return_value={"candidate_frame_count": 24}):
             return probe.probe(self.root / "fake.exe", self.root)
