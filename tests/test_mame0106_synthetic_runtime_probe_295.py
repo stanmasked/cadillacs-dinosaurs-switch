@@ -87,6 +87,25 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertTrue(result["synthetic_replay_process_exit_zero"])
         self.assertFalse(result["synthetic_replay_mng_file_present"])
 
+    def test_mng_failure_codes_are_fixed_and_do_not_echo_raw_errors(self):
+        cases = {
+            "invalid MNG signature": "INVALID_SIGNATURE",
+            "truncated MNG chunk body": "TRUNCATED_STREAM",
+            "MNG chunk CRC mismatch": "CHUNK_CRC_MISMATCH",
+            "MNG/PNG image dimensions differ": "DIMENSION_MISMATCH",
+            "unexpected global chunk in MAME 0.106 MNG": "UNEXPECTED_GLOBAL_CHUNK",
+            "invalid or non-MAME-0.106 MHDR": "INVALID_MHDR",
+            "corrupted PNG image": "INVALID_EMBEDDED_PNG",
+            "candidate MNG must be a private regular file": "INVALID_PRIVATE_PATH",
+            "unanticipated parser failure at /private/user/path": "UNCLASSIFIED_AUDIT_ERROR",
+        }
+        for message, expected in cases.items():
+            with self.subTest(message=message):
+                code = probe._classify_mng_audit_error(ValueError(message))
+                self.assertEqual(code, expected)
+                self.assertNotIn("/private/user/path", code)
+                self.assertNotIn(message, code)
+
     def test_full_probe_does_not_use_or_export_any_original_game_material(self):
         with patch.object(probe, "_invoke", return_value=(None, "")):
             result = probe.probe(self.root / "none.exe", self.root)
