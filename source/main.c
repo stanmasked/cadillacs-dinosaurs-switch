@@ -1466,7 +1466,16 @@ int main(int argc, char **argv) {
 #ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
             if (synthetic_scene_guest_ready && synthetic_guest_rows>0u &&
                 synthetic_guest_rows<14u) {
-                FILE *ack=fopen("sdmc:/cadillacs-synthetic-scene-next.txt","rb");
+                /* Distinct immutable mailbox per scene index. NeXium's
+                 * emulated FS may cache an open file's contents/inode;
+                 * replacing NEXT,0 with NEXT,1 at the SAME path can leave
+                 * subsequent guest reads observing the stale first ack.
+                 * Never reuse a mailbox name between frame transitions. */
+                char ack_path[96];
+                snprintf(ack_path,sizeof(ack_path),
+                         "sdmc:/cadillacs-synthetic-scene-next-%02u.txt",
+                         (unsigned)playback.index);
+                FILE *ack=fopen(ack_path,"rb");
                 if (ack) {
                     char line[40]={0};
                     size_t got=fread(line,1,sizeof(line)-1u,ack);
