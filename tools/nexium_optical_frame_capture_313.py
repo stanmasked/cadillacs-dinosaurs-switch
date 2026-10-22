@@ -163,7 +163,7 @@ def _complete_rows(path,index):
         observed[1]==str(index))
 
 
-def _run(exe,nro,sd_root,scratch,deadline):
+def _run(exe,nro,sd_root,scratch,deadline,stats):
     # The report can only be accepted from the REAL guest CSV created after
     # framebufferEnd. Exe and NRO must already be cryptographically pinned
     # by the calling workflow.
@@ -183,6 +183,7 @@ def _run(exe,nro,sd_root,scratch,deadline):
                         if time.monotonic()>deadline or proc.poll() is not None:
                             raise ValueError("guest row missing or emulator exited")
                         time.sleep(.18)
+                    stats["guest_rows_seen"]=i+1
                     snap=scenes.synthetic_scene(name)
                     reference=cps1_frame.render_frame(
                         gfx,[tuple(x) for x in snap["palette_rgb"]],snap)
@@ -193,9 +194,17 @@ def _run(exe,nro,sd_root,scratch,deadline):
                             raise ValueError("host optical frame not observed")
                         wid=_window()
                         if wid:
+                            stats["host_window_found"]=True
                             try:
                                 host=_capture(wid,scratch/"host-window.png")
+                                stats["host_capture_count"]+=1
+                                beacon,_=decode_optical(host)
+                                stats["paired_optical_locator_found"]=True
+                                if beacon[0]==i:
+                                    stats["expected_host_optical_id_seen"]=True
                                 matched=verify_optical_image(host,i,reference)
+                                stats["max_matching_scene_samples"]=max(
+                                    matched,stats["max_matching_scene_samples"])
                             except (OSError,ValueError,subprocess.SubprocessError):
                                 matched=0
                         if matched<10:
@@ -240,20 +249,37 @@ def main(argv=None):
     for required in ("exe","nro","sd-root","summary"):
         parser.add_argument("--"+required,required=True,type=Path)
     args=parser.parse_args(argv)
+    stats={
+        "guest_rows_seen":0,
+        "host_window_found":False,
+        "host_capture_count":0,
+        "paired_optical_locator_found":False,
+        "expected_host_optical_id_seen":False,
+        "max_matching_scene_samples":0,
+    }
     try:
         with tempfile.TemporaryDirectory(prefix="dino313-x11-private-") as d:
             result=_run(args.exe.resolve(),args.nro.resolve(),
                         args.sd_root.resolve(),Path(d),
-                        time.monotonic()+150)
+                        time.monotonic()+150,stats)
         code=0
     except (OSError,ValueError,TypeError,subprocess.SubprocessError,
-            UnicodeError):
+            UnicodeError) as exc:
+        # Fixed, path-free cause classes. Never output raw exception strings
+        # from subprocesses, screenshots, private filesystem or emulator.
+        safe_reason={
+            "guest row missing or emulator exited":"GUEST_TRACE_MISSING",
+            "host optical frame not observed":"HOST_FRAME_UNVERIFIED",
+            "missing valid native guest scene parity":"GUEST_PARITY_FAILED",
+        }
+        reason=safe_reason.get(str(exc),"UNCLASSIFIED_GUEST_OR_HOST_FAILURE")
         result={
-            "schema":SCHEMA,"status":BLOCKED,
+            "schema":SCHEMA,"status":BLOCKED,"reason":reason,
             "host_visible_scene_pixels_verified":False,
             "original_gameplay_frame_display_verified":False,
             "physical_switch_display_verified":False,
             "private_host_screenshots_uploaded":False,
+            **stats,
         }
         code=2
     args.summary.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n",
