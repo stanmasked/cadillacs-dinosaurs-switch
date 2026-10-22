@@ -28,8 +28,10 @@ Only for the Stage308 artificial gfx marker and exact Stage307 14-scene,
    changing GUI alone or a barcode drawn over an empty scene is
    insufficient.
 5. Only after the matching host screenshot is observed does the host
-   atomically write `NEXT,i` to the isolated NeXium SD. The guest reads
-   the acknowledgment and advances one frame. Repeat until all 14
+   create a new, exclusive, index-specific `NEXT,i` mailbox in the isolated
+   NeXium SD. The guest reads only that index's file and advances one frame.
+   File paths are never reused, preventing cached/stale reads in the guest
+   filesystem. Repeat until all 14
    ordered scene IDs are captured.
 6. The verifier rechecks the entire **real guest-written** Stage312
    record against independent Python RGBA. Any missing guest file, out
