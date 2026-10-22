@@ -163,6 +163,31 @@ class Stage316PrivateOpticalSafety(unittest.TestCase):
             str(loader),"--inhibit-cache","--library-path",library_path,
             str(self.root/"nexium"),str(self.root/"game.nro")])
 
+    def test_isolated_linkage_must_resolve_libc_and_libm_inside_sysroot(self):
+        sysroot=self.root/"glibc"/"lib"
+        sysroot.mkdir(parents=True)
+        loader=sysroot/"ld-linux-x86-64.so.2"
+        loader.write_text("#!/bin/sh\\nexit 0\\n");loader.chmod(0o700)
+        for soname in ("libc.so.6","libm.so.6"):
+            (sysroot/soname).write_bytes(b"MOCK-ONLY")
+        system=self.root/"system-libs";system.mkdir()
+        library_path=str(sysroot)+":"+str(system)
+        exe=self.root/"nexium"
+        command=stage._launch_argv(exe,self.root/"game.nro",{
+            "NEXIUM_DYNAMIC_LOADER":str(loader),
+            "NEXIUM_ISOLATED_LIBRARY_PATH":library_path})
+        good=("libc.so.6 => "+str(sysroot/"libc.so.6")+" (0x1)\\n"+
+              "libm.so.6 => "+str(sysroot/"libm.so.6")+" (0x2)\\n").encode()
+        with patch.object(stage.subprocess,"run",return_value=type(
+                "Result",(),{"returncode":0,"stdout":good})()):
+            stage._verify_isolated_linkage(exe,command)
+        bad=("libc.so.6 => "+str(sysroot/"libc.so.6")+" (0x1)\\n"+
+             "libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x2)\\n").encode()
+        with patch.object(stage.subprocess,"run",return_value=type(
+                "Result",(),{"returncode":0,"stdout":bad})()):
+            with self.assertRaises(ValueError):
+                stage._verify_isolated_linkage(exe,command)
+
     def test_isolated_launch_refuses_partial_or_incomplete_sysroot(self):
         with self.assertRaises(ValueError):
             stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
