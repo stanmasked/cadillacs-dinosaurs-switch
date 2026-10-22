@@ -1,0 +1,45 @@
+name: Stage318 private original GFX optical pin preflight (public ROM-free)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/nexium_private_pinned_optical_launch_318.py'
+      - 'tests/test_nexium_private_pinned_optical_launch_318.py'
+      - '.github/workflows/cps1-private-optical-pins-318.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage318-pins-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-local-runner-contract:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Strict synthetic-only pinned executable and tar security regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_private_pinned_optical_launch_318.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_private_original_gfx_optical_316.py' -v
+      - name: ROM-free public tree gate
+        run: python3 tools/check_public_tree_rom_free.py
+      - name: Verify pin values refer to previously built code-only artifacts
+        run: |
+          python3 - <<'PY'
+          from tools import nexium_private_pinned_optical_launch_318 as pin
+          assert pin.NRO_BYTES == 313541
+          assert pin.NRO_SHA256 == "8ff351fe9c5bf31d31ab2510908bcdb45bb965c4ea375c024d8b77395a67d0ac"
+          assert pin.NEXIUM_BYTES == 114560520
+          assert pin.NEXIUM_SHA256 == "d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde"
+          print("STAGE318_FIXED_PUBLIC_EXECUTABLE_PINS_CHECKED_NO_PRIVATE_DATA")
+          PY
