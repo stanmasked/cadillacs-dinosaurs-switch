@@ -2,10 +2,11 @@
 import contextlib
 import io
 import json
+import signal
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from tools import nexium_private_original_gfx_optical_316 as stage
 from tools import cps1_synthetic_scene_sequence_307 as invented
@@ -216,6 +217,35 @@ class Stage316PrivateOpticalSafety(unittest.TestCase):
             stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
                 "NEXIUM_DYNAMIC_LOADER":str(alias),
                 "NEXIUM_ISOLATED_LIBRARY_PATH":str(sysroot)+":"+str(system)})
+
+    def test_cleanup_signals_the_whole_ne_xium_process_group(self):
+        # The leader may already have exited while a GUI/helper child remains.
+        class Proc:
+            pid = 43122
+            def wait(self, timeout=None): return 0
+            def poll(self): return 0
+        with patch.object(stage.os, "killpg") as killpg:
+            stage._terminate_process_group(Proc())
+        self.assertEqual(killpg.call_args_list,[
+            call(43122,signal.SIGTERM),call(43122,signal.SIGKILL)])
+
+    def test_cleanup_escalates_when_process_leader_ignores_term(self):
+        class Proc:
+            pid = 43123
+            def __init__(self): self.alive=True
+            def wait(self, timeout=None):
+                if self.alive and timeout==6:
+                    from subprocess import TimeoutExpired
+                    raise TimeoutExpired("ne-xium",timeout)
+                self.alive=False
+                return 0
+            def poll(self): return None if self.alive else 0
+        proc=Proc()
+        with patch.object(stage.os,"killpg") as killpg:
+            stage._terminate_process_group(proc)
+        self.assertEqual(killpg.call_args_list,[
+            call(43123,signal.SIGTERM),call(43123,signal.SIGKILL)])
+        self.assertEqual(proc.poll(),0)
 
     def test_source_level_optin_flag_and_no_stage308_alias(self):
         # Compile macro guards prevent accidental physical game's origin
