@@ -1656,7 +1656,14 @@ int main(int argc, char **argv) {
                 if (!ok || closed!=0) break;
                 synthetic_guest_seen|=1u<<playback.index;
                 ++synthetic_guest_rows;
+#ifndef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
                 if (synthetic_guest_rows==14u) break;
+#else
+                /* Retain final guest frame 13 until the host verifies its
+                 * visible optical ID and independently matching scene pixels.
+                 * The host terminates the emulated NRO after acknowledgment;
+                 * disappearing immediately after submission is not proof. */
+#endif
             }
         }
 #endif
