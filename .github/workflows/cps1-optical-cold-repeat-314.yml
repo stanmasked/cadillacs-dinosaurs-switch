@@ -1,0 +1,128 @@
+name: Stage314 independent NeXium cold-boot optical repeatability
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'source/main.c'
+      - 'tools/nexium_optical_scene_guest_probe_313.sh'
+      - 'tools/nexium_optical_frame_capture_313.py'
+      - 'tools/verify_nexium_optical_cold_repeat_314.py'
+      - 'tests/test_nexium_optical_cold_repeat_314.py'
+      - '.github/workflows/cps1-optical-cold-repeat-314.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage314-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-single-optical-nro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the exact same opt-in NRO for both independent boot jobs
+        run: |
+          set -eu
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          make -j2 DEFINES="-DDINO_SYNTHETIC_SCENE_GUEST_PROBE -DDINO_SYNTHETIC_SCENE_HOST_VISIBLE_313"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          nro=Path('cadillacs-dinosaurs-switch.nro').read_bytes()
+          assert nro[0x10:0x14]==b'NRO0'
+          assert 0x80<=struct.unpack_from('<I',nro,0x18)[0]<=len(nro)
+          assert b'cadillacs-synthetic-scene-guest.csv' in nro
+          assert b'cadillacs-synthetic-scene-next-%02u.txt' in nro
+          print('Single pinned opt-in ROM-free NRO built for both cold runs')
+          PY
+          sha256sum cadillacs-dinosaurs-switch.nro > stage314-nro.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage314-same-nro-for-both-cold-runs
+          path: |
+            cadillacs-dinosaurs-switch.nro
+            stage314-nro.sha256
+          if-no-files-found: error
+          retention-days: 3
+
+  independent-cold-optical-boot:
+    needs: build-single-optical-nro
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [a, b]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage314-same-nro-for-both-cold-runs
+          path: stage314-input
+      - name: Independent sandbox and optical checker preflight
+        run: |
+          set -euo pipefail
+          python3 -m pip install Pillow==11.3.0
+          (cd stage314-input && sha256sum -c stage314-nro.sha256)
+          bash -n tools/nexium_optical_scene_guest_probe_313.sh
+          python3 -m unittest discover -s tests -p 'test_nexium_optical_frame_capture_313.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_optical_cold_repeat_314.py' -v
+      - name: Install software Vulkan and X11 graphics
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0
+      - name: Require 14 synthetic guest and host frames in this fresh NeXium process
+        run: |
+          set -euo pipefail
+          bash tools/nexium_optical_scene_guest_probe_313.sh \
+            stage314-input/cadillacs-dinosaurs-switch.nro stage314-evidence
+      - name: Preserve only this cold boot's aggregate proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage314-optical-boot-${{ matrix.trial }}
+          path: stage314-evidence/stage313-guest-host-optical-summary.json
+          if-no-files-found: warn
+          retention-days: 3
+
+  compare-two-actual-cold-boots:
+    needs: independent-cold-optical-boot
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: stage314-optical-boot-*
+          path: stage314-independent-boot-results
+          merge-multiple: false
+      - name: Compare two distinct GitHub jobs with verified real X11 evidence
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_nexium_optical_cold_repeat_314.py' -v
+          python3 tools/verify_nexium_optical_cold_repeat_314.py \
+            --boot-a stage314-independent-boot-results/stage314-optical-boot-a/stage313-guest-host-optical-summary.json \
+            --boot-b stage314-independent-boot-results/stage314-optical-boot-b/stage313-guest-host-optical-summary.json \
+            --out stage314-two-cold-boot-summary.json
+      - name: Upload aggregate two-boot proof only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage314-two-independent-cold-boot-summary-only
+          path: stage314-two-cold-boot-summary.json
+          if-no-files-found: warn
+          retention-days: 3
