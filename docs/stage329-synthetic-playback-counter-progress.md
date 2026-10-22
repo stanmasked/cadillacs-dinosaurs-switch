@@ -14,10 +14,10 @@ The report contains only aggregate deltas and booleans:
 - `synthetic_trace_first_port_read_delta`
 - `synthetic_trace_playback_word_delta`
 
-Raw CSV rows, input bits, pixels, private paths, and original game material are never printed or uploaded. A structurally valid but static trace now stops with `BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC`.
+Raw CSV rows, input bits, pixels, private paths, and original game material are never printed or uploaded. A structurally valid but static trace now stops with `BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC`. The report marks `synthetic_mame_playback_executed` from the subprocess's zero exit independently of trace acceptance, so a later audit failure does not falsely claim that replay never ran. Numeric fields are capped at 20 decimal digits and unsigned 64-bit range before acceptance.
 
 ## Evidence boundary
 
 This remains a test using an artificial Minivader Z80 fixture and the historical MAME 0.106 executable. Advancing counters demonstrate that the instrumentation observed playback reads over the capture window; they do not prove exact causality between an individual INP record and an individual video frame, authenticate WolfMAME, or establish original Cadillacs and Dinosaurs parity.
 
-The probe continues to mark `exact_input_video_alignment_verified`, `original_gameplay_verified`, and `physical_nintendo_switch_tested` false.
+The probe continues to mark `exact_input_video_alignment_verified`, `original_gameplay_verified`, and `physical_nintendo_switch_tested` false. The Stage329 Windows CI path now requires the complete synthetic probe status `SYNTHETIC_MINIVADER_MAME_VIDEO_AND_INPUT_READ_CONFIRMED`; older diagnostic branches retain the prior ROM-loader-only requirement so a headless runner can still report an explicit blocked GUI status.
