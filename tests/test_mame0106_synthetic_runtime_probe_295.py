@@ -89,7 +89,7 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertEqual(summary["first_port_read_delta"], 0)
         self.assertEqual(summary["playback_word_delta"], 0)
 
-    def _probe_with_synthetic_trace(self, *, static=False):
+    def _probe_with_synthetic_trace(self, *, static=False, oversized=False):
         calls = []
 
         def runner(_exe, _argv, cwd, **_kwargs):
@@ -104,6 +104,8 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
             for i in range(24):
                 port0, words = (100, 300) if static else (100 + i, 300 + 5 * i)
                 rows.append(f"{10+i},{port0},{words}")
+            if oversized:
+                rows[1] = "10," + ("9" * 21) + ",300"
             (Path(cwd) / "stage290-mng-counts.csv").write_text(
                 "\n".join(rows) + "\n", encoding="ascii")
             return 0, "synthetic replay complete"
@@ -125,6 +127,15 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertFalse(result["synthetic_trace_playback_words_advanced"])
         self.assertEqual(result["synthetic_trace_first_port_read_delta"], 0)
         self.assertEqual(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_rejects_oversized_counter_without_echoing_trace(self):
+        result = self._probe_with_synthetic_trace(oversized=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_STRUCTURE")
+        self.assertTrue(result["synthetic_mame_playback_executed"])
+        self.assertTrue(result["synthetic_replay_process_exit_zero"])
+        self.assertIsNone(result["synthetic_replay_trace_csv_rows"])
+        self.assertEqual(result["synthetic_trace_audited_rows"], 0)
+        self.assertNotIn("999999", str(result))
 
     def test_full_probe_accepts_mng_only_when_both_counters_advance(self):
         result = self._probe_with_synthetic_trace()
