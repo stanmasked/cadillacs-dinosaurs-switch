@@ -1,0 +1,96 @@
+name: Stage312 NeXium synthetic CPS-1 scene guest submission
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'source/main.c'
+      - 'source/cps1_scene.c'
+      - 'source/cps1_sequence.c'
+      - 'tools/cps1_synthetic_gfx_fixture_308.py'
+      - 'tools/cps1_synthetic_scene_sequence_307.py'
+      - 'tools/cps1_rom_free_sd_bundle_310.py'
+      - 'tools/verify_nexium_synthetic_scene_guest_312.py'
+      - 'tools/nexium_synthetic_scene_guest_probe_312.sh'
+      - 'tests/test_nexium_synthetic_scene_guest_312.py'
+      - '.github/workflows/cps1-synthetic-scene-guest-312.yml'
+
+concurrency:
+  group: stage312-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-opt-in-guest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the actual NRO with opt-in synthetic scene guest evidence
+        run: |
+          set -eu
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          make -j2 DEFINES="-DDINO_SYNTHETIC_SCENE_GUEST_PROBE"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          nro=Path("cadillacs-dinosaurs-switch.nro").read_bytes()
+          assert nro[0x10:0x14]==b"NRO0"
+          assert 0x80<=struct.unpack_from("<I",nro,0x18)[0]<=len(nro)
+          assert b"cadillacs-synthetic-scene-guest.csv" in nro
+          assert b"FRAME_SUBMITTED" in nro
+          print("Opt-in real guest scene witness NRO built")
+          PY
+          sha256sum cadillacs-dinosaurs-switch.nro > stage312-nro.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage312-rom-free-opt-in-guest-nro
+          path: |
+            cadillacs-dinosaurs-switch.nro
+            stage312-nro.sha256
+          if-no-files-found: error
+          retention-days: 3
+
+  run-real-synthetic-scenes:
+    needs: build-opt-in-guest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage312-rom-free-opt-in-guest-nro
+          path: guest-input
+      - name: Validate host script, isolated witness parser, and NRO
+        run: |
+          set -euo pipefail
+          (cd guest-input && sha256sum -c stage312-nro.sha256)
+          bash -n tools/nexium_synthetic_scene_guest_probe_312.sh
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_synthetic_scene_guest_312.py' -v
+      - name: Install NeXium software Vulkan dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0
+      - name: Run actual NeXium guest with fake SD files and verify 14 submissions
+        run: |
+          set -euo pipefail
+          bash tools/nexium_synthetic_scene_guest_probe_312.sh \
+            guest-input/cadillacs-dinosaurs-switch.nro stage312-evidence
+      - name: Save only bounded synthetic status, never graphics or paths
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage312-nexium-synthetic-scene-summary-only
+          path: stage312-evidence/stage312-guest-synthetic-scene-summary.json
+          if-no-files-found: warn
+          retention-days: 3

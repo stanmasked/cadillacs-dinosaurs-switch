@@ -35,20 +35,19 @@ cleanup() {
 }
 trap cleanup EXIT
 release="https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz"
-# Stage 247 CI recovered from a nightly asset replacement on 2026-10-20:
-# verified via GitHub's public official release-asset API metadata.
-# Release asset id=658656899 (nexium-linux-x86_64.tar.gz), 114182978 bytes;
-# API asset digest sha256:c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66
+# Stage312: official GitHub API metadata checked again 2026-10-22.
+# Release asset id=664770154 (nexium-linux-x86_64.tar.gz), 114560520 bytes;
+# API asset digest sha256:d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde
 # Mutable nightly tag: ALWAYS reject any future unexpected asset bytes.
 # This is a new emulator revision, not a claim of gameplay compatibility.
-expected="c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66"
-expected_size=114182978
+expected="d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde"
+expected_size=114560520
 {
     echo "scope=REAL_NE_XIUM_GUEST_CI_NO_NINTENDO_ROM"
     echo "emulator=NeXium pinned experimental nightly"
     echo "expected_emulator_sha256=$expected"
     echo "expected_emulator_bytes=$expected_size"
-    echo "expected_release_asset_id=658656899"
+    echo "expected_release_asset_id=664770154"
     echo "nro_sha256=$(sha256sum "$nro" | cut -d ' ' -f1)"
     echo "host_arch=$(uname -m)"
 } > "$out/metadata.txt"
