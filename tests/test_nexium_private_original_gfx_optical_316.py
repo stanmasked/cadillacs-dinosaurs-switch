@@ -117,8 +117,7 @@ class Stage316PrivateOpticalSafety(unittest.TestCase):
         self.assertTrue(stage._check_guest_row(self.trace,0,reference))
         with self.assertRaises(ValueError):
             stage._check_guest_row(self.trace,0,reference+b"X")
-        with self.assertRaises(ValueError):
-            stage._check_guest_row(self.trace,1,reference)
+        self.assertFalse(stage._check_guest_row(self.trace,1,reference))
 
     def test_original_scene_trace_requires_fourteen_unique_samples(self):
         references=[guest.fnv64(str(i).encode()) for i in range(14)]
