@@ -1,0 +1,82 @@
+name: Stage323 isolated public glibc 2.43 for pinned NeXium Linux (no host upgrades)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/cps1-public-isolated-glibc243-323.yml'
+      - 'docs/stage323-isolated-glibc243-ne-xium.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage323-public-glibc-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-verified-public-glibc243-sysroot:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download real Ubuntu 26.04 public libc6 glibc >= 2.43
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 120s sudo apt-get -o Acquire::Retries=2 \
+                -o Acquire::http::Timeout=15 update -qq; then
+              break
+            fi
+            if [ "$attempt" -eq 2 ]; then exit 2; fi
+          done
+          mkdir -p stage323-public-glibc
+          cd stage323-public-glibc
+          timeout 120s apt-get download libc6
+          deb="$(find . -maxdepth 1 -type f -name 'libc6_*_amd64.deb' -print -quit)"
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "amd64"
+          version="$(dpkg-deb -f "$deb" Version)"
+          dpkg --compare-versions "$version" ge '2.43'
+          printf 'STAGE323_PUBLIC_GLIBC_PACKAGE_VERSION=%s\n' "$version"
+      - name: Inspect actual isolated glibc loader and libm symbols
+        run: |
+          set -euo pipefail
+          mkdir -p stage323-installed-temporary
+          deb="$(find stage323-public-glibc -maxdepth 1 -name 'libc6_*_amd64.deb' -print -quit)"
+          dpkg-deb -x "$deb" stage323-installed-temporary
+          loader="$(find stage323-installed-temporary -type f -name 'ld-linux-x86-64.so.2' -print -quit)"
+          math="$(find stage323-installed-temporary -type f -name 'libm.so.6' -print -quit)"
+          test -n "$loader" && test -n "$math"
+          "$loader" --version | grep -Eq '2\.43|2\.4[4-9]'
+          readelf --version-info "$math" | grep -q 'GLIBC_2.43'
+          echo STAGE323_ISOLATED_GLIBC243_LOADER_AND_LIBM_VERIFIED
+      - name: Publish manifest of public deb package only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path("stage323-public-glibc")
+          entries=list(root.glob('libc6_*_amd64.deb'))
+          assert len(entries)==1
+          package=entries[0]
+          data={"schema":"stage323-public-glibc243-ubuntu2604-v1",
+                "host_system_libc_must_remain_unchanged":True,
+                "only_public_ubuntu_glibc_package_included":True,
+                "original_game_rom_or_derived_graphics_included":False,
+                "package":package.name,
+                "bytes":package.stat().st_size,
+                "sha256":hashlib.sha256(package.read_bytes()).hexdigest()}
+          (root/"sha256-manifest.json").write_text(json.dumps(
+              data,indent=2,sort_keys=True)+"\n")
+          print("STAGE323_PUBLIC_ISOLATED_GLIBC243_MANIFEST_COMPLETE")
+          PY
+          python3 tools/check_public_tree_rom_free.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage323-public-ubuntu2604-glibc243-isolated-runtime
+          path: stage323-public-glibc/
+          if-no-files-found: error
+          retention-days: 1
