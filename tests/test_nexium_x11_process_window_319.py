@@ -126,7 +126,7 @@ class Stage319WindowOwnerTests(unittest.TestCase):
     def test_stage316_private_host_verifier_calls_process_bound_locator(self):
         src=(Path(__file__).resolve().parents[1]/
              "tools/nexium_private_original_gfx_optical_316.py").read_text()
-        self.assertIn("wid=x11.window_for_process(proc.pid)",src)
+        self.assertIn("host=private_xlib.capture_process_window(proc.pid)",src)
         self.assertNotIn("wid=optical._window()",src)
         self.assertIn("optical.verify_optical_image(host,index,reference)",src)
 

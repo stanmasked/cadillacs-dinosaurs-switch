@@ -1,0 +1,90 @@
+name: Stage321 private NeXium process-bound Xlib host frame capture (public ROM-free)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/nexium_private_xlib_capture_321.py'
+      - 'tools/nexium_private_original_gfx_optical_316.py'
+      - 'tests/test_nexium_private_xlib_capture_321.py'
+      - 'tests/test_nexium_x11_process_window_319.py'
+      - '.github/workflows/cps1-private-xlib-capture-321.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cps1-private-xlib-321-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  in-memory-process-bound-x11-source-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Python X11 and Pillow, not game ROMs
+        run: |
+          set -euo pipefail
+          python3 -m pip install Pillow==11.3.0 python-xlib==0.33
+          if ! command -v xvfb-run >/dev/null || ! command -v Xvfb >/dev/null; then
+            timeout 100s sudo apt-get -o Acquire::Retries=2 update -qq
+            timeout 100s sudo apt-get -o Acquire::Retries=2 install -y -qq xvfb xauth
+          fi
+      - name: Exercise REAL X11 image capture on an invented Tk window
+        run: |
+          set -euo pipefail
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            env DINO_STAGE321_LIVE_X11=1 \
+              python3 -m unittest discover -s tests \
+                -p 'test_nexium_private_xlib_capture_321.py' -v
+      - name: Preserve Stage319 ownership and Stage316 original-GFX contracts
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_nexium_x11_process_window_319.py' -v
+          python3 -m unittest discover -s tests -p 'test_nexium_private_original_gfx_optical_316.py' -v
+      - name: Compile public portable CPS-1 compositor, no ROM
+        run: |
+          set -euo pipefail
+          mkdir -p stage321-temporary-objects
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -Isource source/cps1_scene.c source/cps1_tile.c \
+            -o stage321-temporary-objects/libcps1scene.so
+          test -s stage321-temporary-objects/libcps1scene.so
+      - name: Package ONLY public Python and C/H private repro source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          selected=sorted(list(Path('tools').glob('*.py'))+[
+            Path('tools/run_private_original_gfx_optical_316.sh'),
+            Path('source/cps1_scene.c'), Path('source/cps1_scene.h'),
+            Path('source/cps1_tile.c'),Path('source/cps1_tile.h')])
+          assert len(selected)>160
+          assert all(p.is_file() and not p.is_symlink()
+                     and p.suffix in {'.py','.c','.h','.sh'}
+                     and 0<p.stat().st_size<262144 for p in selected)
+          assert sum(x.stat().st_size for x in selected)<3*1024*1024
+          target='stage321-public-source-only-xlib-ne-xium-kit.zip'
+          with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as z:
+            for p in selected:z.write(p,p.as_posix())
+          with zipfile.ZipFile(target) as z:
+            names=z.namelist()
+            assert len(names)==len(selected) == len(set(names))
+            assert 'tools/nexium_private_xlib_capture_321.py' in names
+            assert 'tools/nexium_private_original_gfx_optical_316.py' in names
+            assert 'source/cps1_scene.c' in names
+          print('STAGE321_PUBLIC_XLIB_SOURCE_ONLY_KIT_COMPLETE')
+          PY
+      - name: Protect original ROM and private graphics
+        run: python3 tools/check_public_tree_rom_free.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage321-public-source-only-private-xlib-optical-kit
+          path: stage321-public-source-only-xlib-ne-xium-kit.zip
+          retention-days: 2
+          if-no-files-found: error
