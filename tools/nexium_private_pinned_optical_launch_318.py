@@ -12,6 +12,7 @@ expected hashes; never commits or uploads original ROM or derived graphics.
 import argparse
 import hashlib
 import os
+import signal
 from pathlib import Path, PurePosixPath
 import stat
 import subprocess
@@ -32,6 +33,7 @@ BLOCKED = "BLOCKED_PRIVATE_PINNED_NEXIUM_OPTICAL_PREFLIGHT"
 STAGE316_PASS = "PRIVATE_ORIGINAL_CPS1_GFX_SYNTHETIC_SCENES_14_HOST_X11_MATCH"
 MAX_ARCHIVE_MEMBERS = 4096
 MAX_ARCHIVE_UNPACKED = 3*1024*1024*1024
+RUN_TIMEOUT_SECONDS = 220
 
 
 def _secure_regular(path, size, digest):
@@ -108,7 +110,93 @@ def preflight(nro, archive):
     return True
 
 
-def run(rom,nro,archive,receipt,*,execute=subprocess.run):
+
+def _descendant_pids(root_pid):
+    """Return the current Linux process-tree descendants of a runner PID.
+
+    NeXium itself uses a separate session so it can clean up its own helper
+    processes. If the outer deadline fires, enumerate descendants before
+    killing the runner so those separate process groups can also be stopped.
+    """
+    children={}
+    try:
+        entries=Path("/proc").iterdir()
+        for entry in entries:
+            if not entry.name.isdecimal():
+                continue
+            try:
+                fields=(entry/"stat").read_text(encoding="ascii").rsplit(")",1)[1].split()
+                parent=int(fields[1])
+                pid=int(entry.name)
+            except (OSError,ValueError,IndexError):
+                continue
+            children.setdefault(parent,[]).append(pid)
+    except OSError:
+        return []
+    result=[]
+    pending=list(children.get(root_pid,[]))
+    seen=set()
+    while pending:
+        pid=pending.pop()
+        if pid==root_pid or pid in seen:
+            continue
+        seen.add(pid)
+        result.append(pid)
+        pending.extend(children.get(pid,[]))
+    return result
+
+
+def _signal_pids(pids, sig):
+    """Signal only the explicitly enumerated runner descendants."""
+    for pid in pids:
+        try:
+            os.kill(pid,sig)
+        except ProcessLookupError:
+            pass
+
+
+def _terminate_process_group(proc):
+    """Stop runner descendants and its session, including Xvfb/NeXium helpers."""
+    descendants=set(_descendant_pids(proc.pid))
+    _signal_pids(descendants,signal.SIGTERM)
+    try:
+        os.killpg(proc.pid,signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=6)
+    except subprocess.TimeoutExpired:
+        pass
+    descendants.update(_descendant_pids(proc.pid))
+    _signal_pids(descendants,signal.SIGKILL)
+    try:
+        os.killpg(proc.pid,signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if proc.poll() is None:
+        proc.wait(timeout=6)
+
+
+def _execute_bounded(command, *, cwd, timeout=RUN_TIMEOUT_SECONDS):
+    """Run the private optical harness with a hard deadline and tree cleanup."""
+    try:
+        proc=subprocess.Popen(
+            command,cwd=cwd,stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT,
+            start_new_session=True)
+    except OSError:
+        raise ValueError("bounded private X11 run failed") from None
+    try:
+        try:
+            returncode=proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise ValueError("bounded private X11 run failed") from None
+        return subprocess.CompletedProcess(command,returncode)
+    finally:
+        _terminate_process_group(proc)
+
+
+def run(rom,nro,archive,receipt,*,execute=None):
     preflight(nro,archive)
     receipt=Path(receipt)
     if (not guard.outside_repo(receipt) or receipt.exists()
@@ -121,12 +209,16 @@ def run(rom,nro,archive,receipt,*,execute=subprocess.run):
         raise ValueError("Stage316 local private runner unavailable")
     with tempfile.TemporaryDirectory(prefix="stage318-pinned-host-") as temp:
         exe=_extract_verified_executable(archive,temp)
+        command=["bash",str(script),str(rom),str(nro),str(exe),str(receipt)]
         try:
-            result=execute(
-                ["bash",str(script),str(rom),str(nro),str(exe),str(receipt)],
-                cwd=root,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,timeout=150,check=False)
-        except (subprocess.TimeoutExpired,OSError) as err:
+            if execute is None:
+                result=_execute_bounded(command,cwd=root)
+            else:
+                result=execute(
+                    command,cwd=root,stdout=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,
+                    timeout=RUN_TIMEOUT_SECONDS,check=False)
+        except (subprocess.TimeoutExpired,OSError):
             raise ValueError("bounded private X11 run failed") from None
     if result.returncode!=0 or not receipt.is_file() or receipt.is_symlink():
         raise ValueError("no complete private host-visible proof")
