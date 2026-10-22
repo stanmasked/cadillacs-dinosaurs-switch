@@ -49,24 +49,20 @@ def _close(p, expected, tolerance=62):
 
 
 def decode_optical(image):
-    """Find the 18x18 magenta guest marker; decode 4 vertically spaced bits.
+    """Decode guest index only after TWO actual host-visible locator squares.
 
-    Offset and scale are determined from the HOST image, not asserted from
-    guest coordinates. Never accept a red/green bar without its marker.
+    Two magenta squares at known native x positions 8 and 1250 eliminate
+    accumulated scale error: estimating host scale from one ~18-pixel square
+    alone becomes inaccurate on half-size or antialiased windows.
     """
     im=image.convert("RGB")
     pix=im.load()
     w,h=im.size
-    # Use sparse scan and then search for the exact top-left run in a tiny
-    # neighborhood. This tolerates NeXium letterboxing/scaling.
-    candidates=[]
-    for y in range(1,h-130,2):
-        for x in range(1,min(w, max(48,w//4)),2):
+    markers={}
+    for y in range(1,max(1,h-70),2):
+        for x in range(1,w,2):
             p=pix[x,y]
             if not (p[0]>210 and p[1]<75 and p[2]>210):
-                continue
-            if _close(pix[x-1,y],(255,0,255),35) and _close(
-                    pix[x,y-1],(255,0,255),35):
                 continue
             lx=x
             while lx>0 and _close(pix[lx-1,y],(255,0,255),35):
@@ -74,19 +70,31 @@ def decode_optical(image):
             ty=y
             while ty>0 and _close(pix[lx,ty-1],(255,0,255),35):
                 ty-=1
+            key=(lx,ty)
+            if key in markers:
+                continue
             right=lx
             while right<w and _close(pix[right,ty+1],(255,0,255),35):
                 right+=1
             run=right-lx
-            if run<5 or run>50:
+            if 5<=run<=56:
+                markers[key]=run
+    values=[(x,y,width) for (x,y),width in markers.items()]
+    for lx,ly,width in values:
+        for rx,ry,far_width in values:
+            if rx<=lx+100 or abs(ly-ry)>max(4,width//4):
                 continue
-            scale=run/18.0
+            scale=(rx-lx)/(1250.0-8.0)
+            if (not .25<=scale<=3.0 or
+                    abs(width-18*scale)>max(4,4*scale) or
+                    abs(far_width-18*scale)>max(4,4*scale)):
+                continue
             bx=int(round(lx+9*scale))
             bits=0
             ok=True
             for bit in range(4):
-                by=int(round(ty+(214-188+9+26*bit)*scale))
-                if bx>=w or by>=h:
+                by=int(round(ly+(214-188+9+26*bit)*scale))
+                if not (0<=bx<w and 0<=by<h):
                     ok=False
                     break
                 rgb=_color(pix[bx,by])
@@ -96,12 +104,8 @@ def decode_optical(image):
                     ok=False
                     break
             if ok:
-                candidates.append((bits,scale,lx-8*scale,ty-188*scale))
-                # Top-left of a bright square can be located several times
-                # around an antialiased edge. Once a valid barcode is found,
-                # avoid scanning the whole image again.
-                return candidates[0],im
-    raise ValueError("no readable host optical barcode")
+                return (bits,scale,lx-8*scale,ly-188*scale),im
+    raise ValueError("two synchronized host optical markers not found")
 
 
 def verify_optical_image(image,index,reference):
