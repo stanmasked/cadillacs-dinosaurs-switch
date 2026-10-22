@@ -61,7 +61,7 @@ def synthetic_indexed_png(depth, offset=0):
         for x, index in enumerate(row):
             bit_offset = x * depth
             packed[bit_offset // 8] |= index << (8 - depth - (bit_offset % 8))
-        raw.extend(b"\\x00")
+        raw.extend(bytes([0]))
         raw.extend(packed)
     ihdr = struct.pack(">IIBBBBB", 5, 2, depth, 3, 0, 0, 0)
     return (
