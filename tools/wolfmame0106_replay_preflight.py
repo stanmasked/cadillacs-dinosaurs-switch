@@ -94,6 +94,7 @@ def png_integrity(raw):
     ihdr=None
     idat=[]
     seen_palette=False
+    palette_entries=0
     idat_started=False
     idat_finished=False
     iend=False
@@ -114,8 +115,12 @@ def png_integrity(raw):
         if name==b'IHDR':
             if ihdr is not None or length!=13:raise ValueError('repeated/invalid IHDR')
             w,h,depth,colour,comp,filt,interlace=struct.unpack('>IIBBBBB',data)
+            valid_depth = (
+                (colour == 3 and depth in (1, 2, 4, 8)) or
+                (colour != 3 and depth == 8)
+            )
             if not(1<=w<=4096 and 1<=h<=4096 and w*h<=16000000 and
-                   depth==8 and colour in PNG_CHANNELS and
+                   valid_depth and colour in PNG_CHANNELS and
                    comp==0 and filt==0 and interlace==0):
                 raise ValueError('unsupported PNG dimensions/mode')
             ihdr=(w,h,colour)
@@ -123,6 +128,7 @@ def png_integrity(raw):
             if seen_palette or idat_started or not length or length%3 or length>768:
                 raise ValueError('invalid PNG palette')
             seen_palette=True
+            palette_entries=length//3
         elif name==b'IDAT':
             if idat_finished:raise ValueError('noncontiguous PNG IDAT')
             idat_started=True
@@ -141,7 +147,10 @@ def png_integrity(raw):
     w,h,colour=ihdr
     if colour==3 and not seen_palette:
         raise ValueError('indexed PNG has no palette')
-    row_stride=1+w*PNG_CHANNELS[colour]
+    if colour==3 and palette_entries > (1 << depth):
+        raise ValueError('indexed PNG palette exceeds bit depth')
+    row_bytes=(w*PNG_CHANNELS[colour]*depth+7)//8
+    row_stride=1+row_bytes
     expected=row_stride*h
     if expected>MAX_DECODED_PNG_BYTES:
         raise ValueError('image scanlines too large')
@@ -163,6 +172,7 @@ def png_integrity(raw):
     if any(decoded[y*row_stride]>4 for y in range(h)):
         raise ValueError('invalid PNG scanline filter')
     return {'width':w,'height':h,'png_color_type':colour,
+            'png_bit_depth':depth,
             'idat_decoded_bytes':len(decoded),
             'scanline_size_and_filters_verified':True}
 
