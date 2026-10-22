@@ -81,6 +81,51 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertEqual(summary["first_port_read_delta"], 0)
         self.assertEqual(summary["playback_word_delta"], 0)
 
+    def _probe_with_synthetic_trace(self, *, static=False):
+        calls = []
+
+        def runner(_exe, _argv, cwd, **_kwargs):
+            calls.append(True)
+            if len(calls) == 1:
+                return 0, "romset minivadr is good\\n"
+            if len(calls) == 2:
+                (Path(cwd) / "inp" / "test295.inp").write_bytes(bytes(64))
+                return 0, "synthetic recording complete"
+            (Path(cwd) / "test295-replay.mng").write_bytes(b"synthetic MNG placeholder")
+            rows = [probe.TRACE_HEAD]
+            for i in range(24):
+                port0, words = (100, 300) if static else (100 + i, 300 + 5 * i)
+                rows.append(f"{10+i},{port0},{words}")
+            (Path(cwd) / "stage290-mng-counts.csv").write_text(
+                "\\n".join(rows) + "\\n", encoding="ascii")
+            return 0, "synthetic replay complete"
+
+        with patch.object(probe, "_invoke", side_effect=runner), \\
+             patch("tools.wolfmame0106_private_mng_audit.audit",
+                   return_value={"candidate_frame_count": 24}):
+            return probe.probe(self.root / "fake.exe", self.root)
+
+    def test_full_probe_blocks_structurally_valid_but_static_counters(self):
+        result = self._probe_with_synthetic_trace(static=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
+        self.assertFalse(result["synthetic_mame_playback_executed"])
+        self.assertEqual(result["synthetic_trace_audited_rows"], 24)
+        self.assertFalse(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertFalse(result["synthetic_trace_playback_words_advanced"])
+        self.assertEqual(result["synthetic_trace_first_port_read_delta"], 0)
+        self.assertEqual(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_accepts_mng_only_when_both_counters_advance(self):
+        result = self._probe_with_synthetic_trace()
+        self.assertEqual(result["status"], "SYNTHETIC_MINIVADER_MAME_VIDEO_AND_INPUT_READ_CONFIRMED")
+        self.assertTrue(result["synthetic_mame_playback_executed"])
+        self.assertEqual(result["synthetic_mng_audited_frames"], 24)
+        self.assertEqual(result["synthetic_trace_audited_rows"], 24)
+        self.assertTrue(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertTrue(result["synthetic_trace_playback_words_advanced"])
+        self.assertEqual(result["synthetic_trace_first_port_read_delta"], 23)
+        self.assertEqual(result["synthetic_trace_playback_word_delta"], 115)
+
     def test_real_recording_then_replay_nonzero_exit_is_distinct_block(self):
         calls = []
         def runner(_exe, _argv, cwd, **_kwargs):
