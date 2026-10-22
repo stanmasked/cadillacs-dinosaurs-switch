@@ -1,0 +1,95 @@
+name: Stage313 NeXium host-visible synthetic CPS-1 frame proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'source/main.c'
+      - 'tools/nexium_optical_frame_capture_313.py'
+      - 'tools/nexium_optical_scene_guest_probe_313.sh'
+      - 'tests/test_nexium_optical_frame_capture_313.py'
+      - '.github/workflows/cps1-optical-scene-guest-313.yml'
+
+concurrency:
+  group: stage313-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-optical-guest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile diagnostic guest with frame-by-frame optical beacon
+        run: |
+          set -eu
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/portlibs/switch/bin" >> "$GITHUB_PATH"
+          make -j2 DEFINES="-DDINO_SYNTHETIC_SCENE_GUEST_PROBE -DDINO_SYNTHETIC_SCENE_HOST_VISIBLE_313"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          nro=Path('cadillacs-dinosaurs-switch.nro').read_bytes()
+          assert nro[0x10:0x14]==b'NRO0'
+          assert 0x80<=struct.unpack_from('<I',nro,0x18)[0]<=len(nro)
+          assert b'cadillacs-synthetic-scene-guest.csv' in nro
+          assert b'cadillacs-synthetic-scene-next.txt' in nro
+          print('Synthetic optical guest NRO compiled')
+          PY
+          sha256sum cadillacs-dinosaurs-switch.nro > stage313-nro.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage313-rom-free-optical-guest-nro
+          path: |
+            cadillacs-dinosaurs-switch.nro
+            stage313-nro.sha256
+          if-no-files-found: error
+          retention-days: 3
+
+  observe-real-host-frames:
+    needs: build-optical-guest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage313-rom-free-optical-guest-nro
+          path: guest-input
+      - name: Verify scripts and mock-only decoder tests
+        run: |
+          set -euo pipefail
+          python3 -m pip install Pillow==11.3.0
+          (cd guest-input && sha256sum -c stage313-nro.sha256)
+          bash -n tools/nexium_optical_scene_guest_probe_313.sh
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_optical_frame_capture_313.py' -v
+      - name: Install software Vulkan and X11 capture dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            xvfb xauth xdotool imagemagick mesa-vulkan-drivers libvulkan1 \
+            vulkan-tools libgtk-3-0 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libx11-xcb1 \
+            libegl1 libgles2 libgl1 libpulse0
+      - name: Bind fourteen real guest frame IDs to host-visible X11 scene pixels
+        run: |
+          set -euo pipefail
+          bash tools/nexium_optical_scene_guest_probe_313.sh \
+            guest-input/cadillacs-dinosaurs-switch.nro stage313-evidence
+      - name: Retain only bounded aggregated host/guest status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage313-host-optical-summary-only
+          path: stage313-evidence/stage313-guest-host-optical-summary.json
+          if-no-files-found: warn
+          retention-days: 3
