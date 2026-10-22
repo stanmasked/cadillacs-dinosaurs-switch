@@ -1,46 +1,60 @@
 # Stage323 — compatible glibc 2.43 for pinned public NeXium
 
-Stage322 successfully installed Mesa Lavapipe on the private Debian 13
-container, using 25 verified public Debian packages from a one-day
-GitHub Actions artifact. A real Xvfb `vulkaninfo --summary` reports
-Vulkan 1.4.305 and an LLVM 19 llvmpipe CPU device. The Stage316
-opt-in code-only NRO and the upstream NeXium release tarball were
-independently pinned to exact SHA-256 values; the exact public emulator
-binary was safely extracted into `/opt/cadillacs-stage322-ne-xium`.
+Stage322 installed Mesa Lavapipe in the private Debian 13 container using
+25 verified public Debian packages from a one-day GitHub Actions artifact.
+A real Xvfb `vulkaninfo --summary` reports Vulkan API 1.4.305 and an LLVM 19
+llvmpipe CPU device. The Stage316 opt-in code-only NRO and the upstream
+NeXium release tarball were independently pinned to exact SHA-256 values;
+the exact public emulator binary was extracted locally.
 
 The pinned NeXium binary cannot run directly under Debian 13's system
-glibc 2.41. Read-only ELF verification shows that it needs
-`GLIBC_2.43` from `libm.so.6`. It is NOT SAFE to force-upgrade the
-Debian 13 system's libc to satisfy one experimental emulator.
+glibc 2.41. Read-only ELF verification showed that it needs `GLIBC_2.43`
+from `libm.so.6`. It is unsafe to force-upgrade Debian's system libc to
+satisfy one experimental emulator.
 
-## Safe isolated runtime plan
+## Isolated runtime — verified
 
-Fetch the genuine Ubuntu 26.04 package containing glibc >= 2.43 through
-a code-only GitHub Actions job. That runner must validate the package
-version and verify the ELF symbols `GLIBC_2.43` on libm, then publish
-only the public Ubuntu `libc6_*.deb` and its SHA-256 manifest.
+The code-only Stage323 GitHub Actions job successfully retrieved the genuine
+Ubuntu 26.04 public `libc6` package, checked its architecture and version,
+verified the relocated loader and `GLIBC_2.43` in `libm.so.6`, and published
+only that public operating-system package with a SHA-256 manifest.
 
-On the private Debian 13 machine, verify that archive's manifest,
-extract with `dpkg-deb -x` **to a separate /opt runtime directory**,
-and invoke the relocated `ld-linux-x86-64.so.2` directly with an
-explicit `--library-path` that includes the isolated glibc directory
-ahead of Debian's current libraries. Avoid installing the package with
-`dpkg -i`, `apt upgrade`, symlink replacement, or changes to the
-global `/lib64/ld-linux-x86-64.so.2`.
+The private installer verified the artifact manifest and package digest,
+extracted the package to a separate `/opt` sysroot, and ran the relocated
+`ld-linux-x86-64.so.2` with an explicit `--library-path`. Its real
+`--list` output confirmed that both `libc.so.6` and `libm.so.6` resolve from
+the isolated sysroot. The host's `ldd --version` remained Debian glibc 2.41.
+The package was not installed with `dpkg -i`; no global loader, symlink, or
+system libc was replaced.
 
-This isolates the compatibility requirement to the NeXium process and
-preserves the operating system's glibc and Vulkan driver installation.
+## Private optical verification — passed
 
-## Evidence boundaries
+A fresh local run of the Stage316 private harness completed successfully
+using the pinned NeXium executable, isolated glibc 2.43, Mesa Lavapipe and
+Xvfb. Before launch it authenticated the private canonical MAME 0.106
+`dino.zip` (all 16 required members), and verified that the private 4 MiB
+graphics region and synthetic 14-scene sequence matched the prepared SD
+input.
 
-Installation of the emulator and a compatible loader does NOT establish
-original game execution. The subsequent user-private Stage318/321 test
-must still authenticate their private 16-member canonical MAME 0.106
-`dino.zip`, require exact 4MiB original graphics and canonical
-14-frame synthetic state, and observe **actual** NRO guest
-`FRAME_SUBMITTED` events and 14 process-bound X11 optical frames.
+The private receipt reports:
 
-Private original game ROMs, derived GFX, emulator screen captures,
-guest CSV, input movies, Nintendo firmware or keys never enter public
-GitHub CI. The `libc6` artifact is a public operating-system package
-only and remains separate from any game asset.
+- 14/14 native guest `FRAME_SUBMITTED` events matched the independent Python
+  references derived from original graphics.
+- 14/14 process-bound host X11 optical frames passed the pixel-match threshold;
+  the lowest frame score was 24 matched pixels.
+- 11 distinct guest framebuffer samples were observed.
+- The receipt was written locally with mode `0600`.
+
+This proves that the isolated loader, Vulkan-capable NeXium process, NRO guest
+and process-bound X11 capture can work together on the synthetic scene
+sequence. **It does not prove actual original-game execution.** No original
+game state, real game VRAM/palette state, `dino.inp`/`dino.wlf` replay, or
+physical Nintendo Switch display was verified by this run.
+
+## Evidence and privacy boundaries
+
+Private original game ROMs, derived GFX, raw screenshots, guest CSV, private
+paths, source hashes, input movies, Nintendo firmware and keys remain outside
+public GitHub and its artifacts. The public Stage323 artifact contains only
+the public Ubuntu `libc6` package and its package manifest. The local optical
+receipt is redacted and remains private.
