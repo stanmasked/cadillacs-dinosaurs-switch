@@ -202,18 +202,6 @@ def probe(executable, rom_root):
         report["synthetic_replay_process_exit_zero"] = (code == 0)
         report["synthetic_replay_mng_file_present"] = mng_path.is_file()
         report["synthetic_replay_trace_file_present"] = trace_path.is_file()
-        if trace_path.is_file() and trace_path.stat().st_size <= MAX_BYTES:
-            try:
-                rows = trace_path.read_text(encoding="ascii").splitlines()
-                if rows and rows[0] == TRACE_HEAD and len(rows) > 1:
-                    report["synthetic_replay_trace_csv_rows"] = len(rows) - 1
-                    first = rows[1].split(",")
-                    last = rows[-1].split(",")
-                    if len(first) == len(last) == 3 and first[0].isdecimal() and last[0].isdecimal():
-                        report["synthetic_replay_trace_first_callback"] = int(first[0])
-                        report["synthetic_replay_trace_last_callback"] = int(last[0])
-            except (OSError, UnicodeError):
-                pass
         if code != 0:
             report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_PROCESS_EXIT"
             return report
@@ -228,6 +216,9 @@ def probe(executable, rom_root):
             report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_STRUCTURE"
             return report
         report["synthetic_trace_audited_rows"] = trace_audit["rows"]
+        report["synthetic_replay_trace_csv_rows"] = trace_audit["rows"]
+        report["synthetic_replay_trace_first_callback"] = trace_audit["first_callback"]
+        report["synthetic_replay_trace_last_callback"] = trace_audit["last_callback"]
         report["synthetic_trace_first_port_reads_advanced"] = trace_audit["first_port_reads_advanced"]
         report["synthetic_trace_playback_words_advanced"] = trace_audit["playback_words_advanced"]
         report["synthetic_trace_first_port_read_delta"] = trace_audit["first_port_read_delta"]
