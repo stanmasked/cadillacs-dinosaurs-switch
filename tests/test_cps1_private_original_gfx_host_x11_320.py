@@ -34,6 +34,8 @@ class Stage320RealHostOnlyPrivateTestContract(unittest.TestCase):
         self.fake_sd.mkdir()
         self.report=self.root/"private-report.json"
 
+    @unittest.skipIf(optical.Image is None,
+        "Pillow is optional for baseline Python CI; Stage320 dedicated CI installs it")
     def test_artificial_host_photo_has_25_realistic_control_samples(self):
         reference=fabricated_rgba()
         for index in (0,5,13):
@@ -45,12 +47,16 @@ class Stage320RealHostOnlyPrivateTestContract(unittest.TestCase):
                 self.assertEqual(optical.verify_optical_image(
                     frame,index,reference),25)
 
+    @unittest.skipIf(optical.Image is None,
+        "Pillow is optional for baseline Python CI; Stage320 dedicated CI installs it")
     def test_wrong_optical_index_never_passes(self):
         reference=fabricated_rgba()
         frame=stage.compose_host_frame(reference,6)
         with self.assertRaises(ValueError):
             optical.verify_optical_image(frame,7,reference)
 
+    @unittest.skipIf(optical.Image is None,
+        "Pillow is optional for baseline Python CI; Stage320 dedicated CI installs it")
     def test_modified_reference_cannot_match_different_host_frame(self):
         original=fabricated_rgba()
         forged=bytes([0])*stage.SCENE_BYTES
