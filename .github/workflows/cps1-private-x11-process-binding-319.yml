@@ -1,0 +1,88 @@
+name: Stage319 process-bound private NeXium X11 optical verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/nexium_x11_process_window_319.py'
+      - 'tools/nexium_private_original_gfx_optical_316.py'
+      - 'tests/test_nexium_x11_process_window_319.py'
+      - '.github/workflows/cps1-private-x11-process-binding-319.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage319-private-optical-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-window-ownership-and-code-only-kit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: ROM-free process ancestry and ambiguous X11 owner tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_x11_process_window_319.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_private_original_gfx_optical_316.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_nexium_private_pinned_optical_launch_318.py' -v
+      - name: Validate native compositor source still compiles without game ROM
+        run: |
+          set -euo pipefail
+          mkdir -p stage319-temporary-compiled-code
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -Isource source/cps1_scene.c source/cps1_tile.c \
+            -o stage319-temporary-compiled-code/cps1-native.so
+          test -s stage319-temporary-compiled-code/cps1-native.so
+      - name: Exact public source-only package with new process binding
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          files=sorted(
+            list(Path('tools').glob('*.py')) + [
+              Path('tools/run_private_original_gfx_optical_316.sh'),
+              Path('source/cps1_scene.c'),Path('source/cps1_scene.h'),
+              Path('source/cps1_tile.c'),Path('source/cps1_tile.h')])
+          assert len(files)>=160
+          assert len({p.as_posix() for p in files})==len(files)
+          assert all(
+            p.is_file() and not p.is_symlink()
+            and p.suffix in {'.py','.sh','.c','.h'}
+            and 0<p.stat().st_size<262144 and b'\0' not in p.read_bytes()
+            for p in files)
+          assert sum(p.stat().st_size for p in files)<3*1024*1024
+          with zipfile.ZipFile('stage319-public-native-private-verify-kit.zip',
+                               'w',compression=zipfile.ZIP_DEFLATED) as out:
+            for p in files:out.write(p,p.as_posix())
+          with zipfile.ZipFile('stage319-public-native-private-verify-kit.zip') as inp:
+            names=set(inp.namelist())
+            for name in (
+                'source/cps1_scene.c',
+                'source/cps1_tile.c',
+                'tools/nexium_private_original_gfx_optical_316.py',
+                'tools/nexium_x11_process_window_319.py',
+                'tools/nexium_private_pinned_optical_launch_318.py',
+                'tools/run_private_original_gfx_optical_316.sh'):
+              assert name in names
+            assert len(names)==len(files)
+          print('STAGE319_PRIVATE_ORIGINAL_GFX_X11_CODE_ONLY_KIT_CONFIRMED')
+          PY
+      - name: Public ROM-free source tree check
+        run: python3 tools/check_public_tree_rom_free.py
+      - name: Upload code ONLY; never original ROM, GFX, guest CSV or X11 images
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage319-public-c-python-private-x11-process-bound-kit
+          path: stage319-public-native-private-verify-kit.zip
+          retention-days: 2
+          if-no-files-found: error
