@@ -9,6 +9,7 @@ import json
 import os
 import re
 import stat
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -52,25 +53,47 @@ def private_inputs(inp, wlf):
     return frames, version, duration
 
 
+def _terminate_probe_group(proc):
+    """Stop a timed-out or short-lived emulator probe and its child processes."""
+    try:
+        os.killpg(proc.pid,signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid,signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if proc.poll() is None:
+        proc.wait(timeout=2)
+
+
 def bounded_probe(binary, argv, cwd, timeout):
-    """Capture no more than MAX_OUTPUT plus one byte; never forward raw output."""
+    """Capture bounded emulator output and never leave probe children running."""
     try:
         with tempfile.TemporaryFile() as captured:
-            with subprocess.Popen(
-                [str(Path(binary).resolve()), *argv], cwd=cwd, stdin=subprocess.DEVNULL,
-                stdout=captured, stderr=subprocess.STDOUT,
-            ) as proc:
+            proc = subprocess.Popen(
+                [str(Path(binary).resolve()), *argv], cwd=cwd,
+                stdin=subprocess.DEVNULL, stdout=captured,
+                stderr=subprocess.STDOUT, start_new_session=True,
+            )
+            try:
                 try:
                     code = proc.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
                     return None, "", True
+            finally:
+                _terminate_probe_group(proc)
             if captured.tell() > MAX_OUTPUT:
                 return code, "", False
             captured.seek(0)
             data = captured.read(MAX_OUTPUT + 1)
             return code, data.decode("utf-8", errors="replace"), False
+    except subprocess.TimeoutExpired:
+        return None, "", True
     except OSError:
         return None, "", False
 
