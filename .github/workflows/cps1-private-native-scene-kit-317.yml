@@ -1,0 +1,87 @@
+name: Stage317 public C/Python native CPS-1 source-only private test kit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/cps1_private_original_scene_preflight_317.py'
+      - 'tests/test_cps1_private_original_scene_preflight_317.py'
+      - '.github/workflows/cps1-private-native-scene-kit-317.yml'
+      - 'source/cps1_scene.c'
+      - 'source/cps1_scene.h'
+      - 'source/cps1_tile.c'
+      - 'source/cps1_tile.h'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage317-code-only-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-only-private-native-scene-kit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Stage317 original-ROM evidence gate with invented bytes only
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_cps1_private_original_scene_preflight_317.py' -v
+          python3 -m unittest discover -s tests -p 'test_cps1_private_canonical_scene_gate_305.py' -v
+          python3 -m unittest discover -s tests -p 'test_cps1_private_original_gfx_synthetic_sd_315.py' -v
+      - name: Compile actual native source without any original ROM
+        run: |
+          set -euo pipefail
+          mkdir -p stage317-local-build
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+              -Isource source/cps1_scene.c source/cps1_tile.c \
+              -o stage317-local-build/libcps1-scene-synthetic.so
+          test -s stage317-local-build/libcps1-scene-synthetic.so
+          echo STAGE317_CPS1_C_SCENE_COMPILES_PUBLIC_ROM_FREE
+      - name: Package exact public C/H and Python source files only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import zipfile
+          allowed_source=(
+              'source/cps1_scene.c',
+              'source/cps1_scene.h',
+              'source/cps1_tile.c',
+              'source/cps1_tile.h',
+          )
+          python_files=sorted(Path('tools').glob('*.py'))
+          shell_files=(Path('tools/run_private_original_gfx_optical_316.sh'),)
+          paths=sorted([Path(p) for p in allowed_source]+python_files+list(shell_files))
+          assert len(paths)>150
+          assert all(p.is_file() and not p.is_symlink()
+                     and 0<p.stat().st_size<262144
+                     and p.suffix in {'.py','.c','.h','.sh'}
+                     and b'\\0' not in p.read_bytes()
+                     for p in paths)
+          assert sum(p.stat().st_size for p in paths)<3*1024*1024
+          with zipfile.ZipFile('stage317-public-native-source-only.zip','w',
+                               compression=zipfile.ZIP_DEFLATED) as z:
+              for p in paths:z.write(p,p.as_posix())
+          with zipfile.ZipFile('stage317-public-native-source-only.zip') as z:
+              got=z.namelist()
+              assert got==[p.as_posix() for p in paths]
+              assert all(name.startswith(('source/','tools/')) for name in got)
+              assert len(got)==len(paths)
+              assert 'tools/cps1_private_original_scene_preflight_317.py' in got
+              assert 'source/cps1_scene.c' in got
+          print('STAGE317_PUBLIC_NATIVE_SOURCE_ONLY_PACKAGE_CONFIRMED')
+          PY
+      - name: ROM-free public Git tree guard
+        run: python3 tools/check_public_tree_rom_free.py
+      - name: Upload code-only kit, NEVER guest ROM, GIF, X11 images or gfx.bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage317-public-native-c-python-private-verification-kit
+          path: stage317-public-native-source-only.zip
+          if-no-files-found: error
+          retention-days: 2
