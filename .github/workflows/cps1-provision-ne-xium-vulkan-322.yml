@@ -130,6 +130,9 @@ jobs:
             fi
             if [ "$attempt" -eq 2 ]; then exit 2; fi
           done
+          # debian:trixie minimal image deliberately omits Python. Install
+          # it only in this disposable public-package download container.
+          timeout 120s apt-get -y -qq -o Acquire::Retries=2 install python3-minimal
           mkdir -p stage322-debian-trixie-debs
           timeout 240s apt-get -y -qq --download-only \
             -o Dir::Cache::archives="$PWD/stage322-debian-trixie-debs" \
