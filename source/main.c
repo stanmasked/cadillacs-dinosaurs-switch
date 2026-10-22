@@ -582,9 +582,18 @@ int main(int argc, char **argv) {
     PadState pad;
     padInitializeDefault(&pad);
 
-    /* Without original ROM assets, start a purely geometric training room.
-     * With user-owned graphics present, the established tile/scene viewer
-     * remains the initial mode and ZL switches to/from the training room.
+    /* Mount sdmc BEFORE probing the optional diagnostic gfx.bin/sequence.bin.
+     * The former mount only happened after load_region(), inside the
+     * arena-only emulator selftest path: a cold viewer could therefore miss
+     * otherwise valid SD assets. An already mounted sdmc device is also OK;
+     * even on mount failure the synthetic geometry arena remains usable.
+     * No ROM data is generated, captured or published by this operation.
+     */
+    (void)fsdevMountSdmc();
+    /* Without local graphics, start a purely geometric training room.
+     * With local graphics present (original owned or synthetic), the
+     * established tile/scene viewer remains the initial mode and ZL
+     * switches to/from the training room.
      */
     uint8_t *gfx=load_region();
 
@@ -695,7 +704,8 @@ int main(int argc, char **argv) {
     DinoGuestBatchStats guest_batch={0};
     uint32_t guest_frame_id=0;
     if (arena_active) {
-        (void)fsdevMountSdmc();
+        /* sdmc was already mounted before the optional gfx/sequence probe.
+         * Do not attempt a second mount of the same devoptab device. */
         /* Stage 229: guest-executed, scripted ROM-free counter proof.
          * This writes only synthetic diagnostic state, before the main
          * 180-tick replay; never record raw pad values or ROM contents.
