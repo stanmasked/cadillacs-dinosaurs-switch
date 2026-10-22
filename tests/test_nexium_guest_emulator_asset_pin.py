@@ -13,9 +13,9 @@ import unittest
 
 
 SCRIPT=Path('tools/nexium_guest_replay_probe.sh')
-EXPECTED_SHA='c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66'
-EXPECTED_SIZE=114182978
-ASSET_ID=658656899
+EXPECTED_SHA='d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde'
+EXPECTED_SIZE=114560520
+ASSET_ID=664770154
 
 
 class NeXiumPinnedReleaseTests(unittest.TestCase):
