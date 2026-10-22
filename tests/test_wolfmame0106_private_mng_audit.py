@@ -110,10 +110,23 @@ class CandidateMNGFrameAuditTests(unittest.TestCase):
         # when its bitmap is palette-based. Width five exercises row padding.
         for depth in (1, 2, 4, 8):
             with self.subTest(depth=depth):
-                self.store([
-                    synthetic_indexed_png(depth, offset=0),
-                    synthetic_indexed_png(depth, offset=1),
-                ], w=5, h=2)
+                first = synthetic_indexed_png(depth, offset=0)
+                second = synthetic_indexed_png(depth, offset=1)
+                palette_count = (1 << depth) if depth < 8 else 4
+                palette = [
+                    ((i * 37) & 255, (i * 73) & 255, (i * 109) & 255)
+                    for i in range(palette_count)
+                ]
+                expected = bytes(
+                    channel
+                    for _row in range(2)
+                    for x in range(5)
+                    for channel in (*palette[x % palette_count], 255)
+                )
+                width, height, rgba = mng.pixels.normalized_rgba(first)
+                self.assertEqual((width, height), (5, 2))
+                self.assertEqual(rgba, expected)
+                self.store([first, second], w=5, h=2)
                 result = mng.audit(self.path, minimum_frames=2)
                 self.assertEqual(result["candidate_frame_count"], 2)
                 self.assertEqual(result["changed_candidate_pairs"], 1)
