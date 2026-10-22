@@ -34,7 +34,7 @@ jobs:
           mkdir -p stage323-public-glibc
           cd stage323-public-glibc
           timeout 120s apt-get download libc6
-          deb="$(find . -maxdepth 1 -type f -name 'libc6_*_amd64.deb' -print -quit)"
+          deb="$(find . -maxdepth 1 -type f -name 'libc6_*.deb' -print -quit)"
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Architecture)" = "amd64"
           version="$(dpkg-deb -f "$deb" Version)"
@@ -59,10 +59,10 @@ jobs:
           import hashlib,json
           from pathlib import Path
           root=Path("stage323-public-glibc")
-          entries=list(root.glob('libc6_*_amd64.deb'))
+          entries=list(root.glob('libc6_*.deb'))
           assert len(entries)==1
           package=entries[0]
-          data={"schema":"stage323-public-glibc243-ubuntu2604-v1",
+          data={"schema":"stage323-public-glibc243-ubuntu2604-v2",
                 "host_system_libc_must_remain_unchanged":True,
                 "only_public_ubuntu_glibc_package_included":True,
                 "original_game_rom_or_derived_graphics_included":False,
