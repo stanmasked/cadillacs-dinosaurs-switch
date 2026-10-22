@@ -36,15 +36,17 @@ jobs:
           timeout 120s apt-get download libc6
           deb="$(find . -maxdepth 1 -type f -name 'libc6_*.deb' -print -quit)"
           test -n "$deb"
-          test "$(dpkg-deb -f "$deb" Architecture)" = "amd64"
+          arch="$(dpkg-deb -f "$deb" Architecture)"
           version="$(dpkg-deb -f "$deb" Version)"
+          printf "STAGE323_PACKAGE=%s ARCH=%s VERSION=%s\\n" "$deb" "$arch" "$version"
+          test "$arch" = "amd64"
           dpkg --compare-versions "$version" ge '2.43'
           printf 'STAGE323_PUBLIC_GLIBC_PACKAGE_VERSION=%s\n' "$version"
       - name: Inspect actual isolated glibc loader and libm symbols
         run: |
           set -euo pipefail
           mkdir -p stage323-installed-temporary
-          deb="$(find stage323-public-glibc -maxdepth 1 -name 'libc6_*_amd64.deb' -print -quit)"
+          deb="$(find stage323-public-glibc -maxdepth 1 -name 'libc6_*.deb' -print -quit)"
           dpkg-deb -x "$deb" stage323-installed-temporary
           loader="$(find stage323-installed-temporary -type f -name 'ld-linux-x86-64.so.2' -print -quit)"
           math="$(find stage323-installed-temporary -type f -name 'libm.so.6' -print -quit)"
