@@ -20,11 +20,12 @@ cp -a "$tmp/new-fixture/switch" "$tmp/nexium-data/sdmc/switch"
 test "$(stat -c %s "$tmp/nexium-data/sdmc/switch/cadillacs-dinosaurs-switch/gfx.bin")" = 4194304
 test "$(stat -c %s "$tmp/nexium-data/sdmc/switch/cadillacs-dinosaurs-switch/sequence.bin")" = 875160
 
-# The same independently pinned NeXium nightly already used by the project's
-# proven guest-ARM64 training-room workflow. Reject replacement bytes.
+# Verified against official GitHub release-asset metadata 2026-10-22:
+# Linux asset id=664770154, 114560520 bytes, sha256:d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde.
+# The mutable nightly tag MUST be rejected on any future replacement.
 release="https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz"
-expected_sha="c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66"
-expected_bytes=114182978
+expected_sha="d96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde"
+expected_bytes=114560520
 curl --fail --location --retry 2 --connect-timeout 20 --max-time 240 \
     "$release" -o "$tmp/nexium.tar.gz" > "$tmp/download.log" 2>&1
 test "$(wc -c < "$tmp/nexium.tar.gz" | tr -d '[:space:]')" = "$expected_bytes"
