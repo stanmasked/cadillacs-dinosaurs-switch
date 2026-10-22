@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - '.github/workflows/wine32-offline-runtime.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/wine32-offline-runtime.yml'
   workflow_dispatch:
 
 permissions:
