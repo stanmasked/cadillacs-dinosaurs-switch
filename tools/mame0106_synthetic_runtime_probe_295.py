@@ -86,6 +86,7 @@ def _classify_mng_audit_error(error):
         ("incomplete frame", "INCOMPLETE_FRAME"),
         ("mhdr", "INVALID_MHDR"),
         ("mame mng must begin", "INVALID_MHDR"),
+        ("unsupported png dimensions/mode", "UNSUPPORTED_PNG_MODE"),
         ("corrupted png", "INVALID_EMBEDDED_PNG"),
         ("invalid png", "INVALID_EMBEDDED_PNG"),
         ("private regular file", "INVALID_PRIVATE_PATH"),

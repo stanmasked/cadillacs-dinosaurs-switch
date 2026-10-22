@@ -95,6 +95,7 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
             "MNG/PNG image dimensions differ": "DIMENSION_MISMATCH",
             "unexpected global chunk in MAME 0.106 MNG": "UNEXPECTED_GLOBAL_CHUNK",
             "invalid or non-MAME-0.106 MHDR": "INVALID_MHDR",
+            "unsupported PNG dimensions/mode": "UNSUPPORTED_PNG_MODE",
             "corrupted PNG image": "INVALID_EMBEDDED_PNG",
             "candidate MNG must be a private regular file": "INVALID_PRIVATE_PATH",
             "unanticipated parser failure at /private/user/path": "UNCLASSIFIED_AUDIT_ERROR",

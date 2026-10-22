@@ -47,6 +47,29 @@ def synthetic_png(rgb=(12, 30, 90), filter_mode=0, compression=6):
     )
 
 
+def synthetic_indexed_png(depth, offset=0):
+    """MAME-style palette PNG using packed 1/2/4/8-bit indices."""
+    palette_count = (1 << depth) if depth < 8 else 4
+    palette = b"".join(
+        bytes(((i * 37) & 255, (i * 73) & 255, (i * 109) & 255))
+        for i in range(palette_count)
+    )
+    rows = [[(x + offset) % palette_count for x in range(5)] for _ in range(2)]
+    raw = bytearray()
+    for row in rows:
+        packed = bytearray((len(row) * depth + 7) // 8)
+        for x, index in enumerate(row):
+            bit_offset = x * depth
+            packed[bit_offset // 8] |= index << (8 - depth - (bit_offset % 8))
+        raw.extend(bytes([0]))
+        raw.extend(packed)
+    ihdr = struct.pack(">IIBBBBB", 5, 2, depth, 3, 0, 0, 0)
+    return (
+        mng.png.PNG_SIG + chunk(b"IHDR", ihdr) + chunk(b"PLTE", palette) +
+        chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND")
+    )
+
+
 def synthetic_mng(images, *, w=2, h=2, ticks=60, end=True):
     mhdr = struct.pack(">7I", w, h, ticks, 0, 0, 0, 0x41)
     data = (mng.MNG_SIGNATURE + chunk(b"MHDR", mhdr) +
@@ -81,6 +104,35 @@ class CandidateMNGFrameAuditTests(unittest.TestCase):
         self.assertFalse(result["exact_video_to_inp_frame_alignment_verified"])
         self.assertFalse(result["physical_switch_tested"])
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_mame_palette_png_packed_depths_audit_end_to_end(self):
+        # Historical MAME writes indexed PNG at bit depths 1, 2, 4 or 8
+        # when its bitmap is palette-based. Width five exercises row padding.
+        for depth in (1, 2, 4, 8):
+            with self.subTest(depth=depth):
+                first = synthetic_indexed_png(depth, offset=0)
+                second = synthetic_indexed_png(depth, offset=1)
+                palette_count = (1 << depth) if depth < 8 else 4
+                palette = [
+                    ((i * 37) & 255, (i * 73) & 255, (i * 109) & 255)
+                    for i in range(palette_count)
+                ]
+                expected = bytes(
+                    channel
+                    for _row in range(2)
+                    for x in range(5)
+                    for channel in (*palette[x % palette_count], 255)
+                )
+                width, height, rgba = mng.pixels.normalized_rgba(first)
+                self.assertEqual((width, height), (5, 2))
+                self.assertEqual(rgba, expected)
+                self.store([first, second], w=5, h=2)
+                result = mng.audit(self.path, minimum_frames=2)
+                self.assertEqual(result["candidate_frame_count"], 2)
+                self.assertEqual(result["changed_candidate_pairs"], 1)
+                self.assertEqual(result["identical_candidate_pairs"], 0)
+                self.assertTrue(result["embedded_png_scanlines_and_chunk_crcs_valid"])
+                self.assertFalse(result["original_inp_playback_verified"])
 
     def test_recompressed_and_refiltered_identical_pixels(self):
         frames = [
