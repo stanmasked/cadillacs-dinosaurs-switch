@@ -50,10 +50,18 @@ class Stage309NativeSequenceAcceptanceTests(unittest.TestCase):
         self.assertEqual(len(self.fake_gfx), 4194304)
 
     def test_native_header_corruption_rejected(self):
-        for position in (0, 8, 10, 12, 16):
+        # Flipping the FPS byte from 2 to 3 is still legal (range 1..60).
+        # Check actual invalid boundaries rather than another valid rate.
+        for position in (0, 8, 12, 16):
             modified = bytearray(self.sequence)
             modified[position] ^= 1
             with self.subTest(position=position):
+                accepted, raw, state = self.native_open(bytes(modified))
+                self.assertFalse(accepted)
+        for bad_fps in (0, 61):
+            modified = bytearray(self.sequence)
+            struct.pack_into("<H", modified, 10, bad_fps)
+            with self.subTest(fps=bad_fps):
                 accepted, raw, state = self.native_open(bytes(modified))
                 self.assertFalse(accepted)
 
