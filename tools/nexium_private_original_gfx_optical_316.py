@@ -122,6 +122,42 @@ def _check_final_trace(trace, reference_hashes):
     return len(samples)
 
 
+def _launch_argv(exe, nro, environ=None):
+    """Use an explicitly isolated glibc only when both runtime pins exist.
+
+    Default mode retains the historical direct launch. Isolated mode refuses
+    partial configuration, symlinked loader paths, or a sysroot missing its
+    own libc/libm. The host system loader and libraries are never replaced.
+    """
+    env = os.environ if environ is None else environ
+    loader_value = env.get("NEXIUM_DYNAMIC_LOADER")
+    library_value = env.get("NEXIUM_ISOLATED_LIBRARY_PATH")
+    if not loader_value and not library_value:
+        return [str(exe), str(nro)]
+    if not loader_value or not library_value:
+        raise ValueError("incomplete isolated NeXium runtime configuration")
+    loader = Path(loader_value)
+    if (loader.is_symlink() or not loader.is_file()
+            or not os.access(loader, os.X_OK)
+            or any(parent.is_symlink() for parent in loader.parents)):
+        raise ValueError("isolated NeXium loader is missing or unsafe")
+    libraries = library_value.split(":")
+    if (len(libraries) < 2 or
+            any(not item or not Path(item).is_absolute()
+                or not Path(item).is_dir() for item in libraries)):
+        raise ValueError("isolated NeXium library path is malformed")
+    sysroot_lib = Path(libraries[0])
+    if sysroot_lib.resolve() != loader.parent.resolve():
+        raise ValueError("isolated loader and library path disagree")
+    for soname in ("libc.so.6", "libm.so.6"):
+        candidate = sysroot_lib / soname
+        if (not candidate.is_file()
+                or candidate.resolve().parent != sysroot_lib.resolve()):
+            raise ValueError("isolated glibc sysroot is incomplete")
+    return [str(loader), "--inhibit-cache", "--library-path",
+            library_value, str(exe), str(nro)]
+
+
 def _run(exe,nro,sd_root,root,gfx,deadline):
     trace=sd_root/"cadillacs-synthetic-scene-guest.csv"
     if trace.exists() or trace.is_symlink():
@@ -137,7 +173,7 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
         refs.append(frame)
     scores=[]
     with open(root/"private-ne-xium-console.txt","wb") as console:
-        with subprocess.Popen([str(exe),str(nro)],stdout=console,
+        with subprocess.Popen(_launch_argv(exe,nro),stdout=console,
                               stderr=subprocess.STDOUT) as proc:
             try:
                 for index,reference in enumerate(refs):
