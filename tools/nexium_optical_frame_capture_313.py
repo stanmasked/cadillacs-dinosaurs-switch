@@ -211,12 +211,17 @@ def _run(exe,nro,sd_root,scratch,deadline,stats):
                             time.sleep(.2)
                     score.append(matched)
                     if i<13:
-                        # Atomic replace in the isolated fake SD root;
-                        # acknowledge only AFTER screen frame i was observed.
-                        temporary=sd_root/"cadillacs-synthetic-scene-next.pending"
-                        final=sd_root/"cadillacs-synthetic-scene-next.txt"
-                        temporary.write_text("NEXT,{}\n".format(i))
-                        os.replace(temporary,final)
+                        # Write a NEW, immutable, index-specific mailbox:
+                        # some emulated FS implementations cache an open
+                        # file across host-side atomic replacement. Unique
+                        # path prevents stale NEXT,0 reads at frame 1.
+                        # Create only after authentic host image validation.
+                        next_file=sd_root/(
+                            "cadillacs-synthetic-scene-next-{:02d}.txt".format(i))
+                        with next_file.open("x", encoding="ascii") as mailbox:
+                            mailbox.write("NEXT,{}\n".format(i))
+                            mailbox.flush()
+                            os.fsync(mailbox.fileno())
                 actual=guest.validate_text(trace.read_text("utf-8"))
                 if actual["status"]!=guest.PASS or len(score)!=14:
                     raise ValueError("missing valid native guest scene parity")
