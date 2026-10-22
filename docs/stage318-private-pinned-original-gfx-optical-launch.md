@@ -68,7 +68,7 @@ derived tile graphics, screenshots, video, guest CSV, original hashes,
 input recordings or other game assets are uploaded to public GitHub
 branches, CI artifacts or releases.
 
-A future real private Stage318 success would mean only: **14
+The full Stage318 private wrapper has now passed locally with the exact pinned\nNRO and NeXium archive, isolated glibc 2.43, Mesa Lavapipe, and Xvfb. It\nverified 16/16 source-authenticated ROM members, 14/14 native guest scene\nsubmissions, and 14/14 process-bound host X11 optical frames. The mode-0600\nreceipt remains private; no raw captures, paths or source hashes were exported.\n\nThis result means only: **14
 host-visible synthetic scene states rendered from authentic STATIC original
 graphics**. It would not prove original game program execution, original
 VRAM/palette/register captures, authentic original gameplay frames,

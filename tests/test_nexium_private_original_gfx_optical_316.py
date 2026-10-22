@@ -2,10 +2,11 @@
 import contextlib
 import io
 import json
+import signal
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from tools import nexium_private_original_gfx_optical_316 as stage
 from tools import cps1_synthetic_scene_sequence_307 as invented
@@ -140,6 +141,113 @@ class Stage316PrivateOpticalSafety(unittest.TestCase):
         with self.assertRaises(ValueError):
             stage._run(Path("/nothing"),Path("/nothing"),self.sd,
                        self.root,self.gfx,0.0)
+
+    def test_direct_launch_is_unchanged_when_no_isolated_runtime_requested(self):
+        exe=self.root/"nexium";nro=self.root/"game.nro"
+        self.assertEqual(stage._launch_argv(exe,nro,{}),[str(exe),str(nro)])
+
+    def test_isolated_launch_uses_pinned_loader_and_explicit_library_path(self):
+        sysroot=self.root/"glibc"/"lib"/"x86_64-linux-gnu"
+        sysroot.mkdir(parents=True)
+        loader=sysroot/"ld-linux-x86-64.so.2"
+        loader.write_text("#!/bin/sh\\nexit 0\\n")
+        loader.chmod(0o700)
+        for soname in ("libc.so.6","libm.so.6"):
+            (sysroot/soname).write_bytes(b"PUBLIC-MOCK-GLIBC-LIBRARY")
+        system=self.root/"system-libs";system.mkdir()
+        library_path=str(sysroot)+":"+str(system)
+        argv=stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+            "NEXIUM_DYNAMIC_LOADER":str(loader),
+            "NEXIUM_ISOLATED_LIBRARY_PATH":library_path,
+        })
+        self.assertEqual(argv,[
+            str(loader),"--inhibit-cache","--library-path",library_path,
+            str(self.root/"nexium"),str(self.root/"game.nro")])
+
+    def test_isolated_linkage_must_resolve_libc_and_libm_inside_sysroot(self):
+        sysroot=self.root/"glibc"/"lib"
+        sysroot.mkdir(parents=True)
+        loader=sysroot/"ld-linux-x86-64.so.2"
+        loader.write_text("#!/bin/sh\\nexit 0\\n");loader.chmod(0o700)
+        for soname in ("libc.so.6","libm.so.6"):
+            (sysroot/soname).write_bytes(b"MOCK-ONLY")
+        system=self.root/"system-libs";system.mkdir()
+        library_path=str(sysroot)+":"+str(system)
+        exe=self.root/"nexium"
+        command=stage._launch_argv(exe,self.root/"game.nro",{
+            "NEXIUM_DYNAMIC_LOADER":str(loader),
+            "NEXIUM_ISOLATED_LIBRARY_PATH":library_path})
+        good=("libc.so.6 => "+str(sysroot/"libc.so.6")+" (0x1)\\n"+
+              "libm.so.6 => "+str(sysroot/"libm.so.6")+" (0x2)\\n").encode()
+        with patch.object(stage.subprocess,"run",return_value=type(
+                "Result",(),{"returncode":0,"stdout":good})()):
+            stage._verify_isolated_linkage(exe,command)
+        bad=("libc.so.6 => "+str(sysroot/"libc.so.6")+" (0x1)\\n"+
+             "libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x2)\\n").encode()
+        with patch.object(stage.subprocess,"run",return_value=type(
+                "Result",(),{"returncode":0,"stdout":bad})()):
+            with self.assertRaises(ValueError):
+                stage._verify_isolated_linkage(exe,command)
+
+    def test_isolated_launch_refuses_partial_or_incomplete_sysroot(self):
+        with self.assertRaises(ValueError):
+            stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+                "NEXIUM_DYNAMIC_LOADER":"/tmp/loader-only"})
+        sysroot=self.root/"glibc"/"lib"
+        sysroot.mkdir(parents=True)
+        loader=sysroot/"ld-linux-x86-64.so.2"
+        loader.write_text("#!/bin/sh\\nexit 0\\n");loader.chmod(0o700)
+        (sysroot/"libc.so.6").write_bytes(b"MOCK-ONLY")
+        system=self.root/"system-libs";system.mkdir()
+        with self.assertRaises(ValueError):
+            stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+                "NEXIUM_DYNAMIC_LOADER":str(loader),
+                "NEXIUM_ISOLATED_LIBRARY_PATH":str(sysroot)+":"+str(system)})
+
+    def test_isolated_launch_refuses_symlinked_loader(self):
+        sysroot=self.root/"glibc"/"lib"
+        sysroot.mkdir(parents=True)
+        real=self.root/"real-loader"
+        real.write_text("#!/bin/sh\\nexit 0\\n");real.chmod(0o700)
+        alias=sysroot/"ld-linux-x86-64.so.2";alias.symlink_to(real)
+        (sysroot/"libc.so.6").write_bytes(b"MOCK-ONLY")
+        (sysroot/"libm.so.6").write_bytes(b"MOCK-ONLY")
+        system=self.root/"system-libs";system.mkdir()
+        with self.assertRaises(ValueError):
+            stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+                "NEXIUM_DYNAMIC_LOADER":str(alias),
+                "NEXIUM_ISOLATED_LIBRARY_PATH":str(sysroot)+":"+str(system)})
+
+    def test_cleanup_signals_the_whole_ne_xium_process_group(self):
+        # The leader may already have exited while a GUI/helper child remains.
+        class Proc:
+            pid = 43122
+            def wait(self, timeout=None): return 0
+            def poll(self): return 0
+        with patch.object(stage.os, "killpg") as killpg:
+            stage._terminate_process_group(Proc())
+        self.assertEqual(killpg.call_args_list,[
+            call(43122,signal.SIGTERM),call(43122,signal.SIGKILL)])
+
+    def test_cleanup_escalates_when_process_leader_ignores_term(self):
+        class Proc:
+            pid = 43123
+            def __init__(self): self.alive=True
+            def wait(self, timeout=None):
+                if self.alive and timeout==6:
+                    from subprocess import TimeoutExpired
+                    raise TimeoutExpired("ne-xium",timeout)
+                self.alive=False
+                return 0
+            def poll(self): return None if self.alive else 0
+        proc=Proc()
+        def fake_killpg(pgid, sig):
+            if sig==signal.SIGKILL: proc.alive=False
+        with patch.object(stage.os,"killpg",side_effect=fake_killpg) as killpg:
+            stage._terminate_process_group(proc)
+        self.assertEqual(killpg.call_args_list,[
+            call(43123,signal.SIGTERM),call(43123,signal.SIGKILL)])
+        self.assertEqual(proc.poll(),0)
 
     def test_source_level_optin_flag_and_no_stage308_alias(self):
         # Compile macro guards prevent accidental physical game's origin

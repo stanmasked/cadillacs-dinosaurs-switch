@@ -12,6 +12,7 @@ PRIVATE Stage315 SD staging root, and a locally pinned NeXium executable.
 import argparse
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
@@ -122,6 +123,88 @@ def _check_final_trace(trace, reference_hashes):
     return len(samples)
 
 
+def _launch_argv(exe, nro, environ=None):
+    """Use an explicitly isolated glibc only when both runtime pins exist.
+
+    Default mode retains the historical direct launch. Isolated mode refuses
+    partial configuration, symlinked loader paths, or a sysroot missing its
+    own libc/libm. The host system loader and libraries are never replaced.
+    """
+    env = os.environ if environ is None else environ
+    loader_value = env.get("NEXIUM_DYNAMIC_LOADER")
+    library_value = env.get("NEXIUM_ISOLATED_LIBRARY_PATH")
+    if not loader_value and not library_value:
+        return [str(exe), str(nro)]
+    if not loader_value or not library_value:
+        raise ValueError("incomplete isolated NeXium runtime configuration")
+    loader = Path(loader_value)
+    if (loader.is_symlink() or not loader.is_file()
+            or not os.access(loader, os.X_OK)
+            or any(parent.is_symlink() for parent in loader.parents)):
+        raise ValueError("isolated NeXium loader is missing or unsafe")
+    libraries = library_value.split(":")
+    if (len(libraries) < 2 or
+            any(not item or not Path(item).is_absolute()
+                or not Path(item).is_dir() for item in libraries)):
+        raise ValueError("isolated NeXium library path is malformed")
+    sysroot_lib = Path(libraries[0])
+    if sysroot_lib.resolve() != loader.parent.resolve():
+        raise ValueError("isolated loader and library path disagree")
+    for soname in ("libc.so.6", "libm.so.6"):
+        candidate = sysroot_lib / soname
+        if (not candidate.is_file()
+                or candidate.resolve().parent != sysroot_lib.resolve()):
+            raise ValueError("isolated glibc sysroot is incomplete")
+    return [str(loader), "--inhibit-cache", "--library-path",
+            library_value, str(exe), str(nro)]
+
+
+def _verify_isolated_linkage(exe, command):
+    """Prove libc and libm resolve from the isolated sysroot before launch."""
+    if len(command) < 6 or command[1] != "--inhibit-cache":
+        raise ValueError("malformed isolated NeXium launch command")
+    library_value = command[3]
+    sysroot_lib = Path(library_value.split(":")[0]).resolve()
+    try:
+        result = subprocess.run(
+            [command[0], "--inhibit-cache", "--library-path",
+             library_value, "--list", str(exe)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL, timeout=8, check=False)
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError("isolated NeXium dynamic-loader preflight failed") from None
+    output = result.stdout.decode("utf-8", "replace")
+    if result.returncode != 0:
+        raise ValueError("isolated NeXium dynamic-loader preflight failed")
+    for soname in ("libc.so.6", "libm.so.6"):
+        expected = str(sysroot_lib / soname)
+        if expected not in output or (soname + " => " + expected) not in output:
+            raise ValueError("NeXium did not resolve glibc from isolated sysroot")
+
+
+def _terminate_process_group(proc):
+    """Stop NeXium and any helper processes so Xvfb-run cannot hang.
+
+    The emulator is started in a new session, making proc.pid its process
+    group ID. Signal the entire group even if the leader already exited;
+    NeXium/FFmpeg helpers must not outlive the private capture run.
+    """
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=6)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if proc.poll() is None:
+        proc.wait(timeout=6)
+
+
 def _run(exe,nro,sd_root,root,gfx,deadline):
     trace=sd_root/"cadillacs-synthetic-scene-guest.csv"
     if trace.exists() or trace.is_symlink():
@@ -136,9 +219,13 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
             gfx,[tuple(entry) for entry in snap["palette_rgb"]],snap)
         refs.append(frame)
     scores=[]
+    command = _launch_argv(exe,nro)
+    if command[0] != str(exe):
+        _verify_isolated_linkage(exe,command)
     with open(root/"private-ne-xium-console.txt","wb") as console:
-        with subprocess.Popen([str(exe),str(nro)],stdout=console,
-                              stderr=subprocess.STDOUT) as proc:
+        with subprocess.Popen(command,stdout=console,
+                              stderr=subprocess.STDOUT,
+                              start_new_session=True) as proc:
             try:
                 for index,reference in enumerate(refs):
                     while not _check_guest_row(trace,index,reference):
@@ -184,12 +271,7 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
                     "original_graphics_uploaded_to_public_github":False,
                 }
             finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try: proc.wait(timeout=6)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait(timeout=6)
+                _terminate_process_group(proc)
 
 
 def main(argv=None):
@@ -210,7 +292,7 @@ def main(argv=None):
         with tempfile.TemporaryDirectory(prefix="private-gfx-ne-xium-316-") as d:
             summary=_run(args.exe.resolve(),args.nro.resolve(),
                          args.sd_root.resolve(),Path(d),gfx,
-                         time.monotonic()+160)
+                         time.monotonic()+80)
         code=0
     except Exception:
         # No exception text or raw guest framebuffer bytes leave local host.

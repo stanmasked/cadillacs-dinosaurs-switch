@@ -88,12 +88,21 @@ Switch NRO with the Stage316 opt-in C path and tests the verifier with
 the user's local private machine. This is not an original-ROM emulator
 run and its green status cannot be promoted to authentic game playback.
 
+## Confirmed private optical result — 2026-10-22
+
+A fresh private Stage316 run passed with the pinned NeXium executable under
+the Stage323 isolated glibc 2.43 runtime and Mesa Lavapipe. It verified
+14/14 native guest submissions and 14/14 process-bound X11 optical frames
+against independent references derived from static original graphics plus
+invented palette/VRAM/OBJ/priority states. The private receipt remains mode
+0600 and is not uploaded.
+
 ## Explicit limits
 
-Even a later successful **private** Stage316 NeXium run would prove
-the existing native compositor plus X11 display against real STATIC
-original graphics + invented palette/VRAM/OBJ/priority states. It would
-**not** prove that MAME 0.106 actually ran the original game, an
-authentic captured arcade gameplay frame, true recorded controller
-replay, sprites in their real positions, original soundtrack,
-or gameplay fidelity on physical Nintendo Switch.
+This successful Stage316 run proves only the existing native compositor and
+X11 display against real STATIC original graphics plus invented scene states.
+It does **not** prove that MAME 0.106 actually ran the original game, an
+authentic captured arcade gameplay frame, true recorded controller replay,
+sprites in their real positions, original soundtrack, or gameplay fidelity
+on physical Nintendo Switch. The real `dino.inp`/`dino.wlf` replay remains
+unverified in this environment.

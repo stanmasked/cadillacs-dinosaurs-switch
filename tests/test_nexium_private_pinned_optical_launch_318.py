@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import json
+import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
@@ -124,6 +125,9 @@ class Stage318PinnedPrivateNeXiumSafety(unittest.TestCase):
         def fake_execute(cmd,**kwargs):
             self.assertEqual(cmd[0],"bash")
             self.assertEqual(Path(cmd[5]),self.receipt)
+            self.assertEqual(kwargs["stdout"],subprocess.DEVNULL)
+            self.assertEqual(kwargs["stderr"],subprocess.STDOUT)
+            self.assertEqual(kwargs["timeout"],150)
             self.receipt.write_text(json.dumps(approved_receipt()))
             self.receipt.chmod(0o600)
             return SimpleNamespace(returncode=0)

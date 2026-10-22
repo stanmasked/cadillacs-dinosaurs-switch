@@ -36,8 +36,33 @@ export XDG_CACHE_HOME="$tmp/isolated-xdg/cache"
 export XDG_DATA_HOME="$tmp/isolated-xdg/data"
 mkdir -m 700 -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
 export LIBGL_ALWAYS_SOFTWARE=1
-driver="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*json' -print -quit 2>/dev/null || true)"
-if [ -n "$driver" ]; then export VK_ICD_FILENAMES="$driver"; else unset VK_ICD_FILENAMES; fi
+
+# NeXium's pinned public release requires GLIBC_2.43 from libm.so.6.
+# Use the separately verified /opt sysroot only for this process; never
+# upgrade or replace the Debian host's libc or dynamic loader.
+private_glibc='/opt/cadillacs-stage323-glibc243'
+loader="$(find "$private_glibc" -type f -name 'ld-linux-x86-64.so.2' -print -quit 2>/dev/null || true)"
+if [ -z "$loader" ]; then
+  echo 'BLOCKED_STAGE323_ISOLATED_GLIBC_LOADER_MISSING' >&2
+  exit 2
+fi
+libdir="$(dirname "$loader")"
+if [ ! -s "$libdir/libc.so.6" ] || [ ! -s "$libdir/libm.so.6" ]; then
+  echo 'BLOCKED_STAGE323_ISOLATED_GLIBC_LIBRARIES_MISSING' >&2
+  exit 2
+fi
+export NEXIUM_DYNAMIC_LOADER="$loader"
+export NEXIUM_ISOLATED_LIBRARY_PATH="$libdir:/opt/cadillacs-stage322-mesa/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu"
+
+# Prefer the locally verified Mesa Lavapipe ICD artifact; do not silently
+# switch to an unrelated hardware ICD when the software driver is absent.
+driver='/opt/cadillacs-stage322-mesa/lvp_icd.local.json'
+if [ -s "$driver" ] && [ -s /opt/cadillacs-stage322-mesa/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so ]; then
+  export VK_ICD_FILENAMES="$driver"
+else
+  echo 'BLOCKED_STAGE322_LAVAPIPE_ICD_MISSING' >&2
+  exit 2
+fi
 export WGPU_BACKEND=vulkan
 export GDK_BACKEND=x11
 export NEXIUM_VIDEO_FFMPEG=0
