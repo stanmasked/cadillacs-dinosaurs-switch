@@ -9,7 +9,9 @@ if [ "$#" -ne 4 ]; then
   echo "BLOCKED_PRIVATE_STAGE316_MISSING_INPUTS" >&2
   exit 2
 fi
-rom="$(realpath "$1")"
+# Keep the original path spelling: the Stage315/316 checks must see
+# and reject symlinked input archives rather than a pre-resolved alias.
+rom="$1"
 nro="$(realpath "$2")"
 exe="$(realpath "$3")"
 receipt="$4"
