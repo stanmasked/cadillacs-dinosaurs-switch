@@ -1,0 +1,194 @@
+name: Stage322 provision pinned NeXium and Mesa Vulkan (public binaries only)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/cps1-provision-ne-xium-vulkan-322.yml'
+      - 'tools/stage322_verify_public_host_archive.py'
+      - 'tests/test_stage322_verify_public_host_archive.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage322-provision-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-rom-free-archive-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify archive safety using fabricated public-only binary bytes
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_stage322_verify_public_host_archive.py' -v
+          python3 tools/check_public_tree_rom_free.py
+
+  export-pinned-public-nexium-for-offline-private-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Obtain exact NeXium public release without any game inputs
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          mkdir -p stage322-pinned-public-ne-xium
+          curl --fail --location --retry 2 --connect-timeout 20 \
+            --max-time 240 \
+            'https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz' \
+            -o stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz
+          test "$(wc -c < stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz | tr -d '[:space:]')" = 114560520
+          echo 'd96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde  stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz' | sha256sum --check --status
+          echo STAGE322_PINNED_PUBLIC_NEXIUM_OFFLINE_INPUT_VERIFIED
+      - name: Upload only the verified PUBLIC emulator release, one-day retention
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage322-exact-pinned-public-nexium-for-offline-linux
+          path: stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  linux-nexium-vulkan-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Xvfb and real Mesa Lavapipe software Vulkan ICD
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          for attempt in 1 2; do
+            if timeout 110s sudo apt-get \
+                -o Acquire::Retries=2 \
+                -o Acquire::http::Timeout=15 \
+                -o Acquire::https::Timeout=15 update -qq &&
+               timeout 140s sudo apt-get -y -qq \
+                -o DPkg::Lock::Timeout=20 \
+                -o Acquire::Retries=2 install \
+                mesa-vulkan-drivers vulkan-tools libvulkan1 \
+                xvfb xauth libgtk-3-0t64 libasound2t64 libudev1 \
+                libxkbcommon-x11-0 libegl1 libgl1 libpulse0; then
+              break
+            fi
+            if [ "$attempt" -eq 2 ]; then
+              echo STAGE322_BLOCKED_MESA_VULKAN_INSTALL
+              exit 2
+            fi
+            sleep 3
+          done
+          driver="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -iname '*lvp*json' -print -quit)"
+          test -n "$driver"
+          test -s "$driver"
+          echo "VK_ICD_FILENAMES=$driver" >> "$GITHUB_ENV"
+          echo "LIBGL_ALWAYS_SOFTWARE=1" >> "$GITHUB_ENV"
+          echo "STAGE322_INSTALLED_REAL_LAVAPIPE_SOFTWARE_DRIVER"
+      - name: Verify actual Vulkan loader and Mesa software device
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          vulkaninfo --summary > /tmp/stage322-vulkan-summary.txt 2>&1
+          grep -Eiq '(llvmpipe|lavapipe|software)' /tmp/stage322-vulkan-summary.txt
+          grep -q 'apiVersion' /tmp/stage322-vulkan-summary.txt
+          echo STAGE322_MESA_LAVAPIPE_VULKAN_DEVICE_CONFIRMED
+      - name: Download EXACT previously source-verified NeXium release
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          mkdir -p stage322-public-host
+          url='https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz'
+          curl --fail --location --retry 2 --retry-delay 2 \
+            --connect-timeout 20 --max-time 280 \
+            "$url" -o stage322-public-host/nexium-linux-x86_64.tar.gz
+          test "$(wc -c < stage322-public-host/nexium-linux-x86_64.tar.gz | tr -d '[:space:]')" = 114560520
+          echo 'd96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde  stage322-public-host/nexium-linux-x86_64.tar.gz' | sha256sum --check --status
+          echo STAGE322_NE_XIUM_114560520_BYTES_SHA256_PIN_CONFIRMED
+      - name: Validate release archive structure and executable loading
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          python3 tools/stage322_verify_public_host_archive.py \
+            --archive stage322-public-host/nexium-linux-x86_64.tar.gz \
+            --out stage322-public-host/host-manifest.json \
+            --install-dir stage322-installed
+          exe="$(find stage322-installed -type f \
+                 \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$exe"
+          chmod +x "$exe"
+          if ldd "$exe" | grep -q 'not found'; then
+            echo STAGE322_BLOCKED_NE_XIUM_RUNTIME_LINKER
+            exit 2
+          fi
+          echo STAGE322_PINNED_NEXIUM_EXECUTABLE_INSTALLED_AND_LINKED
+      - name: ROM-free public Git tree privacy gate
+        run: python3 tools/check_public_tree_rom_free.py
+      - name: Upload EXACT pinned public emulator release (no game files)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage322-public-pinned-nexium-linux-x86_64
+          path: stage322-public-host/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  debian-trixie-offline-mesa-debs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: debian:trixie
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch Debian 13 Trixie Mesa Vulkan software driver .deb and dependencies
+        timeout-minutes: 9
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          for attempt in 1 2; do
+            if timeout 120s apt-get -o Acquire::Retries=2 \
+                 -o Acquire::http::Timeout=15 update -qq; then
+              break
+            fi
+            if [ "$attempt" -eq 2 ]; then exit 2; fi
+          done
+          # debian:trixie minimal image deliberately omits Python. Install
+          # it only in this disposable public-package download container.
+          timeout 120s apt-get -y -qq -o Acquire::Retries=2 install python3-minimal
+          mkdir -p stage322-debian-trixie-debs
+          timeout 240s apt-get -y -qq --download-only \
+            -o Dir::Cache::archives="$PWD/stage322-debian-trixie-debs" \
+            -o Acquire::Retries=2 \
+            install mesa-vulkan-drivers vulkan-tools libvulkan1
+          count="$(find stage322-debian-trixie-debs -name '*.deb' -type f | wc -l)"
+          test "$count" -ge 3
+          echo "STAGE322_DEBIAN_TRIXIE_OFFLINE_MESA_DEB_PACKAGES_READY=$count"
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('stage322-debian-trixie-debs')
+          packages=sorted(root.glob('*.deb'))
+          assert len(packages)>=3
+          for p in packages:
+              assert p.is_file() and not p.is_symlink()
+              assert p.stat().st_size>4096
+          manifest={"schema":"stage322-debian-trixie-software-vulkan-debs-v1",
+                    "runtime":"Debian 13 Trixie x86_64",
+                    "public_system_packages_only":True,
+                    "original_rom_or_graphics_included":False,
+                    "packages":[{"name":p.name,"bytes":p.stat().st_size,
+                        "sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
+                        for p in packages]}
+          (root/'package-manifest.json').write_text(
+            json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage322-debian-trixie-mesa-lavapipe-offline-packages
+          path: stage322-debian-trixie-debs/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
