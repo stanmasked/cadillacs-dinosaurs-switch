@@ -14,7 +14,12 @@ import subprocess
 import tempfile
 import time
 
-from PIL import Image
+try:
+    from PIL import Image
+except ImportError:
+    # The baseline Python CI runs with standard-library dependencies only.
+    # The dedicated real X11 workflow installs Pillow explicitly.
+    Image = None
 
 try:
     from . import cps1_synthetic_gfx_fixture_308 as graphics
@@ -135,6 +140,8 @@ def _window():
 
 
 def _capture(wid,destination):
+    if Image is None:
+        raise ValueError("Pillow required for true host X11 capture")
     subprocess.run(["import","-window",wid,"-silent",str(destination)],
                    check=True,capture_output=True,timeout=8)
     with Image.open(destination) as im:
