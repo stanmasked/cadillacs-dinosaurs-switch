@@ -37,7 +37,7 @@ jobs:
             -o Dir::Cache::archives=/tmp/wine-debs/ \
             -o APT::Keep-Downloaded-Packages=true \
             install -y --no-install-recommends \
-              ca-certificates curl unzip xvfb xauth wine wine32:i386 wine64
+              ca-certificates curl unzip python3 xvfb xauth wine wine32:i386 wine64
           wine --version
 
       - name: Prepare offline Debian package bundle
