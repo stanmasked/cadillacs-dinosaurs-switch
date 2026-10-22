@@ -53,8 +53,12 @@ pixels, **not original Cadillacs and Dinosaurs artwork or gameplay**.
 The staging root must not exist and must be outside the GitHub checkout.
 A symlinked root or parent is refused. All folders are private (0700);
 both data files and the final receipt are created exclusively (0600).
-Both data files are checked for exact length and SHA-256 readback before
-the manifest is written. The generator refuses overwrite or unrelated
+Before writing anything, **both files must match the byte-exact outputs of
+the canonical ROM-free generators**. A matching size, marker, repeated
+graphics block, syntactically valid CPS1SCN1 frames, or recalculated CRCs
+are explicitly insufficient to claim synthetic provenance. Both staged
+files are then checked for exact length and SHA-256 readback before the
+manifest is written. The generator refuses overwrite or unrelated
 data and never changes GitHub source files or `main`.
 
 A crash/write failure may leave a **partial external staging directory**
