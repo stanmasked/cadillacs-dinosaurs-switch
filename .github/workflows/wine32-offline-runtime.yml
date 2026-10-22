@@ -85,5 +85,5 @@ jobs:
         with:
           name: wine32-debian-trixie-offline-packages
           path: wine32-offline/
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: error
