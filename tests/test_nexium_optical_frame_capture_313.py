@@ -76,7 +76,7 @@ class Stage313SourceGates(unittest.TestCase):
 
     def test_guest_optical_mode_is_compile_time_opt_in(self):
         code=self.code
-        self.assertIn("#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313",code)
+        self.assertIn("#if defined(DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313) || defined(DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316)",code)
         self.assertIn("synthetic_guest_rows>0u",code)
         self.assertIn("playback.paused=true;",code)
         self.assertIn('"sdmc:/cadillacs-synthetic-scene-next-%02u.txt"',code)
