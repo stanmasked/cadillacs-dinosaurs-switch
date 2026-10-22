@@ -38,7 +38,7 @@ jobs:
           assert nro[0x10:0x14]==b'NRO0'
           assert 0x80<=struct.unpack_from('<I',nro,0x18)[0]<=len(nro)
           assert b'cadillacs-synthetic-scene-guest.csv' in nro
-          assert b'cadillacs-synthetic-scene-next.txt' in nro
+          assert b'cadillacs-synthetic-scene-next-%02u.txt' in nro
           print('Synthetic optical guest NRO compiled')
           PY
           sha256sum cadillacs-dinosaurs-switch.nro > stage313-nro.sha256
