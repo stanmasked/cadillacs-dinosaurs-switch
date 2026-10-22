@@ -671,6 +671,12 @@ int main(int argc, char **argv) {
         memcmp(gfx,"ROM-FREE CPS1 SYNTHETIC PIXELS STAGE308",39u)==0;
     uint32_t synthetic_guest_seen=0u;
     unsigned synthetic_guest_rows=0u;
+#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
+    /* Stage313 host-driven optical experiment. Freeze each submitted
+     * synthetic scene until the host captures the window and acknowledges
+     * the current index on the isolated NeXium SD. */
+    if (synthetic_scene_guest_ready) playback.paused=true;
+#endif
 #endif
     DinoArena arena;
     dino_arena_reset(&arena);
@@ -1457,6 +1463,22 @@ int main(int argc, char **argv) {
             show_scene=!show_scene;
         if (!arena_active && show_scene && scene_rgba && scene && sequence_blob) {
             bool redraw=false;
+#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
+            if (synthetic_scene_guest_ready && synthetic_guest_rows>0u &&
+                synthetic_guest_rows<14u) {
+                FILE *ack=fopen("sdmc:/cadillacs-synthetic-scene-next.txt","rb");
+                if (ack) {
+                    char line[40]={0};
+                    size_t got=fread(line,1,sizeof(line)-1u,ack);
+                    fclose(ack);
+                    unsigned ack_index=UINT32_MAX;
+                    if (got>0u && sscanf(line,"NEXT,%u",&ack_index)==1 &&
+                        ack_index==playback.index &&
+                        (synthetic_guest_seen&(1u<<ack_index))!=0u)
+                        redraw=cps1_playback_step(&playback,&sequence,1);
+                }
+            }
+#endif
             if (down & HidNpadButton_A) playback.paused=!playback.paused;
             if (down & HidNpadButton_L) cps1_playback_speed(&playback,-1);
             if (down & HidNpadButton_R) cps1_playback_speed(&playback,1);
@@ -1575,11 +1597,25 @@ int main(int argc, char **argv) {
                 }
             }
 #endif
-        } else if (show_scene && scene_rgba)
+        } else if (show_scene && scene_rgba) {
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
                         sequence_blob?&playback:NULL);
-        else if (gfx)
+#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
+            if (synthetic_scene_guest_ready) {
+                /* Four-bit optical frame ID plus magenta locator in the
+                 * left margin, outside the 3x CPS-1 scene. Host X11 must
+                 * observe these from the displayed emulator window.
+                 * Optical pixels never contaminate the scene RGBA hash. */
+                const unsigned pitch=(unsigned)(stride/sizeof(uint32_t));
+                rectangle(frame,pitch,8,188,18,18,rgb(255,0,255));
+                for (unsigned bit=0;bit<4u;++bit)
+                    rectangle(frame,pitch,8,214+(int)(bit*26u),18,18,
+                              (playback.index&(1u<<bit))
+                                  ?rgb(0,255,0):rgb(255,0,0));
+            }
+#endif
+        } else if (gfx)
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
 #ifdef DINO_SYNTHETIC_SCENE_GUEST_PROBE
         /* The NRO will only count the frame if it actually drew its
