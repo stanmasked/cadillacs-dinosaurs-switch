@@ -141,6 +141,57 @@ class Stage316PrivateOpticalSafety(unittest.TestCase):
             stage._run(Path("/nothing"),Path("/nothing"),self.sd,
                        self.root,self.gfx,0.0)
 
+    def test_direct_launch_is_unchanged_when_no_isolated_runtime_requested(self):
+        exe=self.root/"nexium";nro=self.root/"game.nro"
+        self.assertEqual(stage._launch_argv(exe,nro,{}),[str(exe),str(nro)])
+
+    def test_isolated_launch_uses_pinned_loader_and_explicit_library_path(self):
+        sysroot=self.root/"glibc"/"lib"/"x86_64-linux-gnu"
+        sysroot.mkdir(parents=True)
+        loader=sysroot/"ld-linux-x86-64.so.2"
+        loader.write_text("#!/bin/sh\\nexit 0\\n")
+        loader.chmod(0o700)
+        for soname in ("libc.so.6","libm.so.6"):
+            (sysroot/soname).write_bytes(b"PUBLIC-MOCK-GLIBC-LIBRARY")
+        system=self.root/"system-libs";system.mkdir()
+        library_path=str(sysroot)+":"+str(system)
+        argv=stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+            "NEXIUM_DYNAMIC_LOADER":str(loader),
+            "NEXIUM_ISOLATED_LIBRARY_PATH":library_path,
+        })
+        self.assertEqual(argv,[
+            str(loader),"--inhibit-cache","--library-path",library_path,
+            str(self.root/"nexium"),str(self.root/"game.nro")])
+
+    def test_isolated_launch_refuses_partial_or_incomplete_sysroot(self):
+        with self.assertRaises(ValueError):
+            stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+                "NEXIUM_DYNAMIC_LOADER":"/tmp/loader-only"})
+        sysroot=self.root/"glibc"/"lib"
+        sysroot.mkdir(parents=True)
+        loader=sysroot/"ld-linux-x86-64.so.2"
+        loader.write_text("#!/bin/sh\\nexit 0\\n");loader.chmod(0o700)
+        (sysroot/"libc.so.6").write_bytes(b"MOCK-ONLY")
+        system=self.root/"system-libs";system.mkdir()
+        with self.assertRaises(ValueError):
+            stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+                "NEXIUM_DYNAMIC_LOADER":str(loader),
+                "NEXIUM_ISOLATED_LIBRARY_PATH":str(sysroot)+":"+str(system)})
+
+    def test_isolated_launch_refuses_symlinked_loader(self):
+        sysroot=self.root/"glibc"/"lib"
+        sysroot.mkdir(parents=True)
+        real=self.root/"real-loader"
+        real.write_text("#!/bin/sh\\nexit 0\\n");real.chmod(0o700)
+        alias=sysroot/"ld-linux-x86-64.so.2";alias.symlink_to(real)
+        (sysroot/"libc.so.6").write_bytes(b"MOCK-ONLY")
+        (sysroot/"libm.so.6").write_bytes(b"MOCK-ONLY")
+        system=self.root/"system-libs";system.mkdir()
+        with self.assertRaises(ValueError):
+            stage._launch_argv(self.root/"nexium",self.root/"game.nro",{
+                "NEXIUM_DYNAMIC_LOADER":str(alias),
+                "NEXIUM_ISOLATED_LIBRARY_PATH":str(sysroot)+":"+str(system)})
+
     def test_source_level_optin_flag_and_no_stage308_alias(self):
         # Compile macro guards prevent accidental physical game's origin
         # confusion. The actual NRO compile job checks this too.
