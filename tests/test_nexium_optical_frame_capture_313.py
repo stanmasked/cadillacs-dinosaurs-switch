@@ -79,7 +79,8 @@ class Stage313SourceGates(unittest.TestCase):
         self.assertIn("#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313",code)
         self.assertIn("synthetic_guest_rows>0u",code)
         self.assertIn("playback.paused=true;",code)
-        self.assertIn('fopen("sdmc:/cadillacs-synthetic-scene-next.txt","rb")',code)
+        self.assertIn('"sdmc:/cadillacs-synthetic-scene-next-%02u.txt"',code)
+        self.assertIn('FILE *ack=fopen(ack_path,"rb");',code)
 
     def test_guest_emits_optical_bits_into_submitted_framebuffer(self):
         code=self.code
