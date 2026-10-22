@@ -61,7 +61,7 @@ jobs:
   build-upstream-mame-0106:
     # Isolate the slow historical build from the main Python CI concurrency
     # group. This branch-only gate keeps unrelated PRs from compiling MAME 0.106.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290' || github.head_ref == 'feature/mame0106-synthetic-z80-smoke-295' || github.head_ref == 'feature/mame0106-synthetic-mng-diagnostic-328')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'feature/mame0106-reproducible-runtime-283' || github.head_ref == 'feature/mame0106-private-capture-runner-285' || github.head_ref == 'feature/mame0106-private-window-capture-286' || github.head_ref == 'feature/mame0106-inprocess-counters-290' || github.head_ref == 'feature/mame0106-synthetic-z80-smoke-295' || github.head_ref == 'feature/mame0106-synthetic-mng-diagnostic-328' || github.head_ref == 'feature/mame0106-synthetic-trace-counters-329')) }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -225,10 +225,11 @@ jobs:
             --emulator upstream-mame/mame.exe \
             --rom-root synthetic295-roms \
             --out stage295-synthetic-only-status.json
-          # The probe requires the *actual* MAME ROM checker to accept the
-          # synthetic Z80 fixture. Hosted GUI/video may legitimately block
-          # recording, so inspect exact status before claiming MNG success.
-          python -c "import json; d=json.load(open('stage295-synthetic-only-status.json')); assert d['synthetic_minivader_rom_verification'] is True; assert d['original_dino_rom_or_inp_used'] is False"
+          # Every branch requires the real MAME ROM checker to accept the
+          # synthetic Z80 fixture and forbids original game inputs. Stage329
+          # additionally makes full synthetic record/replay, MNG integrity,
+          # and advancing input-read counters a required CI result.
+          python -c "import json, os; d=json.load(open('stage295-synthetic-only-status.json')); assert d['synthetic_minivader_rom_verification'] is True; assert d['original_dino_rom_or_inp_used'] is False; assert os.environ.get('GITHUB_HEAD_REF') != 'feature/mame0106-synthetic-trace-counters-329' or d['status'] == 'SYNTHETIC_MINIVADER_MAME_VIDEO_AND_INPUT_READ_CONFIRMED'"
           # Only aggregate status may be printed. No synthetic ROM or
           # modified binary gets added to the public runtime artifact.
           test ! -e runtime-artifact/d26-01.bin

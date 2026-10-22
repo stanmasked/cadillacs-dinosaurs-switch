@@ -36,28 +36,59 @@ def _invoke(executable, argv, cwd, timeout=30):
         "utf-8", errors="replace")
 
 
-def _check_trace(path, first_frame, count):
+def _audit_trace(path, first_frame, count):
+    """Return aggregate trace diagnostics, never raw rows or input data."""
     path = Path(path)
-    if not path.is_file() or not 40 <= path.stat().st_size <= MAX_BYTES:
-        return False
+    if path.is_symlink() or not path.is_file() or not 40 <= path.stat().st_size <= MAX_BYTES:
+        return None
     try:
         lines = path.read_text(encoding="ascii").splitlines()
     except (OSError, UnicodeError):
-        return False
+        return None
     if len(lines) != count + 1 or lines[0] != TRACE_HEAD:
-        return False
-    prev = None
+        return None
+    previous = None
+    first_counts = None
+    last_counts = None
     for offset, row in enumerate(lines[1:]):
         bits = row.split(",")
-        if len(bits) != 3 or any(not v.isdecimal() for v in bits):
-            return False
-        callback, port0, words = map(int, bits)
+        # MAME's counters fit within unsigned 64-bit range. Bound decimal
+        # width before int() so a hostile oversized CSV field cannot trigger
+        # Python's integer-string conversion limit or consume excess CPU.
+        if (len(bits) != 3 or
+                any(not value.isdecimal() or len(value) > 20 for value in bits)):
+            return None
+        try:
+            callback, port0, words = map(int, bits)
+        except ValueError:
+            return None
+        if any(value > 0xFFFFFFFFFFFFFFFF for value in (callback, port0, words)):
+            return None
         if callback != first_frame + offset or words < port0:
-            return False
-        if prev is not None and (port0 < prev[0] or words < prev[1]):
-            return False
-        prev = (port0, words)
-    return True
+            return None
+        if previous is not None and (port0 < previous[0] or words < previous[1]):
+            return None
+        counts_now = (port0, words)
+        if first_counts is None:
+            first_counts = counts_now
+        last_counts = counts_now
+        previous = counts_now
+    if first_counts is None or last_counts is None:
+        return None
+    return {
+        "rows": len(lines) - 1,
+        "first_callback": first_frame,
+        "last_callback": first_frame + count - 1,
+        "first_port_reads_advanced": last_counts[0] > first_counts[0],
+        "playback_words_advanced": last_counts[1] > first_counts[1],
+        "first_port_read_delta": last_counts[0] - first_counts[0],
+        "playback_word_delta": last_counts[1] - first_counts[1],
+    }
+
+
+def _check_trace(path, first_frame, count):
+    """Compatibility predicate for tests that need structural validation only."""
+    return _audit_trace(path, first_frame, count) is not None
 
 
 def _base_args(rom_root):
@@ -113,6 +144,10 @@ def probe(executable, rom_root):
         "synthetic_mng_audited_frames": 0,
         "synthetic_mng_audit_failure_code": None,
         "synthetic_trace_audited_rows": 0,
+        "synthetic_trace_first_port_reads_advanced": False,
+        "synthetic_trace_playback_words_advanced": False,
+        "synthetic_trace_first_port_read_delta": None,
+        "synthetic_trace_playback_word_delta": None,
         "synthetic_replay_process_exit_zero": False,
         "synthetic_replay_mng_file_present": False,
         "synthetic_replay_trace_file_present": False,
@@ -158,23 +193,17 @@ def probe(executable, rom_root):
             "-mngstartframe", "10", "-mngframes", "24", "-mngcounttrace",
         ]
         code, _ = _invoke(executable, replay, workspace)
+        # Record process execution independently from later artifact/trace
+        # acceptance. A static or malformed trace must not rewrite history
+        # and claim the replay process never ran.
+        # A completed process invocation is distinct from a zero exit
+        # and from trace acceptance; preserve that evidence on later blocks.
+        report["synthetic_mame_playback_executed"] = (code is not None)
         mng_path = workspace / "test295-replay.mng"
         trace_path = workspace / "stage290-mng-counts.csv"
         report["synthetic_replay_process_exit_zero"] = (code == 0)
         report["synthetic_replay_mng_file_present"] = mng_path.is_file()
         report["synthetic_replay_trace_file_present"] = trace_path.is_file()
-        if trace_path.is_file() and trace_path.stat().st_size <= MAX_BYTES:
-            try:
-                rows = trace_path.read_text(encoding="ascii").splitlines()
-                if rows and rows[0] == TRACE_HEAD and len(rows) > 1:
-                    report["synthetic_replay_trace_csv_rows"] = len(rows) - 1
-                    first = rows[1].split(",")
-                    last = rows[-1].split(",")
-                    if len(first) == len(last) == 3 and first[0].isdecimal() and last[0].isdecimal():
-                        report["synthetic_replay_trace_first_callback"] = int(first[0])
-                        report["synthetic_replay_trace_last_callback"] = int(last[0])
-            except (OSError, UnicodeError):
-                pass
         if code != 0:
             report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_PROCESS_EXIT"
             return report
@@ -184,10 +213,21 @@ def probe(executable, rom_root):
         if not trace_path.is_file():
             report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_MISSING"
             return report
-        if not _check_trace(trace_path, 10, 24):
+        trace_audit = _audit_trace(trace_path, 10, 24)
+        if trace_audit is None:
             report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_STRUCTURE"
             return report
-        report["synthetic_mame_playback_executed"] = True
+        report["synthetic_trace_audited_rows"] = trace_audit["rows"]
+        report["synthetic_replay_trace_csv_rows"] = trace_audit["rows"]
+        report["synthetic_replay_trace_first_callback"] = trace_audit["first_callback"]
+        report["synthetic_replay_trace_last_callback"] = trace_audit["last_callback"]
+        report["synthetic_trace_first_port_reads_advanced"] = trace_audit["first_port_reads_advanced"]
+        report["synthetic_trace_playback_words_advanced"] = trace_audit["playback_words_advanced"]
+        report["synthetic_trace_first_port_read_delta"] = trace_audit["first_port_read_delta"]
+        report["synthetic_trace_playback_word_delta"] = trace_audit["playback_word_delta"]
+        if not trace_audit["first_port_reads_advanced"] or not trace_audit["playback_words_advanced"]:
+            report["status"] = "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC"
+            return report
         try:
             try:
                 from . import wolfmame0106_private_mng_audit as audit_tool
@@ -204,7 +244,6 @@ def probe(executable, rom_root):
             return report
         report["synthetic_mng_and_counter_trace_observed"] = True
         report["synthetic_mng_audited_frames"] = count
-        report["synthetic_trace_audited_rows"] = 24
         report["status"] = "SYNTHETIC_MINIVADER_MAME_VIDEO_AND_INPUT_READ_CONFIRMED"
         return report
 

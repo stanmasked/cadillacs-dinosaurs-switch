@@ -53,6 +53,120 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         path.write_text(header + "\n" + body.replace("112,113,3503", "112,1,31") + "\n")
         self.assertFalse(probe._check_trace(path, 100, 24))
 
+    def test_trace_audit_reports_only_aggregate_counter_advancement(self):
+        path = self.root / "test.csv"
+        rows = ["callback_index,first_port_reads,playback_words"]
+        rows += [f"{10+i},{100+i},{300+5*i}" for i in range(24)]
+        path.write_text("\n".join(rows) + "\n", encoding="ascii")
+        summary = probe._audit_trace(path, 10, 24)
+        self.assertEqual(summary["rows"], 24)
+        self.assertEqual(summary["first_callback"], 10)
+        self.assertEqual(summary["last_callback"], 33)
+        self.assertTrue(summary["first_port_reads_advanced"])
+        self.assertTrue(summary["playback_words_advanced"])
+        self.assertEqual(summary["first_port_read_delta"], 23)
+        self.assertEqual(summary["playback_word_delta"], 115)
+        self.assertNotIn("100", str(summary))
+        self.assertNotIn("300", str(summary))
+
+    def test_trace_audit_rejects_integer_fields_over_unsigned_64_bit_width(self):
+        path = self.root / "oversized.csv"
+        rows = ["callback_index,first_port_reads,playback_words"]
+        rows += [f"{10+i},{100+i},{300+5*i}" for i in range(24)]
+        rows[1] = "10," + ("9" * 21) + ",300"
+        path.write_text("\n".join(rows) + "\n", encoding="ascii")
+        self.assertIsNone(probe._audit_trace(path, 10, 24))
+
+    def test_static_counters_are_structural_but_not_progress_evidence(self):
+        path = self.root / "static.csv"
+        rows = ["callback_index,first_port_reads,playback_words"]
+        rows += [f"{10+i},100,300" for i in range(24)]
+        path.write_text("\n".join(rows) + "\n", encoding="ascii")
+        summary = probe._audit_trace(path, 10, 24)
+        self.assertIsNotNone(summary)
+        self.assertFalse(summary["first_port_reads_advanced"])
+        self.assertFalse(summary["playback_words_advanced"])
+        self.assertEqual(summary["first_port_read_delta"], 0)
+        self.assertEqual(summary["playback_word_delta"], 0)
+
+    def _probe_with_synthetic_trace(
+            self, *, static=False, static_port=False, static_words=False,
+            oversized=False):
+        calls = []
+
+        def runner(_exe, _argv, cwd, **_kwargs):
+            calls.append(True)
+            if len(calls) == 1:
+                return 0, "romset minivadr is good\n"
+            if len(calls) == 2:
+                (Path(cwd) / "inp" / "test295.inp").write_bytes(bytes(64))
+                return 0, "synthetic recording complete"
+            (Path(cwd) / "test295-replay.mng").write_bytes(b"synthetic MNG placeholder")
+            rows = [probe.TRACE_HEAD]
+            for i in range(24):
+                port0 = 100 if static or static_port else 100 + i
+                words = 300 if static or static_words else 300 + 5 * i
+                rows.append(f"{10+i},{port0},{words}")
+            if oversized:
+                rows[1] = "10," + ("9" * 21) + ",300"
+            (Path(cwd) / "stage290-mng-counts.csv").write_text(
+                "\n".join(rows) + "\n", encoding="ascii")
+            return 0, "synthetic replay complete"
+
+        with patch.object(probe, "_invoke", side_effect=runner), \
+             patch("tools.wolfmame0106_private_mng_audit.audit",
+                   return_value={"candidate_frame_count": 24}):
+            return probe.probe(self.root / "fake.exe", self.root)
+
+    def test_full_probe_blocks_structurally_valid_but_static_counters(self):
+        result = self._probe_with_synthetic_trace(static=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
+        # The emulator did run and exit zero; the independent trace gate
+        # blocks acceptance because its counters did not advance.
+        self.assertTrue(result["synthetic_mame_playback_executed"])
+        self.assertTrue(result["synthetic_replay_process_exit_zero"])
+        self.assertEqual(result["synthetic_trace_audited_rows"], 24)
+        self.assertFalse(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertFalse(result["synthetic_trace_playback_words_advanced"])
+        self.assertEqual(result["synthetic_trace_first_port_read_delta"], 0)
+        self.assertEqual(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_rejects_static_port_counter_independently(self):
+        result = self._probe_with_synthetic_trace(static_port=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
+        self.assertTrue(result["synthetic_trace_playback_words_advanced"])
+        self.assertFalse(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertEqual(result["synthetic_trace_first_port_read_delta"], 0)
+        self.assertGreater(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_rejects_static_playback_word_counter_independently(self):
+        result = self._probe_with_synthetic_trace(static_words=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_COUNTERS_STATIC")
+        self.assertTrue(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertFalse(result["synthetic_trace_playback_words_advanced"])
+        self.assertGreater(result["synthetic_trace_first_port_read_delta"], 0)
+        self.assertEqual(result["synthetic_trace_playback_word_delta"], 0)
+
+    def test_full_probe_rejects_oversized_counter_without_echoing_trace(self):
+        result = self._probe_with_synthetic_trace(oversized=True)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_TRACE_STRUCTURE")
+        self.assertTrue(result["synthetic_mame_playback_executed"])
+        self.assertTrue(result["synthetic_replay_process_exit_zero"])
+        self.assertIsNone(result["synthetic_replay_trace_csv_rows"])
+        self.assertEqual(result["synthetic_trace_audited_rows"], 0)
+        self.assertNotIn("999999", str(result))
+
+    def test_full_probe_accepts_mng_only_when_both_counters_advance(self):
+        result = self._probe_with_synthetic_trace()
+        self.assertEqual(result["status"], "SYNTHETIC_MINIVADER_MAME_VIDEO_AND_INPUT_READ_CONFIRMED")
+        self.assertTrue(result["synthetic_mame_playback_executed"])
+        self.assertEqual(result["synthetic_mng_audited_frames"], 24)
+        self.assertEqual(result["synthetic_trace_audited_rows"], 24)
+        self.assertTrue(result["synthetic_trace_first_port_reads_advanced"])
+        self.assertTrue(result["synthetic_trace_playback_words_advanced"])
+        self.assertEqual(result["synthetic_trace_first_port_read_delta"], 23)
+        self.assertEqual(result["synthetic_trace_playback_word_delta"], 115)
+
     def test_real_recording_then_replay_nonzero_exit_is_distinct_block(self):
         calls = []
         def runner(_exe, _argv, cwd, **_kwargs):
@@ -68,8 +182,25 @@ class SyntheticRealMameProbeTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_PROCESS_EXIT")
         self.assertTrue(result["synthetic_mame_recording_executed"])
         self.assertFalse(result["synthetic_replay_process_exit_zero"])
+        self.assertTrue(result["synthetic_mame_playback_executed"])
         self.assertFalse(result["synthetic_replay_trace_file_present"])
         self.assertFalse(result["original_gameplay_verified"])
+
+    def test_playback_timeout_does_not_claim_completed_process(self):
+        calls = []
+        def runner(_exe, _argv, cwd, **_kwargs):
+            calls.append(True)
+            if len(calls) == 1:
+                return 0, "romset minivadr is good\n"
+            if len(calls) == 2:
+                (Path(cwd) / "inp" / "test295.inp").write_bytes(bytes(64))
+                return 0, ""
+            return None, ""
+        with patch.object(probe, "_invoke", side_effect=runner):
+            result = probe.probe(self.root / "fake.exe", self.root)
+        self.assertEqual(result["status"], "BLOCKED_SYNTHETIC_PLAYBACK_PROCESS_EXIT")
+        self.assertFalse(result["synthetic_mame_playback_executed"])
+        self.assertFalse(result["synthetic_replay_process_exit_zero"])
 
     def test_replay_zero_exit_missing_video_is_not_conflated_with_trace(self):
         calls = []
