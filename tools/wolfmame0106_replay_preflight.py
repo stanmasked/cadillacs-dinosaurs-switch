@@ -84,7 +84,7 @@ MAX_DECODED_PNG_BYTES=64*1024*1024
 PNG_CHANNELS={0:1,2:3,3:1,4:2,6:4}
 
 def png_integrity(raw):
-    """Inspect complete 8-bit noninterlaced PNG scanline structure.
+    """Inspect complete PNG scanlines, including packed 1/2/4-bit palettes.
 
     These checks authenticate well-formed image *bytes*, not what game,
     emulator, time or input event the pixels depict.
@@ -94,6 +94,7 @@ def png_integrity(raw):
     ihdr=None
     idat=[]
     seen_palette=False
+    palette_entries=0
     idat_started=False
     idat_finished=False
     iend=False
@@ -115,14 +116,19 @@ def png_integrity(raw):
             if ihdr is not None or length!=13:raise ValueError('repeated/invalid IHDR')
             w,h,depth,colour,comp,filt,interlace=struct.unpack('>IIBBBBB',data)
             if not(1<=w<=4096 and 1<=h<=4096 and w*h<=16000000 and
-                   depth==8 and colour in PNG_CHANNELS and
+                   ((colour==3 and depth in (1,2,4,8)) or
+                    (colour!=3 and depth==8 and colour in PNG_CHANNELS)) and
                    comp==0 and filt==0 and interlace==0):
                 raise ValueError('unsupported PNG dimensions/mode')
-            ihdr=(w,h,colour)
+            ihdr=(w,h,colour,depth)
         elif name==b'PLTE':
             if seen_palette or idat_started or not length or length%3 or length>768:
                 raise ValueError('invalid PNG palette')
+            if ihdr is None: raise ValueError('palette before IHDR')
+            if ihdr[2]==3 and length//3 > (1 << ihdr[3]):
+                raise ValueError('PNG palette exceeds indexed bit depth')
             seen_palette=True
+            palette_entries=length//3
         elif name==b'IDAT':
             if idat_finished:raise ValueError('noncontiguous PNG IDAT')
             idat_started=True
@@ -138,10 +144,10 @@ def png_integrity(raw):
             idat_finished=True
     if not iend or not idat or ihdr is None:
         raise ValueError('incomplete PNG')
-    w,h,colour=ihdr
+    w,h,colour,depth=ihdr
     if colour==3 and not seen_palette:
         raise ValueError('indexed PNG has no palette')
-    row_stride=1+w*PNG_CHANNELS[colour]
+    row_stride=1+((w*depth+7)//8 if colour==3 else w*PNG_CHANNELS[colour])
     expected=row_stride*h
     if expected>MAX_DECODED_PNG_BYTES:
         raise ValueError('image scanlines too large')
@@ -163,6 +169,8 @@ def png_integrity(raw):
     if any(decoded[y*row_stride]>4 for y in range(h)):
         raise ValueError('invalid PNG scanline filter')
     return {'width':w,'height':h,'png_color_type':colour,
+            'png_bit_depth':depth,
+            'palette_entries':palette_entries,
             'idat_decoded_bytes':len(decoded),
             'scanline_size_and_filters_verified':True}
 

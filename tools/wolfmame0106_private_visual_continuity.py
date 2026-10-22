@@ -47,8 +47,11 @@ def normalized_rgba(raw):
     palette = next((data for tag, data in chunks if tag == b"PLTE"), b"")
     compressed = b"".join(data for tag, data in chunks if tag == b"IDAT")
     decoded = zlib.decompress(compressed)  # pre.png_integrity bounded and checked it
-    bpp = pre.PNG_CHANNELS[kind]
-    stride = w * bpp
+    bit_depth = info["png_bit_depth"]
+    # PNG scanline filtering is byte-oriented. Packed palette scanlines
+    # use a one-byte predictor distance, not one byte per screen pixel.
+    bpp = 1 if kind == 3 and bit_depth < 8 else pre.PNG_CHANNELS[kind]
+    stride = ((w * bit_depth + 7) // 8) if kind == 3 else w * bpp
     previous = bytearray(stride)
     result = bytearray()
     offset = 0
@@ -84,7 +87,14 @@ def normalized_rgba(raw):
             for x in range(0, stride, 2):
                 result.extend((row[x], row[x], row[x], row[x + 1]))
         elif kind == 3:
-            for index in row:
+            # 1/2/4-bit indexed PNG stores several pixels in one byte,
+            # most significant index first; ignore row padding bits.
+            index_mask = (1 << bit_depth) - 1
+            for x in range(w):
+                bit_offset = x * bit_depth
+                byte_index = bit_offset // 8
+                right_shift = 8 - bit_depth - (bit_offset % 8)
+                index = (row[byte_index] >> right_shift) & index_mask
                 i = 3 * index
                 if i + 2 >= len(palette):
                     raise ValueError("palette entry out of range")
