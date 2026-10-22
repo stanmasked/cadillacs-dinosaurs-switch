@@ -158,6 +158,29 @@ def _launch_argv(exe, nro, environ=None):
             library_value, str(exe), str(nro)]
 
 
+def _verify_isolated_linkage(exe, command):
+    """Prove libc and libm resolve from the isolated sysroot before launch."""
+    if len(command) < 6 or command[1] != "--inhibit-cache":
+        raise ValueError("malformed isolated NeXium launch command")
+    library_value = command[3]
+    sysroot_lib = Path(library_value.split(":")[0]).resolve()
+    try:
+        result = subprocess.run(
+            [command[0], "--inhibit-cache", "--library-path",
+             library_value, "--list", str(exe)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL, timeout=8, check=False)
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError("isolated NeXium dynamic-loader preflight failed") from None
+    output = result.stdout.decode("utf-8", "replace")
+    if result.returncode != 0:
+        raise ValueError("isolated NeXium dynamic-loader preflight failed")
+    for soname in ("libc.so.6", "libm.so.6"):
+        expected = str(sysroot_lib / soname)
+        if expected not in output or (soname + " => " + expected) not in output:
+            raise ValueError("NeXium did not resolve glibc from isolated sysroot")
+
+
 def _run(exe,nro,sd_root,root,gfx,deadline):
     trace=sd_root/"cadillacs-synthetic-scene-guest.csv"
     if trace.exists() or trace.is_symlink():
@@ -172,8 +195,11 @@ def _run(exe,nro,sd_root,root,gfx,deadline):
             gfx,[tuple(entry) for entry in snap["palette_rgb"]],snap)
         refs.append(frame)
     scores=[]
+    command = _launch_argv(exe,nro)
+    if command[0] != str(exe):
+        _verify_isolated_linkage(exe,command)
     with open(root/"private-ne-xium-console.txt","wb") as console:
-        with subprocess.Popen(_launch_argv(exe,nro),stdout=console,
+        with subprocess.Popen(command,stdout=console,
                               stderr=subprocess.STDOUT) as proc:
             try:
                 for index,reference in enumerate(refs):
