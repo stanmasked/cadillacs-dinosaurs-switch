@@ -36,6 +36,33 @@ static const char *const SCENE_PATH =
 static const char *const SEQUENCE_PATH =
     "sdmc:/switch/cadillacs-dinosaurs-switch/sequence.bin";
 
+#ifdef DINO_SYNTHETIC_SCENE_GUEST_PROBE
+/* Opt-in evidence only. FNV over synthetic RGBA and guest framebuffer
+ * samples is computed in the genuine libnx NRO, not a host replay.
+ * Never enable in normal release or the separate training-room selftest. */
+static uint64_t synthetic_fnv64(const uint8_t *p,size_t count) {
+    uint64_t hash=UINT64_C(14695981039346656037);
+    for (size_t i=0;i<count;++i) {
+        hash ^= p[i];
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+static uint64_t synthetic_display_sample(const uint32_t *pixels,unsigned pitch) {
+    uint64_t hash=UINT64_C(14695981039346656037);
+    for (unsigned y=0;y<CPS1_SCENE_H;y+=13u)
+        for (unsigned x=0;x<CPS1_SCENE_W;x+=13u) {
+            /* Always sample inside the native 3x CPS1 scene viewport. */
+            uint32_t rgba=pixels[(24u+3u*y)*pitch+(64u+3u*x)];
+            for (unsigned b=0;b<4u;++b) {
+                hash^=(uint8_t)(rgba>>(b*8u));
+                hash*=UINT64_C(1099511628211);
+            }
+        }
+    return hash;
+}
+#endif
+
 /* A tiny self-contained bitmap font. Only HUD ASCII is required. */
 typedef struct { char letter; uint8_t rows[7]; } Glyph;
 static const Glyph s_font[] = {
@@ -632,6 +659,19 @@ int main(int argc, char **argv) {
     }
     bool show_scene=(sequence_blob!=NULL);
     bool arena_active=(gfx==NULL);
+#ifdef DINO_SYNTHETIC_SCENE_GUEST_PROBE
+    /* A valid scene file by itself does not establish synthetic origin.
+     * Probe writes nothing unless the intentionally artificial Stage308
+     * graphics signature and exactly the Stage307 14@2fps format exist.
+     * Host CI independently checks each byte of both staged binaries.
+     */
+    const bool synthetic_scene_guest_ready =
+        gfx && sequence_blob && scene_rgba && scene &&
+        sequence.frame_count==14u && sequence.fps==2u &&
+        memcmp(gfx,"ROM-FREE CPS1 SYNTHETIC PIXELS STAGE308",39u)==0;
+    uint32_t synthetic_guest_seen=0u;
+    unsigned synthetic_guest_rows=0u;
+#endif
     DinoArena arena;
     dino_arena_reset(&arena);
     /* Keep audout completely shut down in the tile/scene viewer.
@@ -1541,7 +1581,45 @@ int main(int argc, char **argv) {
                         sequence_blob?&playback:NULL);
         else if (gfx)
             viewer_frame(frame,stride/sizeof(uint32_t),page,invert,grid,transparent);
+#ifdef DINO_SYNTHETIC_SCENE_GUEST_PROBE
+        /* The NRO will only count the frame if it actually drew its
+         * 3x-scaled scene into the framebuffer being submitted. Record
+         * sampled framebuffer pixels before End, serialize AFTER End. */
+        const bool synthetic_guest_frame_ready =
+            synthetic_scene_guest_ready && !arena_active && show_scene &&
+            playback.index<14u &&
+            (synthetic_guest_seen & (1u<<playback.index))==0u;
+        const uint64_t synthetic_guest_scene_hash =
+            synthetic_guest_frame_ready ?
+            synthetic_fnv64(scene_rgba,CPS1_SCENE_RGBA_BYTES) : 0u;
+        const uint64_t synthetic_guest_screen_hash =
+            synthetic_guest_frame_ready ?
+            synthetic_display_sample(frame,stride/sizeof(uint32_t)) : 0u;
+#endif
         framebufferEnd(&fb);
+#ifdef DINO_SYNTHETIC_SCENE_GUEST_PROBE
+        if (synthetic_guest_frame_ready) {
+            /* The first row can only be created after a real End call.
+             * Preserve an incomplete trace as INCONCLUSIVE, not SUCCESS. */
+            FILE *trace=fopen("sdmc:/cadillacs-synthetic-scene-guest.csv",
+                              synthetic_guest_rows==0u?"w":"a");
+            if (trace) {
+                bool ok=true;
+                if (synthetic_guest_rows==0u)
+                    ok=fputs("event,index,scene_fnv64,screen_fnv64\n",
+                              trace)>=0;
+                if (ok) ok=fprintf(trace,"FRAME_SUBMITTED,%u,%016llX,%016llX\n",
+                    (unsigned)playback.index,
+                    (unsigned long long)synthetic_guest_scene_hash,
+                    (unsigned long long)synthetic_guest_screen_hash)>=0;
+                int closed=fclose(trace);
+                if (!ok || closed!=0) break;
+                synthetic_guest_seen|=1u<<playback.index;
+                ++synthetic_guest_rows;
+                if (synthetic_guest_rows==14u) break;
+            }
+        }
+#endif
 #ifdef DINO_EMULATOR_SELFTEST
         /* Stage 253: append only after the actual framebuffer submission.
          * Defer SD serialization until feedback has ended. A missing or
