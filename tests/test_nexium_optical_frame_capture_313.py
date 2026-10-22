@@ -22,6 +22,7 @@ class Stage313OpticalMockTests(unittest.TestCase):
         canvas=Image.new("RGB",(1280,720),(9,14,22))
         d=ImageDraw.Draw(canvas)
         d.rectangle((8,188,25,205),fill=(255,0,255))
+        d.rectangle((1250,188,1267,205),fill=(255,0,255))
         for bit in range(4):
             y=214+bit*26
             color=(0,255,0) if index&(1<<bit) else (255,0,0)
@@ -87,6 +88,7 @@ class Stage313SourceGates(unittest.TestCase):
         end=code.index("framebufferEnd(&fb);",source)
         self.assertLess(source,beacon)
         self.assertLess(beacon,end)
+        self.assertIn("rectangle(frame,pitch,1250,188,18,18,rgb(255,0,255));",code)
 
 
 if __name__=="__main__":
