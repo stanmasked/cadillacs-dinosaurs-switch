@@ -241,7 +241,9 @@ class Stage316PrivateOpticalSafety(unittest.TestCase):
                 return 0
             def poll(self): return None if self.alive else 0
         proc=Proc()
-        with patch.object(stage.os,"killpg") as killpg:
+        def fake_killpg(pgid, sig):
+            if sig==signal.SIGKILL: proc.alive=False
+        with patch.object(stage.os,"killpg",side_effect=fake_killpg) as killpg:
             stage._terminate_process_group(proc)
         self.assertEqual(killpg.call_args_list,[
             call(43123,signal.SIGTERM),call(43123,signal.SIGKILL)])
