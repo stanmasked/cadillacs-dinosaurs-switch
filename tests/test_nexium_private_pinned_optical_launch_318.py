@@ -123,7 +123,7 @@ class Stage318PinnedPrivateNeXiumSafety(unittest.TestCase):
     def test_run_mocked_private_receipt_checks_success_not_only_process_exit(self):
         def fake_execute(cmd,**kwargs):
             self.assertEqual(cmd[0],"bash")
-            self.assertEqual(Path(cmd[4]),self.receipt)
+            self.assertEqual(Path(cmd[5]),self.receipt)
             self.receipt.write_text(json.dumps(approved_receipt()))
             self.receipt.chmod(0o600)
             return SimpleNamespace(returncode=0)
