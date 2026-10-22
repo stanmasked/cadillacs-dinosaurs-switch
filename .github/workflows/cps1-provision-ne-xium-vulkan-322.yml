@@ -28,6 +28,31 @@ jobs:
             -p 'test_stage322_verify_public_host_archive.py' -v
           python3 tools/check_public_tree_rom_free.py
 
+  export-pinned-public-nexium-for-offline-private-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Obtain exact NeXium public release without any game inputs
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          mkdir -p stage322-pinned-public-ne-xium
+          curl --fail --location --retry 2 --connect-timeout 20 \
+            --max-time 240 \
+            'https://github.com/nexium-emu/nexium-nightly/releases/download/nightly/nexium-linux-x86_64.tar.gz' \
+            -o stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz
+          test "$(wc -c < stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz | tr -d '[:space:]')" = 114560520
+          echo 'd96cdd186447eec7a5c05a28fa5aa1b8bb6c8fb85fd7bf76721b349cf2c97dde  stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz' | sha256sum --check --status
+          echo STAGE322_PINNED_PUBLIC_NEXIUM_OFFLINE_INPUT_VERIFIED
+      - name: Upload only the verified PUBLIC emulator release, one-day retention
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage322-exact-pinned-public-nexium-for-offline-linux
+          path: stage322-pinned-public-ne-xium/nexium-linux-x86_64.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
   linux-nexium-vulkan-runtime:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
