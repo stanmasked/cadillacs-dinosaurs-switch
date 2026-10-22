@@ -16,6 +16,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  public-rom-free-archive-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify archive safety using fabricated public-only binary bytes
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_stage322_verify_public_host_archive.py' -v
+          python3 tools/check_public_tree_rom_free.py
+
   linux-nexium-vulkan-runtime:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
