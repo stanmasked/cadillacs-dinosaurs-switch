@@ -25,6 +25,12 @@
 #include "dino_pcm_witness.h"
 #endif
 
+#if defined(DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316) && \
+    (!defined(DINO_SYNTHETIC_SCENE_GUEST_PROBE) || \
+     defined(DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313))
+#error "Stage316 is local-only, must enable guest trace, and must not enable Stage313"
+#endif
+
 enum { FB_WIDTH = 1280, FB_HEIGHT = 720, TILE_SCALE = 4,
        GRID_COLS = 16, GRID_ROWS = 8, PAGE_TILES = GRID_COLS * GRID_ROWS,
        PAGE_COUNT = CPS1_TILE16_COUNT / PAGE_TILES };
@@ -669,13 +675,26 @@ int main(int argc, char **argv) {
         gfx && sequence_blob && scene_rgba && scene &&
         sequence.frame_count==14u && sequence.fps==2u &&
         memcmp(gfx,"ROM-FREE CPS1 SYNTHETIC PIXELS STAGE308",39u)==0;
+#ifdef DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316
+    /* The host's Stage315 gate verifies the canonical user-owned ROM
+     * privately. This NRO does NOT authenticate ROM provenance itself.
+     * Refuse the publicly generated Stage308 artificial graphics marker,
+     * and never activate this mode in a standard release. */
+    const bool private_scene_guest_ready =
+        gfx && sequence_blob && scene_rgba && scene &&
+        sequence.frame_count==14u && sequence.fps==2u &&
+        memcmp(gfx,"ROM-FREE CPS1 SYNTHETIC PIXELS STAGE308",39u)!=0;
+    const bool optical_guest_ready = private_scene_guest_ready;
+#else
+    const bool optical_guest_ready = synthetic_scene_guest_ready;
+#endif
     uint32_t synthetic_guest_seen=0u;
     unsigned synthetic_guest_rows=0u;
-#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
+#if defined(DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313) || defined(DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316)
     /* Stage313 host-driven optical experiment. Freeze each submitted
      * synthetic scene until the host captures the window and acknowledges
      * the current index on the isolated NeXium SD. */
-    if (synthetic_scene_guest_ready) playback.paused=true;
+    if (optical_guest_ready) playback.paused=true;
 #endif
 #endif
     DinoArena arena;
@@ -1463,8 +1482,8 @@ int main(int argc, char **argv) {
             show_scene=!show_scene;
         if (!arena_active && show_scene && scene_rgba && scene && sequence_blob) {
             bool redraw=false;
-#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
-            if (synthetic_scene_guest_ready && synthetic_guest_rows>0u &&
+#if defined(DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313) || defined(DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316)
+            if (optical_guest_ready && synthetic_guest_rows>0u &&
                 synthetic_guest_rows<14u) {
                 /* Distinct immutable mailbox per scene index. NeXium's
                  * emulated FS may cache an open file's contents/inode;
@@ -1610,8 +1629,8 @@ int main(int argc, char **argv) {
             scene_frame(frame,stride/sizeof(uint32_t),scene_rgba,
                         sequence_blob?&sequence:NULL,
                         sequence_blob?&playback:NULL);
-#ifdef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
-            if (synthetic_scene_guest_ready) {
+#if defined(DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313) || defined(DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316)
+            if (optical_guest_ready) {
                 /* Four-bit optical frame ID plus magenta locator in the
                  * left margin, outside the 3x CPS-1 scene. Host X11 must
                  * observe these from the displayed emulator window.
@@ -1635,7 +1654,7 @@ int main(int argc, char **argv) {
          * 3x-scaled scene into the framebuffer being submitted. Record
          * sampled framebuffer pixels before End, serialize AFTER End. */
         const bool synthetic_guest_frame_ready =
-            synthetic_scene_guest_ready && !arena_active && show_scene &&
+            optical_guest_ready && !arena_active && show_scene &&
             playback.index<14u &&
             (synthetic_guest_seen & (1u<<playback.index))==0u;
         const uint64_t synthetic_guest_scene_hash =
@@ -1665,7 +1684,7 @@ int main(int argc, char **argv) {
                 if (!ok || closed!=0) break;
                 synthetic_guest_seen|=1u<<playback.index;
                 ++synthetic_guest_rows;
-#ifndef DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313
+#if !defined(DINO_SYNTHETIC_SCENE_HOST_VISIBLE_313) && !defined(DINO_PRIVATE_ORIGINAL_GFX_HOST_VISIBLE_316)
                 if (synthetic_guest_rows==14u) break;
 #else
                 /* Retain final guest frame 13 until the host verifies its
