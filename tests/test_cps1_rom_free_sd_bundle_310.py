@@ -124,6 +124,45 @@ class Stage310RomFreeSdBundleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bundle._validate(bytes(bad), seq)
 
+    def test_counterfeit_repeating_graphics_pattern_is_rejected(self):
+        # An arbitrary period still meets length, marker, and repetition
+        # requirements; Stage310 must never label such data synthetic.
+        gfx, _ = graphics.build()
+        seq, _ = timeline.build()
+        counterfeit_period = bytearray(gfx[:graphics.PERIOD_BYTES])
+        counterfeit_period[512] ^= 1
+        forged = bytes(counterfeit_period) * (
+            graphics.REGION_BYTES // graphics.PERIOD_BYTES)
+        self.assertEqual(len(forged), graphics.REGION_BYTES)
+        self.assertTrue(forged.startswith(graphics.MARKER))
+        self.assertEqual(forged, forged[:graphics.PERIOD_BYTES] *
+                         (graphics.REGION_BYTES // graphics.PERIOD_BYTES))
+        with self.assertRaises(ValueError):
+            bundle._validate(forged, seq)
+
+    def test_crc_repaired_modified_scene_is_not_called_synthetic(self):
+        import struct
+        import zlib
+        gfx, _ = graphics.build()
+        seq, _ = timeline.build()
+        forged = bytearray(seq)
+        # Mutate one arbitrary palette payload byte while keeping exact
+        # frame count, FPS, format, all framing and both CRCs valid.
+        payload_offset = timeline.sequence.HEADER_BYTES + 16 + 100
+        forged[payload_offset] ^= 1
+        start = timeline.sequence.HEADER_BYTES
+        end = start + timeline.EXPECTED_SCENE_BYTES
+        struct.pack_into("<I", forged, start + 12,
+                         zlib.crc32(forged[start + 16:end]))
+        struct.pack_into("<I", forged, 12,
+                         zlib.crc32(forged[start:]))
+        # A structural validator properly accepts it; provenance must NOT.
+        self.assertEqual(
+            timeline._inspect(bytes(forged), fps=2, frames=14)["status"],
+            timeline.PASS)
+        with self.assertRaises(ValueError):
+            bundle._validate(gfx, bytes(forged))
+
     def test_reject_scene_checksum_and_noncanonical_flags(self):
         gfx, _ = graphics.build()
         seq, _ = timeline.build()
