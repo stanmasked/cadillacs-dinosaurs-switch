@@ -61,7 +61,7 @@ jobs:
           assert all(p.is_file() and not p.is_symlink()
                      and 0<p.stat().st_size<262144
                      and p.suffix in {'.py','.c','.h','.sh'}
-                     and b'\\0' not in p.read_bytes()
+                     and b'\0' not in p.read_bytes()
                      for p in paths)
           assert sum(p.stat().st_size for p in paths)<3*1024*1024
           with zipfile.ZipFile('stage317-public-native-source-only.zip','w',
