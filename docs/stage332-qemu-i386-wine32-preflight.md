@@ -16,7 +16,7 @@ The workflow runs two smoke checks before uploading:
 1. `qemu-i386-static --version`.
 2. `qemu-i386-static -L / /usr/lib/wine/wine --version`, which exercises the actual i386 Wine ELF through QEMU rather than testing QEMU's CLI alone.
 
-Workflow revision: `798ce47250615c070e00d16265b98349ecaa6312`. The latest observed run is [#39900753138](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39900753138); it was queued at the last check, so the smoke result is **not yet known**.
+Workflow revision: `798ce47250615c070e00d16265b98349ecaa6312`. The latest observed run is [#39900753138](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39900753138); it completed successfully, including the real i386 Wine `--version` smoke test.
 
 ## Local findings
 
@@ -35,3 +35,21 @@ Workflow revision: `798ce47250615c070e00d16265b98349ecaa6312`. The latest observ
 6. Require a valid MNG with exactly the requested frames, correct dimensions, contiguous trace callbacks, monotonic frame counters, and matching checksums before claiming any original gameplay frames were observed.
 
 A process starting or exiting successfully is not replay proof. Keep PR #139 Draft and do not change `main` until actual source-game playback and visual/trace consistency are demonstrated.
+
+## Confirmed ROM-free MAME startup — 23 October 2026
+
+The private session verified all 424 Debian package digests and extracted the Wine32 packages into an isolated directory without running installer scripts. QEMU runs the extracted `wine-10.0` binary. However, a traced attempt to execute PE32 MAME in this container fails before MAME initialization: Wine internally calls `execve()` on its 32-bit ELF loader and the host kernel returns `ENOEXEC`. This demonstrates a container execution limitation, not a game or recording mismatch.
+
+To isolate that host limitation, public CI downloaded **only** the source-pinned ROM-free technical MAME artifact. An initial attempt [#39940095682](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39940095682) failed at the artifact download because of an incorrectly escaped token expression, before any MAME execution. Commit `f515d3080f81ff373c006db8e48f5b3638a644de` corrected it.
+
+The replacement [GitHub Actions run #39940521591](https://github.com/stanmasked/cadillacs-dinosaurs-switch/actions/runs/39940521591) **passed**. Its logs confirm:
+
+- All eight internal technical artifact SHA-256 entries and the separately pinned MAME executable digest match.
+- MAME 0.106 successfully executes `-help` under Debian Wine32/Xvfb and identifies the expected version.
+- `-showconfig` confirms availability of `mngcounttrace`.
+- `-listxml` completes and lists the `dino` driver.
+- Original ROM, INP/WLF, original frames, CSV trace, or MNG captures were neither read nor uploaded in that workflow.
+
+**Unmet private gates:** a compatible private host must first validate `-verifyroms dino`, then attempt bounded replay of the first 121 original recorded frames with local ROM/INP/WLF. Exactly 121 audited MNG frames, contiguous CSV callbacks and both advancing counters remain required before accepting any candidate playback evidence. A ROM-free executable startup is not proof of recording compatibility or visual parity.
+
+**Reproducibility limit:** the ROM-free MAME artifact is fetched from a historical GitHub Actions run with limited retention. After expiration, this smoke test needs a freshly validated replacement built from the same pinned source; missing artifacts must not be interpreted as successful execution.
