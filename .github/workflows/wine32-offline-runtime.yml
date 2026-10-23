@@ -83,6 +83,11 @@ jobs:
           print(f'Bundled {len(missing_mirrors)} amd64 Multi-Arch mirrors')
           PY
 
+      - name: Check out repository sources
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Prepare isolated QEMU i386 ELF helper
         shell: bash
         run: |
