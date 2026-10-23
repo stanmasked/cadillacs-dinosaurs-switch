@@ -1,0 +1,50 @@
+name: Historical MAME 0.106 native Windows ROM-free preflight
+
+on:
+  push:
+    paths:
+      - '.github/workflows/mame0106-windows-romfree-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: native-romfree-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-windows-romfree:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Check out public tools
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Download pinned ROM-free MAME build
+        uses: actions/download-artifact@v4
+        with:
+          name: historical-mame0106-runtime-rom-free
+          run-id: 39859311511
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/mame0106-romfree
+      - name: Native Windows command-line preflight
+        shell: pwsh
+        run: |
+          python tools/mame0106_romfree_native_windows_probe.py `
+            --artifact-dir "${{ runner.temp }}/mame0106-romfree" `
+            --report "${{ runner.temp }}/mame0106-safe-report.txt"
+      - name: Upload ROM-free summary only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mame0106-native-windows-romfree-summary
+          path: ${{ runner.temp }}/mame0106-safe-report.txt
+          retention-days: 3
+          if-no-files-found: ignore
