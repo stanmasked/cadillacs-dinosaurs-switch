@@ -43,7 +43,7 @@ class Stage337RunbookTests(unittest.TestCase):
 
     def test_workflow_registers_qemu_before_wineboot(self):
         text = WINE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("options: --cap-add=SYS_ADMIN", text)
+        self.assertIn("options: --cap-add=SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined", text)
         mount_at = text.index("mount -t binfmt_misc binfmt_misc /tmp/bfmt-qemu")
         register_at = text.index('> /tmp/bfmt-qemu/register')
         enabled_at = text.index('test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled')

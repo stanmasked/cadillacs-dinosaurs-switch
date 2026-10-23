@@ -20,7 +20,7 @@ jobs:
     container:
       image: debian:trixie
       # This trusted push/dispatch-only workflow registers QEMU for nested i386 execve.
-      options: --cap-add=SYS_ADMIN
+      options: --cap-add=SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     timeout-minutes: 45
     steps:
       - name: Install Node.js action runtime and Wine32 build dependencies
