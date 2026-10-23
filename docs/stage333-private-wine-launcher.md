@@ -25,8 +25,9 @@ Example paths below are placeholders; replace them with actual absolute local pa
     export WINE_BIN=wine
     export WINEPREFIX=/private/cadillacs/wine-prefix
     mkdir -p /private/cadillacs
+    WINEARCH=win32 WINEPREFIX="$WINEPREFIX" WINEDEBUG=-all wineboot -u
 
-The launcher sets WINEARCH=win32 when Wine initializes the prefix. Do not reuse an existing 64-bit prefix. It validates that the MAME executable and prefix are outside the repository before forwarding any arguments.
+Initialize the fresh prefix before the 10-second read-only help probe; this avoids a first-run prefix setup timeout. The launcher also sets WINEARCH=win32. Do not reuse an existing 64-bit prefix. It validates that the MAME executable and prefix are outside the repository before forwarding any arguments.
 
 ## Gate first — do not skip
 
