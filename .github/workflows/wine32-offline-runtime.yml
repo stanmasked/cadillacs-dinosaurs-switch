@@ -281,27 +281,28 @@ jobs:
           err_path = Path("/tmp/stage333-mame-stderr.txt")
           stdout = out_path.read_bytes() if out_path.exists() else b""
           stderr = err_path.read_text(encoding="utf-8", errors="replace").splitlines() if err_path.exists() else []
-          tail = [re.sub(r"/(?:[^/\\s:]+/)+[^/\\s:]*", "<path>", line) for line in stderr[-20:]]
+          tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in stderr[-20:]]
+          dino_present = b'<game name="dino"' in stdout
           report = [
               "schema=stage348-listxml-diagnostic-v1",
               f"exit_status={status}",
               f"stdout_bytes={len(stdout)}",
               f"stderr_lines={len(stderr)}",
               f"xml_header_present={stdout.lstrip().startswith(b'<?xml')}",
-              f"dino_driver_present={b'<game name=\"dino\"' in stdout}",
+              f"dino_driver_present={dino_present}",
               "stderr_tail_begin",
               *tail,
               "stderr_tail_end",
           ]
-          Path("/tmp/stage348-listxml-diagnostic.txt").write_text("\\n".join(report) + "\\n", encoding="utf-8")
-          print("\\n".join(report))
+          Path("/tmp/stage348-listxml-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
           PY
           if [ "$listxml_status" -ne 0 ]; then
             echo "ROM-free MAME -listxml probe failed with status $listxml_status" >&2
             exit "$listxml_status"
           fi
           grep -q '<game name="dino"' /tmp/stage333-mame-driver.xml
-          printf '%s\\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
+          printf '%s\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
 
       - name: Upload ROM-free Stage348 listxml diagnostic summary
         if: always()

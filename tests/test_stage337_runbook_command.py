@@ -86,6 +86,8 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("stage348-listxml-diagnostic.txt", text)
         self.assertIn("if: always()", text)
         self.assertIn("if-no-files-found: ignore", text)
+        self.assertIn('write_text("\\n".join(report)', text)
+        self.assertIn("stderr_tail_begin", text)
         self.assertNotIn("path: /tmp/stage333-mame-driver.xml", text)
 
 
