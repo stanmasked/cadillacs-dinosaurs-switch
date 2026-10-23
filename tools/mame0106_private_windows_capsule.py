@@ -96,7 +96,11 @@ try {
         $entryProperty = $manifest.files.PSObject.Properties[$relative]
         if ($null -eq $entryProperty) { throw 'missing_capsule_digest' }
         $expected = $entryProperty.Value
-        $actualHash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        $digestRecord = Get-FileHash -LiteralPath $file -Algorithm SHA256 -ErrorAction Stop
+        if ($null -eq $digestRecord -or $null -eq $digestRecord.Hash) {
+            throw 'missing_file_sha256'
+        }
+        $actualHash = ([String]$digestRecord.Hash).ToLowerInvariant()
         if ($fileInfo.Length -ne [Int64]$expected.size -or
             $actualHash -cne [String]$expected.sha256) { throw 'wrong_capsule_digest' }
     }
