@@ -70,6 +70,34 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
     if (GUARD in script or PRODUCTION_SUCCESS in script or
             any(x in script for x in (EXE_SHA, PINNED_ROM_SHA256, PINNED_XML_SHA256))):
         raise SyntheticSmokeError('incomplete_synthetic_isolation')
+    # Bounded diagnostic markers exist ONLY in the disposable fake fixture.
+    phases = (
+        ("    $manifest = Get-Content", 'read_manifest'),
+        ("    $relPaths = @(", 'file_hashes'),
+        ("    $temp = Join-Path", 'private_scratch'),
+        ("    $process = Start-Process", 'launch_fake_process'),
+        ("    $stdout = [System.IO.File]::ReadAllText($out)", 'read_fake_output'),
+    )
+    for token, phase in phases:
+        if script.count(token) != 1:
+            raise SyntheticSmokeError('unexpected_synthetic_phase_marker')
+        script = script.replace(token, "    $stage367Phase = '" + phase + "'\n" + token, 1)
+    original = "    Write-Output 'status=private_verification_refused'\n    exit 2"
+    if script.count(original) != 1:
+        raise SyntheticSmokeError('unexpected_synthetic_catch_handler')
+    diagnostic = """    Write-Output 'status=private_verification_refused'
+    $allowedReasons = @('bad_manifest', 'untrusted_component_pin',
+        'missing_capsule_member', 'linked_capsule_member', 'missing_capsule_digest',
+        'wrong_capsule_digest', 'staged_content_changed', 'native_timeout',
+        'oversized_mame_output')
+    $reason = [String]$_.Exception.Message
+    if ($allowedReasons -ccontains $reason) {
+        Write-Output ('synthetic_failure_class=' + $reason + '_at_' + $stage367Phase)
+    } else {
+        Write-Output ('synthetic_failure_class=unclassified_at_' + $stage367Phase)
+    }
+    exit 2"""
+    script = script.replace(original, diagnostic, 1)
     return script
 
 
@@ -101,16 +129,25 @@ def expect(script: Path, mode: str, code: int, status: str) -> None:
     ret, lines = invoke(script, mode)
     expected_lines = ([status, 'game=dino', 'recording_playback=not_executed']
                       if code == 0 else [status])
+    # A second line is accepted only from a generated synthetic-only catch,
+    # and it can contain ONLY predeclared class and phase labels.
+    synthetic_diag = (len(lines) == 2 and
+        lines[1].startswith('synthetic_failure_class=') and
+        all(ch.isascii() and (ch.isalnum() or ch in '=_') for ch in lines[1]))
+    if (ret == code == 2 and status == 'status=private_verification_refused' and
+            lines[0] == status and synthetic_diag):
+        return
     if ret != code or lines != expected_lines:
-        # Only internal fixed labels/counts; NEVER print raw PowerShell output.
         allowed = {'status=public_runner_forbidden',
                    'status=synthetic_runner_branch_only',
                    'status=native_verification_failed',
                    'status=private_verification_refused'}
         actual_status = lines[0] if lines and lines[0] in allowed else 'unknown'
+        # Only fixed status/phase/class; no raw child output or local paths.
+        reason = '_' + lines[1] if synthetic_diag else ''
         raise SyntheticSmokeError(
             'synthetic_case_' + mode + '_rc_' + str(ret) +
-            '_lines_' + str(len(lines)) + '_status_' + actual_status.replace('status=', ''))
+            '_lines_' + str(len(lines)) + '_status_' + actual_status.replace('status=', '') + reason)
 
 
 def run() -> dict[str, object]:
