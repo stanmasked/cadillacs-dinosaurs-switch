@@ -116,6 +116,20 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
     }
     exit 2"""
     script = script.replace(original, diagnostic, 1)
+    # Instrument ONLY synthetic negative gate, never production runner.
+    original_bad = "    Write-Output 'status=native_verification_failed'\n    exit 2"
+    synthetic_bad = """    Write-Output 'status=native_verification_failed'
+    if ($env:STAGE367_SYNTHETIC_MODE -eq 'good') {
+        $okExit = [int]($process.ExitCode -eq 0)
+        $okFirst = [int]$hasRomset
+        $okSecond = [int]$hasSummary
+        $hasNegative = [int]$negative
+        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative)
+    }
+    exit 2"""
+    if script.count(original_bad) != 1:
+        raise SyntheticSmokeError('unexpected_synthetic_result_gate')
+    script = script.replace(original_bad, synthetic_bad, 1)
     return script
 
 
