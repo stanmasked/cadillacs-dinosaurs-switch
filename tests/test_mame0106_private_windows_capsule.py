@@ -149,6 +149,9 @@ class CapsuleTests(unittest.TestCase):
 
     def test_windows_script_has_restricted_execution_claim(self):
         self.assertIn('WaitForExit(90000)',p.POWERSHELL)
+        self.assertIn('ProcessStartInfo',p.POWERSHELL)
+        self.assertIn('ReadToEndAsync()',p.POWERSHELL)
+        self.assertNotIn('Start-Process -FilePath',p.POWERSHELL)
         self.assertIn('GITHUB_ACTIONS',p.POWERSHELL)
         self.assertIn('status=native_verified',p.POWERSHELL)
         self.assertIn('recording_playback=not_executed',p.POWERSHELL)

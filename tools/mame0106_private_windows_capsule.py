@@ -126,19 +126,35 @@ try {
             [String]$manifest.files.'mame0106.exe'.sha256 -or
         (Get-CapsuleSha256 -path $privateZip) -cne
             [String]$manifest.files.'roms/dino.zip'.sha256) { throw 'staged_content_changed' }
-    $out = Join-Path $temp 'mame-stdout.private.txt'
-    $err = Join-Path $temp 'mame-stderr.private.txt'
-    $argsMame = @('dino', '-verifyroms', '-rompath', ('"' + $roms + '"'), '-noreadconfig')
-    $process = Start-Process -FilePath $exe -ArgumentList $argsMame -WorkingDirectory $temp `
-        -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+    # Direct .NET ProcessStartInfo returns a process with an owned native
+    # handle; Start-Process -PassThru on CI returned a null ExitCode.
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $exe
+    $info.Arguments = 'dino -verifyroms -rompath "' + $roms + '" -noreadconfig'
+    $info.WorkingDirectory = $temp
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = [System.Diagnostics.Process]::Start($info)
+    if ($null -eq $process) { throw 'native_start_refused' }
+    # Concurrently drain both pipes; no raw emulator output is written to
+    # GitHub, console, persistent storage or public artifacts.
+    $outTask = $process.StandardOutput.ReadToEndAsync()
+    $errTask = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(90000)) {
         $process.Kill()
         $process.WaitForExit()
         throw 'native_timeout'
     }
-    if ((Get-Item -LiteralPath $out).Length -gt 131072 -or
-        (Get-Item -LiteralPath $err).Length -gt 131072) { throw 'oversized_mame_output' }
-    $stdout = [System.IO.File]::ReadAllText($out)
+    if (-not $outTask.Wait(5000) -or -not $errTask.Wait(5000)) {
+        throw 'native_output_drain_timeout'
+    }
+    $stdout = $outTask.Result
+    $stderr = $errTask.Result
+    if ($stdout.Length -gt 131072 -or $stderr.Length -gt 131072) {
+        throw 'oversized_mame_output'
+    }
     $hasRomset = [regex]::IsMatch($stdout, '(?im)^romset dino is good\s*$')
     $hasSummary = [regex]::IsMatch($stdout, '(?im)^1 romsets found, 1 were OK\.\s*$')
     $negative = [regex]::IsMatch($stdout, '(?i)is bad|not found|not supported')

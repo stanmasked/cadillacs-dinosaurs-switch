@@ -83,8 +83,8 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
         ("        $actualHash = Get-CapsuleSha256 -path $file", 'get_file_sha256'),
         ("        if ($fileInfo.Length -ne", 'compare_manifest_digest'),
         ("    $temp = Join-Path", 'private_scratch'),
-        ("    $process = Start-Process", 'launch_fake_process'),
-        ("    $stdout = [System.IO.File]::ReadAllText($out)", 'read_fake_output'),
+        ("    $process = [System.Diagnostics.Process]::Start($info)", 'launch_fake_process'),
+        ("    $stdout = $outTask.Result", 'read_fake_output'),
     )
     for token, phase in phases:
         if script.count(token) != 1:
