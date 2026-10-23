@@ -197,7 +197,7 @@ jobs:
         with:
           name: historical-mame0106-runtime-rom-free
           run-id: 39859311511
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: /tmp/stage332-mame
 
       - name: Stage332 ROM-free Wine32 MAME startup audit
