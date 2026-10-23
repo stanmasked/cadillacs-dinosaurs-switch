@@ -261,6 +261,7 @@ jobs:
           test "$rebuilt_sha" = "$archive_sha"
 
       - name: Upload offline Wine32 bundle part 00
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-00') != ''
         uses: actions/upload-artifact@v4
         with:
           name: wine32-debian-trixie-offline-part-00
@@ -274,6 +275,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload offline Wine32 bundle part 01
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-01') != ''
         uses: actions/upload-artifact@v4
         with:
           name: wine32-debian-trixie-offline-part-01
@@ -287,6 +289,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload offline Wine32 bundle part 02
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-02') != ''
         uses: actions/upload-artifact@v4
         with:
           name: wine32-debian-trixie-offline-part-02
@@ -300,6 +303,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload offline Wine32 bundle part 03
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-03') != ''
         uses: actions/upload-artifact@v4
         with:
           name: wine32-debian-trixie-offline-part-03

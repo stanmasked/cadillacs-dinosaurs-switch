@@ -112,6 +112,7 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertNotIn("name: wine32-debian-trixie-offline-packages", text)
         for suffix in ("00", "01", "02", "03"):
             self.assertIn(f"name: wine32-debian-trixie-offline-part-{suffix}", text)
+            self.assertIn(f"if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-{suffix}') != ''", text)
         self.assertIn("rm -f /tmp/wine32-offline.tar", text)
         self.assertIn('"$GITHUB_WORKSPACE/wine32-offline-transfer"', text)
 
