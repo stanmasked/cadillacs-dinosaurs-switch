@@ -27,10 +27,10 @@ jobs:
           set -euo pipefail
           dpkg --add-architecture i386
           apt-get update
-          # JavaScript actions need Node.js inside this Debian job container.
-          # Install it before redirecting the APT archive cache so Node packages
-          # remain build-only and are not included in the offline Wine bundle.
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+          # JavaScript actions need Node.js and checkout needs Git inside this
+          # Debian job container. Install both before redirecting APT's archive
+          # cache so build-only tools are not included in the offline Wine bundle.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs git
           node --version
           mkdir -p /tmp/wine-debs/partial
           chown _apt:root /tmp/wine-debs/partial
