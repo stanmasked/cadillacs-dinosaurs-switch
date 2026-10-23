@@ -1,0 +1,30 @@
+"""Static regression test for the Stage337 private replay runbook."""
+from pathlib import Path
+import subprocess
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNBOOK = ROOT / "docs" / "stage335-wine32-smoke-and-private-replay.md"
+SLASH = chr(92)
+
+class Stage337RunbookTests(unittest.TestCase):
+    def test_capture_command_has_valid_shell_continuations(self):
+        text = RUNBOOK.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith("python3 tools/wolfmame0106_private_mng_capture.py"))
+        command = []
+        for line in lines[start:]:
+            if line == chr(96) * 3:
+                break
+            command.append(line)
+        self.assertGreaterEqual(len(command), 8)
+        self.assertTrue(command[0].startswith("python3 "))
+        self.assertTrue(command[-1].strip().startswith("--out "))
+        for line in command[:-1]:
+            self.assertTrue(line.endswith(SLASH), f"missing continuation: {line!r}")
+            self.assertFalse(line.endswith(SLASH * 2), f"double slash breaks continuation: {line!r}")
+        result = subprocess.run(["sh", "-n"], input="\n".join(command) + "\n", text=True, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+if __name__ == "__main__":
+    unittest.main()
