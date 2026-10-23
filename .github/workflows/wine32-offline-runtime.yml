@@ -228,6 +228,10 @@ jobs:
           export WINE_BIN=wine
           export WINEDEBUG=-all
           mkdir -p "$WINEPREFIX"
+          # Initialize the isolated 32-bit prefix before bounded MAME probes.
+          timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env \
+            WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u \
+            > /tmp/stage333-wineboot.txt 2>&1
           # Negative guard test: a MAME executable inside the repository is refused.
           printf '%s\n' 'not an executable' > "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
           if MAME0106_EXE="$GITHUB_WORKSPACE/stage333-forbidden-mame.exe" WINEPREFIX="$WINEPREFIX" WINE_BIN=wine "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-negative-guard.txt 2>&1; then
