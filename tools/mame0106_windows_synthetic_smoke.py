@@ -145,7 +145,15 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
         } catch {
             $explicitCode = 'exception'
         }
-        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative + '_code_' + $exitValue + '_ptype_' + $kind + '_exited_' + $hasExited + '_explicit_' + $explicitCode)
+        $refCode = 'null'
+        try {
+            $property = [System.Diagnostics.Process].GetProperty('ExitCode')
+            if ($null -ne $property) {
+                $observed = $property.GetValue($process, $null)
+                if ($null -ne $observed) { $refCode = [String]$observed }
+            }
+        } catch { $refCode = 'exception' }
+        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative + '_code_' + $exitValue + '_ptype_' + $kind + '_exited_' + $hasExited + '_explicit_' + $explicitCode + '_reflection_' + $refCode)
     }
     exit 2"""
     if script.count(original_bad) != 1:
