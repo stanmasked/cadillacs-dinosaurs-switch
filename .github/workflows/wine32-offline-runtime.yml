@@ -142,7 +142,7 @@ jobs:
         with:
           name: qemu-i386-static-private-runtime-helper
           path: qemu-i386-helper/
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: error
 
       - name: Prepare offline Debian package bundle
@@ -206,7 +206,7 @@ jobs:
         with:
           name: wine32-debian-trixie-offline-packages
           path: wine32-offline/
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: error
 
       # Fetch only the ROM-free Stage329 source-pinned technical binary.
@@ -271,7 +271,7 @@ jobs:
           # -listxml may be slow under the Wine/QEMU compatibility layer.
           # Keep it bounded and record only a small ROM-free diagnostic summary.
           listxml_status=0
-          timeout --signal=TERM --kill-after=5s 180s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt || listxml_status=$?
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt || listxml_status=$?
           python3 - "$listxml_status" <<'PY'
           import re
           import sys
@@ -312,3 +312,17 @@ jobs:
           path: /tmp/stage348-listxml-diagnostic.txt
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Clean ephemeral runtime material
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          # This workflow never receives original ROM/INP/WLF or gameplay captures.
+          # Remove generated technical files after their short-lived artifacts are uploaded.
+          rm -rf /tmp/stage332-mame /tmp/stage333-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu
+          rm -f /tmp/stage333-wineboot.txt /tmp/stage333-negative-guard.txt
+          rm -f /tmp/stage333-mame-help.txt /tmp/stage333-mame-config.txt
+          rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt
+          rm -f /tmp/stage348-listxml-diagnostic.txt
+          rm -rf "$GITHUB_WORKSPACE/qemu-i386-helper" "$GITHUB_WORKSPACE/wine32-offline"

@@ -79,7 +79,8 @@ class Stage337RunbookTests(unittest.TestCase):
 
     def test_listxml_probe_is_bounded_and_emits_summary_only(self):
         text = WINE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("180s xvfb-run -a sh", text)
+        self.assertIn("90s xvfb-run -a sh", text)
+        self.assertNotIn("180s xvfb-run -a sh", text)
         self.assertIn("listxml_status=0", text)
         self.assertIn("stdout_bytes=", text)
         self.assertIn("dino_driver_present=", text)
@@ -89,6 +90,11 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn('write_text("\\n".join(report)', text)
         self.assertIn("stderr_tail_begin", text)
         self.assertNotIn("path: /tmp/stage333-mame-driver.xml", text)
+        self.assertEqual(text.count("retention-days: 3"), 3)
+        self.assertNotIn("retention-days: 7", text)
+        self.assertIn("Clean ephemeral runtime material", text)
+        self.assertIn("if: always()", text)
+        self.assertIn('rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt', text)
 
 
 if __name__ == "__main__":
