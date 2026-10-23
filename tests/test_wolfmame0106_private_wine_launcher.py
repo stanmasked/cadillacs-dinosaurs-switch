@@ -37,6 +37,7 @@ class PrivateWineLauncherTests(unittest.TestCase):
             "WINE_CAPTURE_ARGS": str(self.args_file),
             "WINE_CAPTURE_ENV": str(self.env_file),
         }
+        self.env.pop("WINEARCH", None)
 
     def run_launcher(self, *args, env=None):
         return subprocess.run(
@@ -63,6 +64,21 @@ class PrivateWineLauncherTests(unittest.TestCase):
         )
         self.assertTrue(self.prefix.parent.is_dir())
 
+    def test_respects_win64_architecture_override(self):
+        env = {**self.env, "WINEARCH": "win64"}
+        result = self.run_launcher("-help", env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.env_file.read_text(encoding="utf-8").strip(),
+            f"{self.prefix}|win64|-all",
+        )
+
+    def test_rejects_unsupported_architecture(self):
+        env = {**self.env, "WINEARCH": "arm64"}
+        result = self.run_launcher("-help", env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WINEARCH must be win32 or win64", result.stderr)
+        self.assertFalse(self.args_file.exists())
     def test_refuses_mame_inside_repository(self):
         env = {**self.env, "MAME0106_EXE": str(LAUNCHER)}
         result = self.run_launcher("-help", env=env)

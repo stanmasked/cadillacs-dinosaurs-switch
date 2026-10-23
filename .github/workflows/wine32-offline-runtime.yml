@@ -327,6 +327,7 @@ jobs:
           path: /tmp/stage332-mame
 
       - name: Stage333 ROM-free Wine32 launcher audit
+        id: wine32_audit
         shell: bash
         run: |
           set -euo pipefail
@@ -516,6 +517,102 @@ jobs:
           grep -q '<game name="dino"' /tmp/stage333-mame-driver.xml
           printf '%s\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
 
+      - name: Stage356 native Wine64 fallback audit
+        id: wine64_fallback
+        if: always() && steps.wine32_audit.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAME0106_EXE=/tmp/stage332-mame/mame0106.exe
+          export WINEPREFIX=/tmp/stage356-romfree-wine64
+          export WINEARCH=win64
+          export WINE_BIN=wine64
+          mkdir -p "$WINEPREFIX"
+          version_status=0
+          timeout --signal=TERM --kill-after=3s 10s wine64 --version > /tmp/stage356-wine64-version.txt 2>&1 || version_status=$?
+          mame_binary_status=present
+          if [ ! -f "$MAME0106_EXE" ]; then mame_binary_status=missing; fi
+          boot_status=skipped
+          help_status=skipped
+          config_status=skipped
+          listxml_status=skipped
+          dino_driver_present=no
+          if [ "$version_status" -eq 0 ] && [ "$mame_binary_status" = present ]; then
+            boot_status=0
+            timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all wineboot -u > /tmp/stage356-wine64-wineboot.txt 2>&1 || boot_status=$?
+            if [ "$boot_status" -eq 0 ]; then
+              help_status=0
+              timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN=wine64 sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage356-wine64-help.txt 2>&1 || help_status=$?
+              if [ "$help_status" -eq 0 ] && ! grep -q 'M.A.M.E. v0.106' /tmp/stage356-wine64-help.txt; then help_status=1; fi
+              if [ "$help_status" = 0 ]; then
+                config_status=0
+                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN=wine64 sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage356-wine64-config.txt 2>&1 || config_status=$?
+                if [ "$config_status" = 0 ] && ! grep -qi mngcounttrace /tmp/stage356-wine64-config.txt; then config_status=1; fi
+              fi
+              if [ "$help_status" = 0 ] && [ "$config_status" = 0 ]; then
+                listxml_status=0
+                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN=wine64 sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage356-wine64-listxml.xml 2> /tmp/stage356-wine64-stderr.txt || listxml_status=$?
+                if [ "$listxml_status" = 0 ] && grep -q '<game name="dino"' /tmp/stage356-wine64-listxml.xml; then dino_driver_present=yes; fi
+              fi
+            fi
+          fi
+          python3 - "$version_status" "$mame_binary_status" "$boot_status" "$help_status" "$config_status" "$listxml_status" "$dino_driver_present" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          version_status, mame_binary_status, boot_status, help_status, config_status, listxml_status, dino = sys.argv[1:]
+          def read_log(path):
+              p = Path(path)
+              raw = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+              lines = raw.splitlines()
+              tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in lines[-12:]]
+              return raw, lines, tail
+          version_raw, version_lines, version_tail = read_log("/tmp/stage356-wine64-version.txt")
+          boot_raw, boot_lines, boot_tail = read_log("/tmp/stage356-wine64-wineboot.txt")
+          help_raw, help_lines, help_tail = read_log("/tmp/stage356-wine64-help.txt")
+          config_raw, config_lines, config_tail = read_log("/tmp/stage356-wine64-config.txt")
+          stderr_raw, stderr_lines, stderr_tail = read_log("/tmp/stage356-wine64-stderr.txt")
+          xml_path = Path("/tmp/stage356-wine64-listxml.xml")
+          xml_raw = xml_path.read_bytes() if xml_path.exists() else b""
+          prefix = Path("/tmp/stage356-romfree-wine64")
+          prefix_files = [p for p in prefix.rglob("*") if p.is_file()] if prefix.exists() else []
+          prefix_bytes = sum(p.stat().st_size for p in prefix_files)
+          report = [
+              "schema=stage356-wine64-fallback-diagnostic-v1",
+              f"wine64_version_status={version_status}",
+              f"mame_binary_status={mame_binary_status}",
+              f"wineboot_status={boot_status}",
+              f"help_status={help_status}",
+              f"showconfig_status={config_status}",
+              f"listxml_status={listxml_status}",
+              f"dino_driver_present={dino}",
+              f"listxml_bytes={len(xml_raw)}",
+              f"prefix_file_count={len(prefix_files)}",
+              f"prefix_bytes={prefix_bytes}",
+              f"wine64_version_log_lines={len(version_lines)}",
+              f"wineboot_log_lines={len(boot_lines)}",
+              f"help_log_lines={len(help_lines)}",
+              f"showconfig_log_lines={len(config_lines)}",
+              f"listxml_stderr_lines={len(stderr_lines)}",
+              "wine64_version_tail_begin", *version_tail, "wine64_version_tail_end",
+              "wineboot_tail_begin", *boot_tail, "wineboot_tail_end",
+              "help_tail_begin", *help_tail, "help_tail_end",
+              "showconfig_tail_begin", *config_tail, "showconfig_tail_end",
+              "listxml_stderr_tail_begin", *stderr_tail, "listxml_stderr_tail_end",
+          ]
+          Path("/tmp/stage356-wine64-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
+          PY
+          fallback_status=0
+          if [ "$version_status" -ne 0 ]; then fallback_status=$version_status
+          elif [ "$mame_binary_status" != present ]; then fallback_status=2
+          elif [ "$boot_status" != 0 ]; then fallback_status=$boot_status
+          elif [ "$help_status" != 0 ]; then fallback_status=$help_status
+          elif [ "$config_status" != 0 ]; then fallback_status=$config_status
+          elif [ "$listxml_status" != 0 ]; then fallback_status=$listxml_status
+          elif [ "$dino_driver_present" != yes ]; then fallback_status=1
+          fi
+          exit "$fallback_status"
       - name: Upload ROM-free Stage348 listxml diagnostic summary
         if: always()
         uses: actions/upload-artifact@v4
@@ -534,6 +631,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+      - name: Upload ROM-free Stage356 Wine64 fallback diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage356-wine64-fallback-diagnostic
+          path: /tmp/stage356-wine64-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Clean ephemeral runtime material
         if: always()
         shell: bash
@@ -548,4 +653,6 @@ jobs:
           rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt
           rm -f /tmp/stage348-listxml-diagnostic.txt /tmp/stage352-wineboot-diagnostic.txt
           rm -f /tmp/wine32-offline.tar
+          rm -rf /tmp/stage356-romfree-wine64
+          rm -f /tmp/stage356-wine64-version.txt /tmp/stage356-wine64-wineboot.txt /tmp/stage356-wine64-help.txt /tmp/stage356-wine64-config.txt /tmp/stage356-wine64-listxml.xml /tmp/stage356-wine64-stderr.txt /tmp/stage356-wine64-diagnostic.txt
           rm -rf "$GITHUB_WORKSPACE/qemu-i386-helper" "$GITHUB_WORKSPACE/wine32-offline" "$GITHUB_WORKSPACE/wine32-offline-transfer"

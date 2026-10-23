@@ -41,7 +41,12 @@ wine_bin=${WINE_BIN:-wine}
 command -v "$wine_bin" >/dev/null 2>&1 || fail "WINE_BIN is not executable"
 export MAME0106_EXE="$mame_exe"
 export WINEPREFIX="$prefix_path"
-export WINEARCH=win32
+wine_arch=${WINEARCH:-win32}
+case "$wine_arch" in
+    win32|win64) ;;
+    *) fail "WINEARCH must be win32 or win64" ;;
+esac
+export WINEARCH="$wine_arch"
 export WINEDEBUG=${WINEDEBUG:--all}
 
 exec "$wine_bin" "$MAME0106_EXE" "$@"
