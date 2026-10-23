@@ -101,7 +101,19 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("|| wineboot_status=$?", text)
         self.assertIn("umount /tmp/bfmt-qemu 2>/dev/null || true", text)
         self.assertLess(text.index("umount /tmp/bfmt-qemu"), text.index("rm -rf /tmp/stage332-mame /tmp/stage332-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu"))
-        self.assertEqual(text.count("retention-days: 3"), 4)
+        self.assertEqual(text.count("retention-days: 3"), 7)
+        self.assertIn("Split offline Wine32 package bundle into size-bounded parts", text)
+        self.assertIn("split -b 200M -d -a 2 /tmp/wine32-offline.tar", text)
+        self.assertIn("256 * 1024 * 1024", text)
+        self.assertIn("parts-manifest.tsv", text)
+        self.assertIn("parts.sha256", text)
+        self.assertIn("archive.sha256", text)
+        self.assertIn("README-transfer.txt", text)
+        self.assertNotIn("name: wine32-debian-trixie-offline-packages", text)
+        for suffix in ("00", "01", "02", "03"):
+            self.assertIn(f"name: wine32-debian-trixie-offline-part-{suffix}", text)
+        self.assertIn("rm -f /tmp/wine32-offline.tar", text)
+        self.assertIn('"$GITHUB_WORKSPACE/wine32-offline-transfer"', text)
 
 
 if __name__ == "__main__":

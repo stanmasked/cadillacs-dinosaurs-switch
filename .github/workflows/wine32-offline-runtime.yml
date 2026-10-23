@@ -201,13 +201,116 @@ jobs:
               raise SystemExit('Offline Wine bundle is missing a required preloader package')
           PY
 
-      - name: Upload short-lived offline Wine32 packages
+      - name: Split offline Wine32 package bundle into size-bounded parts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          mkdir -p wine32-offline-transfer
+          tar -cf /tmp/wine32-offline.tar wine32-offline
+          tar -tf /tmp/wine32-offline.tar >/dev/null
+          archive_size=$(stat -c %s /tmp/wine32-offline.tar)
+          archive_sha=$(sha256sum /tmp/wine32-offline.tar | cut -d ' ' -f1)
+          split -b 200M -d -a 2 /tmp/wine32-offline.tar wine32-offline-transfer/wine32-offline.tar.part-
+          python3 - "$archive_size" "$archive_sha" <<'PY'
+          from pathlib import Path
+          import hashlib
+          import sys
+          root = Path('wine32-offline-transfer')
+          archive_size = int(sys.argv[1])
+          archive_sha = sys.argv[2]
+          parts = sorted(root.glob('wine32-offline.tar.part-*'))
+          if not parts or len(parts) > 4:
+              raise SystemExit(f'Unexpected offline bundle part count: {len(parts)}')
+          if sum(part.stat().st_size for part in parts) != archive_size:
+              raise SystemExit('Split parts do not match the source archive byte count')
+          manifest = [
+              'schema=wine32-offline-transfer-v1',
+              f'archive_size_bytes={archive_size}',
+              f'archive_sha256={archive_sha}',
+              f'part_count={len(parts)}',
+              'part_name\tsize_bytes\tsha256',
+          ]
+          checksum_lines = []
+          for part in parts:
+              size = part.stat().st_size
+              if not 0 < size < 256 * 1024 * 1024:
+                  raise SystemExit(f'Part size outside required bounds: {part.name} ({size})')
+              digest = hashlib.sha256()
+              with part.open('rb') as source:
+                  for block in iter(lambda: source.read(1024 * 1024), b''):
+                      digest.update(block)
+              sha = digest.hexdigest()
+              manifest.append(f'{part.name}\t{size}\t{sha}')
+              checksum_lines.append(f'{sha}  {part.name}')
+          (root / 'parts-manifest.tsv').write_text('\n'.join(manifest) + '\n', encoding='utf-8')
+          (root / 'parts.sha256').write_text('\n'.join(checksum_lines) + '\n', encoding='utf-8')
+          (root / 'archive.sha256').write_text(f'{archive_sha}  wine32-offline.tar\n', encoding='utf-8')
+          (root / 'README-transfer.txt').write_text(
+              'Wine32 offline bundle transfer instructions\n'
+              'Download each part artifact and extract the part files plus metadata into one directory.\n'
+              'Verify every part with: sha256sum -c parts.sha256\n'
+              'Rebuild in suffix order with: cat wine32-offline.tar.part-* > wine32-offline.tar\n'
+              'Verify the reconstructed archive with: sha256sum -c archive.sha256\n'
+              'Compare its byte count with archive_size_bytes in parts-manifest.tsv, then inspect with tar -tf before extraction.\n'
+              'This bundle contains public Debian technical dependencies only; no original game data.\n',
+              encoding='utf-8')
+          print(f'archive_size_bytes={archive_size} part_count={len(parts)} sha256={archive_sha}')
+          PY
+          rebuilt_sha=$(cat wine32-offline-transfer/wine32-offline.tar.part-* | sha256sum | cut -d ' ' -f1)
+          test "$rebuilt_sha" = "$archive_sha"
+
+      - name: Upload offline Wine32 bundle part 00
         uses: actions/upload-artifact@v4
         with:
-          name: wine32-debian-trixie-offline-packages
-          path: wine32-offline/
+          name: wine32-debian-trixie-offline-part-00
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-00
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
           retention-days: 3
-          if-no-files-found: error
+          if-no-files-found: ignore
+
+      - name: Upload offline Wine32 bundle part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine32-debian-trixie-offline-part-01
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-01
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Upload offline Wine32 bundle part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine32-debian-trixie-offline-part-02
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-02
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Upload offline Wine32 bundle part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine32-debian-trixie-offline-part-03
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-03
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
 
       # Fetch only the ROM-free Stage329 source-pinned technical binary.
       # Never stage original ROM, INP, WLF or captures in public CI.
@@ -361,4 +464,5 @@ jobs:
           rm -f /tmp/stage333-mame-help.txt /tmp/stage333-mame-config.txt
           rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt
           rm -f /tmp/stage348-listxml-diagnostic.txt /tmp/stage352-wineboot-diagnostic.txt
-          rm -rf "$GITHUB_WORKSPACE/qemu-i386-helper" "$GITHUB_WORKSPACE/wine32-offline"
+          rm -f /tmp/wine32-offline.tar
+          rm -rf "$GITHUB_WORKSPACE/qemu-i386-helper" "$GITHUB_WORKSPACE/wine32-offline" "$GITHUB_WORKSPACE/wine32-offline-transfer"

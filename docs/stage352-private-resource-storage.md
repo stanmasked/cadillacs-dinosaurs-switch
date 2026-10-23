@@ -29,3 +29,9 @@ Stage352 records the storage rules for original and extracted game materials. Th
 - Never upload original or extracted game data, INP/WLF recordings, MNG gameplay frames, or full replay traces to public Actions artifacts.
 - Technical runtime artifacts are short-lived and retained for no more than three days. The workflow must clean its ephemeral runner workspace even after failure.
 - A passing source/build/privacy check does not prove that the original game or private recording replayed successfully.
+## Oversized technical dependency bundles
+
+- The 256 MiB part limit also applies to transfer archives produced by CI, even when they contain only public technical dependencies.
+- When a technical bundle exceeds the limit, split it into independently downloadable parts smaller than 256 MiB and upload each part as a separate short-lived artifact; never re-bundle the parts into one oversized artifact.
+- Include each part's SHA-256 and byte count plus the reconstructed archive's SHA-256 and byte count. Verify every part before reconstruction and verify the complete archive before extraction.
+- Keep reconstruction in an isolated, non-synchronized working directory. These technical dependency bundles must never contain original game files, extracted game resources, or gameplay evidence.
