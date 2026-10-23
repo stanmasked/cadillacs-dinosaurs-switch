@@ -2,6 +2,7 @@ name: Nintendo Switch native bootstrap
 
 on:
   push:
+    branches: [main]
     paths:
       - 'source/**'
       - 'Makefile'
