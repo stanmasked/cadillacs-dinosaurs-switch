@@ -92,11 +92,13 @@ try {
         if (($fileInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw 'linked_capsule_member'
         }
-        $expected = $manifest.files.$relative
-        if ($null -eq $expected) { throw 'missing_capsule_digest' }
+        # JSON keys include 'roms/dino.zip': resolve by literal property name.
+        $entryProperty = $manifest.files.PSObject.Properties[$relative]
+        if ($null -eq $entryProperty) { throw 'missing_capsule_digest' }
+        $expected = $entryProperty.Value
+        $actualHash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($fileInfo.Length -ne [Int64]$expected.size -or
-            (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne
-                [String]$expected.sha256) { throw 'wrong_capsule_digest' }
+            $actualHash -cne [String]$expected.sha256) { throw 'wrong_capsule_digest' }
     }
     $temp = Join-Path $env:TEMP ('mame0106-private-' + [Guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $temp)
