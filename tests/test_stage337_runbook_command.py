@@ -61,5 +61,21 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertNotIn(r"M::\\x7fELF", line)
 
 
+    def test_qemu_binfmt_printf_emits_exact_binary_magic(self):
+        text = WINE_WORKFLOW.read_text(encoding="utf-8")
+        line = next(line for line in text.splitlines()
+                    if "printf ':qemu-i386:M::" in line)
+        fmt = line.split("printf ", 1)[1].split("'", 2)[1]
+        result = subprocess.run(
+            ["bash", "-c", 'printf "$1" "$2"', "stage345", fmt,
+             "/private/qemu-i386-static"],
+            check=True, capture_output=True, timeout=5,
+        )
+        self.assertEqual(
+            result.stdout,
+            b":qemu-i386:M::\\x7fELF\\x01\\x01\\x01\\x00::/private/qemu-i386-static:OCF\\n",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
