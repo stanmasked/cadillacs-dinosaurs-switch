@@ -251,10 +251,36 @@ jobs:
           printf ':qemu-i386:M::\x7fELF\x01\x01\x01\x00::%s:OCF\n' \
             "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" > /tmp/bfmt-qemu/register
           test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled
-          # Initialize the isolated 32-bit prefix before bounded MAME probes.
-          timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env \
+          # Capture wineboot failure before deciding whether MAME probes may proceed.
+          wineboot_status=0
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env \
             WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u \
-            > /tmp/stage333-wineboot.txt 2>&1
+            > /tmp/stage352-wineboot.txt 2>&1 || wineboot_status=$?
+          python3 - "$wineboot_status" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          status = int(sys.argv[1])
+          log_path = Path("/tmp/stage352-wineboot.txt")
+          raw = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+          lines = raw.splitlines()
+          tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in lines[-20:]]
+          report = [
+              "schema=stage352-wineboot-diagnostic-v1",
+              f"exit_status={status}",
+              f"log_bytes={len(raw.encode('utf-8'))}",
+              f"log_lines={len(lines)}",
+              "log_tail_begin",
+              *tail,
+              "log_tail_end",
+          ]
+          Path("/tmp/stage352-wineboot-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
+          PY
+          if [ "$wineboot_status" -ne 0 ]; then
+            echo "ROM-free Wine32 prefix initialization failed with status $wineboot_status" >&2
+            exit "$wineboot_status"
+          fi
           # Negative guard test: a MAME executable inside the repository is refused.
           printf '%s\n' 'not an executable' > "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
           if MAME0106_EXE="$GITHUB_WORKSPACE/stage333-forbidden-mame.exe" WINEPREFIX="$WINEPREFIX" WINE_BIN=wine "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-negative-guard.txt 2>&1; then
@@ -313,6 +339,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+      - name: Upload ROM-free Stage352 Wineboot diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage352-wineboot-diagnostic
+          path: /tmp/stage352-wineboot-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 3
+
       - name: Clean ephemeral runtime material
         if: always()
         shell: bash
@@ -320,9 +355,10 @@ jobs:
           set +e
           # This workflow never receives original ROM/INP/WLF or gameplay captures.
           # Remove generated technical files after their short-lived artifacts are uploaded.
+          umount /tmp/bfmt-qemu 2>/dev/null || true
           rm -rf /tmp/stage332-mame /tmp/stage333-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu
-          rm -f /tmp/stage333-wineboot.txt /tmp/stage333-negative-guard.txt
+          rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage333-negative-guard.txt
           rm -f /tmp/stage333-mame-help.txt /tmp/stage333-mame-config.txt
           rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt
-          rm -f /tmp/stage348-listxml-diagnostic.txt
+          rm -f /tmp/stage348-listxml-diagnostic.txt /tmp/stage352-wineboot-diagnostic.txt
           rm -rf "$GITHUB_WORKSPACE/qemu-i386-helper" "$GITHUB_WORKSPACE/wine32-offline"

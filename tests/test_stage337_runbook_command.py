@@ -95,6 +95,14 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("Clean ephemeral runtime material", text)
         self.assertIn("if: always()", text)
         self.assertIn('rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt', text)
+        self.assertIn("wineboot_status=0", text)
+        self.assertIn("90s xvfb-run -a env", text)
+        self.assertIn("stage352-wineboot-diagnostic.txt", text)
+        self.assertIn("Upload ROM-free Stage352 Wineboot diagnostic", text)
+        self.assertIn("|| wineboot_status=$?", text)
+        self.assertIn("umount /tmp/bfmt-qemu 2>/dev/null || true", text)
+        self.assertLess(text.index("umount /tmp/bfmt-qemu"), text.index("rm -rf /tmp/stage332-mame /tmp/stage333-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu"))
+        self.assertEqual(text.count("retention-days: 3"), 4)
 
 
 if __name__ == "__main__":
