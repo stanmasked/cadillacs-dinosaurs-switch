@@ -111,7 +111,7 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("final_prefix_file_count=", text)
         self.assertIn("final_prefix_bytes=", text)
         self.assertIn("rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage352-wineboot-progress.txt /tmp/stage355-wineserver-kill.txt /tmp/stage355-wineboot-retry.txt /tmp/stage333-negative-guard.txt", text)
-        self.assertIn("rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage352-wineboot-progress.txt /tmp/stage333-negative-guard.txt", text)
+        self.assertIn("rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage352-wineboot-progress.txt /tmp/stage355-wineserver-kill.txt /tmp/stage355-wineboot-retry.txt /tmp/stage333-negative-guard.txt", text)
         self.assertIn("Upload ROM-free Stage352 Wineboot diagnostic", text)
         self.assertIn("|| wineboot_status=$?", text)
         self.assertIn("umount /tmp/bfmt-qemu 2>/dev/null || true", text)
