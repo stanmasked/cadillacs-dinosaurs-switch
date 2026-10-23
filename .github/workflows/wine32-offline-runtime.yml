@@ -356,7 +356,7 @@ jobs:
           # This workflow never receives original ROM/INP/WLF or gameplay captures.
           # Remove generated technical files after their short-lived artifacts are uploaded.
           umount /tmp/bfmt-qemu 2>/dev/null || true
-          rm -rf /tmp/stage332-mame /tmp/stage333-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu
+          rm -rf /tmp/stage332-mame /tmp/stage332-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu
           rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage333-negative-guard.txt
           rm -f /tmp/stage333-mame-help.txt /tmp/stage333-mame-config.txt
           rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt

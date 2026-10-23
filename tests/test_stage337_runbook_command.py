@@ -90,7 +90,6 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn('write_text("\\n".join(report)', text)
         self.assertIn("stderr_tail_begin", text)
         self.assertNotIn("path: /tmp/stage333-mame-driver.xml", text)
-        self.assertEqual(text.count("retention-days: 3"), 3)
         self.assertNotIn("retention-days: 7", text)
         self.assertIn("Clean ephemeral runtime material", text)
         self.assertIn("if: always()", text)
@@ -101,7 +100,7 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("Upload ROM-free Stage352 Wineboot diagnostic", text)
         self.assertIn("|| wineboot_status=$?", text)
         self.assertIn("umount /tmp/bfmt-qemu 2>/dev/null || true", text)
-        self.assertLess(text.index("umount /tmp/bfmt-qemu"), text.index("rm -rf /tmp/stage332-mame /tmp/stage333-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu"))
+        self.assertLess(text.index("umount /tmp/bfmt-qemu"), text.index("rm -rf /tmp/stage332-mame /tmp/stage332-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu"))
         self.assertEqual(text.count("retention-days: 3"), 4)
 
 
