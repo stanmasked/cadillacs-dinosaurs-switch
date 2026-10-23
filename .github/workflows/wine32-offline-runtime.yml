@@ -248,7 +248,7 @@ jobs:
           mount --make-rprivate / 2>/dev/null || true
           mkdir -p /tmp/bfmt-qemu
           mount -t binfmt_misc binfmt_misc /tmp/bfmt-qemu
-          printf ':qemu-i386:M::\\x7fELF\\x01\\x01\\x01\\x00::%s:OCF\n' \
+          printf ':qemu-i386:M::\x7fELF\x01\x01\x01\x00::%s:OCF\n' \
             "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" > /tmp/bfmt-qemu/register
           test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled
           # Initialize the isolated 32-bit prefix before bounded MAME probes.

@@ -53,5 +53,13 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertLess(enabled_at, wineboot_at)
 
 
+    def test_qemu_binfmt_magic_uses_printf_hex_escapes(self):
+        text = WINE_WORKFLOW.read_text(encoding="utf-8")
+        line = next(line for line in text.splitlines()
+                    if "printf ':qemu-i386:M::" in line)
+        self.assertIn(r"M::\x7fELF\x01\x01\x01\x00::%s:OCF\n", line)
+        self.assertNotIn(r"M::\\x7fELF", line)
+
+
 if __name__ == "__main__":
     unittest.main()
