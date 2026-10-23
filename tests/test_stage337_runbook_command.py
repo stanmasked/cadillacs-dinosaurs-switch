@@ -77,5 +77,17 @@ class Stage337RunbookTests(unittest.TestCase):
         )
 
 
+    def test_listxml_probe_is_bounded_and_emits_summary_only(self):
+        text = WINE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("180s xvfb-run -a sh", text)
+        self.assertIn("listxml_status=0", text)
+        self.assertIn("stdout_bytes=", text)
+        self.assertIn("dino_driver_present=", text)
+        self.assertIn("stage348-listxml-diagnostic.txt", text)
+        self.assertIn("if: always()", text)
+        self.assertIn("if-no-files-found: ignore", text)
+        self.assertNotIn("path: /tmp/stage333-mame-driver.xml", text)
+
+
 if __name__ == "__main__":
     unittest.main()

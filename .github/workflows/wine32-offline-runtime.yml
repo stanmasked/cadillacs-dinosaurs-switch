@@ -268,6 +268,46 @@ jobs:
           grep -q 'M.A.M.E. v0.106' /tmp/stage333-mame-help.txt
           timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage333-mame-config.txt 2>&1
           grep -qi mngcounttrace /tmp/stage333-mame-config.txt
-          timeout --signal=TERM --kill-after=5s 120s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt
+          # -listxml may be slow under the Wine/QEMU compatibility layer.
+          # Keep it bounded and record only a small ROM-free diagnostic summary.
+          listxml_status=0
+          timeout --signal=TERM --kill-after=5s 180s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt || listxml_status=$?
+          python3 - "$listxml_status" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          status = int(sys.argv[1])
+          out_path = Path("/tmp/stage333-mame-driver.xml")
+          err_path = Path("/tmp/stage333-mame-stderr.txt")
+          stdout = out_path.read_bytes() if out_path.exists() else b""
+          stderr = err_path.read_text(encoding="utf-8", errors="replace").splitlines() if err_path.exists() else []
+          tail = [re.sub(r"/(?:[^/\\s:]+/)+[^/\\s:]*", "<path>", line) for line in stderr[-20:]]
+          report = [
+              "schema=stage348-listxml-diagnostic-v1",
+              f"exit_status={status}",
+              f"stdout_bytes={len(stdout)}",
+              f"stderr_lines={len(stderr)}",
+              f"xml_header_present={stdout.lstrip().startswith(b'<?xml')}",
+              f"dino_driver_present={b'<game name=\"dino\"' in stdout}",
+              "stderr_tail_begin",
+              *tail,
+              "stderr_tail_end",
+          ]
+          Path("/tmp/stage348-listxml-diagnostic.txt").write_text("\\n".join(report) + "\\n", encoding="utf-8")
+          print("\\n".join(report))
+          PY
+          if [ "$listxml_status" -ne 0 ]; then
+            echo "ROM-free MAME -listxml probe failed with status $listxml_status" >&2
+            exit "$listxml_status"
+          fi
           grep -q '<game name="dino"' /tmp/stage333-mame-driver.xml
-          printf '%s\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
+          printf '%s\\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
+
+      - name: Upload ROM-free Stage348 listxml diagnostic summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage348-listxml-diagnostic
+          path: /tmp/stage348-listxml-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 3
