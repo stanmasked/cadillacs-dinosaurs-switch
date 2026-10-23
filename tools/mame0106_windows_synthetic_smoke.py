@@ -102,7 +102,15 @@ def expect(script: Path, mode: str, code: int, status: str) -> None:
     expected_lines = ([status, 'game=dino', 'recording_playback=not_executed']
                       if code == 0 else [status])
     if ret != code or lines != expected_lines:
-        raise SyntheticSmokeError('synthetic_case_unexpected_status')
+        # Only internal fixed labels/counts; NEVER print raw PowerShell output.
+        allowed = {'status=public_runner_forbidden',
+                   'status=synthetic_runner_branch_only',
+                   'status=native_verification_failed',
+                   'status=private_verification_refused'}
+        actual_status = lines[0] if lines and lines[0] in allowed else 'unknown'
+        raise SyntheticSmokeError(
+            'synthetic_case_' + mode + '_rc_' + str(ret) +
+            '_lines_' + str(len(lines)) + '_status_' + actual_status.replace('status=', ''))
 
 
 def run() -> dict[str, object]:
@@ -179,8 +187,9 @@ def main() -> int:
     try:
         print(json.dumps(run(), sort_keys=True))
         return 0
-    except SyntheticSmokeError:
+    except SyntheticSmokeError as exc:
         print('status=synthetic_windows_powershell_smoke_failed')
+        print('failure_class=' + str(exc))
         return 1
 
 
