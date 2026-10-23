@@ -40,8 +40,12 @@ jobs:
             -o Dir::Cache::archives=/tmp/wine-debs/ \
             -o APT::Keep-Downloaded-Packages=true \
             install -y --no-install-recommends \
-              ca-certificates curl unzip python3 xvfb xauth wine wine32:i386 wine64
+              ca-certificates curl unzip python3 xvfb xauth wine wine32:i386 wine64 \
+              wine32-preloader:i386 wine64-preloader:amd64
           wine --version
+          # Include the optional prelinked loaders in the offline runtime bundle.
+          test -x /usr/lib/wine/wine-preloader
+          test -x /usr/lib/wine/wine64-preloader
           # Debian Multi-Arch: same libraries must have matching i386 and
           # amd64 versions. Runner images may already have the amd64 half
           # installed, so only the i386 .deb lands in APT's download cache.
@@ -186,6 +190,14 @@ jobs:
           (cd wine32-offline && find debs -type f -name '*.deb' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
           test -s wine32-offline/package-manifest.tsv
           test -s wine32-offline/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          rows = Path('wine32-offline/package-manifest.tsv').read_text(encoding='utf-8').splitlines()[1:]
+          packages = {(row.split('\t')[1], row.split('\t')[3]) for row in rows}
+          required = {('wine32-preloader', 'i386'), ('wine64-preloader', 'amd64')}
+          if not required.issubset(packages):
+              raise SystemExit('Offline Wine bundle is missing a required preloader package')
+          PY
 
       - name: Upload short-lived offline Wine32 packages
         uses: actions/upload-artifact@v4
