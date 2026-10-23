@@ -100,6 +100,8 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("stage352-wineboot-progress.txt", text)
         self.assertIn("timeout_seconds=180", text)
         self.assertIn("matching_processes=", text)
+        self.assertIn("cmdline[NR]=args", text)
+        self.assertIn("keep[parent[i]]", text)
         self.assertIn("prefix_files=", text)
         self.assertIn("prefix_bytes=", text)
         self.assertIn("retry_timeout_seconds=90", text)

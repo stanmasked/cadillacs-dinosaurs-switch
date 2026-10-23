@@ -371,7 +371,13 @@ jobs:
               sleep 30
               if ! kill -0 "$wineboot_pid" 2>/dev/null; then break; fi
               elapsed=$(( $(date +%s) - wineboot_started_at ))
-              process_snapshot=$(ps -eo pid=,ppid=,stat=,etime=,pcpu=,comm=,args= | grep -E '[w]ine|[q]emu-i386|[X]vfb' | awk '{print $3 " " $4 " " $5 " " $6}' | head -n 12 || true)
+              process_snapshot=$(ps -eo pid=,ppid=,stat=,etime=,pcpu=,comm=,args= | awk -v root="$wineboot_pid" '
+                { pid[NR]=$1; parent[NR]=$2; state[NR]=$3; elapsed[NR]=$4; cpu[NR]=$5; comm[NR]=$6; args=""; for (j=7; j<=NF; j++) args=args (j==7 ? "" : " ") $j; cmdline[NR]=args }
+                END {
+                  keep[root]=1
+                  for (pass=0; pass<NR; pass++) for (i=1; i<=NR; i++) if (keep[parent[i]]) keep[pid[i]]=1
+                  for (i=1; i<=NR; i++) if (keep[pid[i]] && pid[i] != root && (comm[i] ~ /wine|qemu-i386|Xvfb|xvfb/ || cmdline[i] ~ /wine|qemu-i386|Xvfb|xvfb/)) printf "%s %s %s %s\n", state[i], elapsed[i], cpu[i], comm[i]
+                }' | head -n 12 || true)
               process_count=$(printf '%s\n' "$process_snapshot" | sed '/^$/d' | wc -l | tr -d ' ')
               prefix_files=$(find "$WINEPREFIX" -type f 2>/dev/null | wc -l | tr -d ' ')
               prefix_bytes=$(du -sb "$WINEPREFIX" 2>/dev/null | awk '{print $1}' || printf '0')
