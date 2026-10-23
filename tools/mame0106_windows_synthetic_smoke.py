@@ -103,7 +103,294 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
     if ($allowedReasons -ccontains $reason) {
         Write-Output ('synthetic_failure_class=' + $reason + '_at_' + $stage367Phase)
     } else {
-        Write-Output ('synthetic_failure_class=unclassified_at_' + $stage367Phase)
+        # Synthetic-only diagnostic. Never expose exception messages or paths.
+        $errorKind = [String]$_.Exception.GetType().Name
+        if (-not [regex]::IsMatch($errorKind, '^[A-Za-z]{2,72}
+    script = script.replace(original, diagnostic, 1)
+    return script
+
+
+def csc_path() -> Path:
+    root = Path(os.environ.get('WINDIR', r'C:\Windows'))
+    return root / 'Microsoft.NET' / 'Framework' / 'v4.0.30319' / 'csc.exe'
+
+
+def invoke(script: Path, mode: str = 'good') -> tuple[int, list[str]]:
+    env = os.environ.copy()
+    env['STAGE367_SYNTHETIC_MODE'] = mode
+    try:
+        p = subprocess.run(
+            ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive',
+             '-ExecutionPolicy', 'Bypass', '-File', str(script)],
+            cwd=script.parent, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=105, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SyntheticSmokeError('synthetic_powershell_launch_failed') from exc
+    if len(p.stdout) > 32768 or len(p.stderr) > 32768:
+        raise SyntheticSmokeError('synthetic_runner_output_overflow')
+    # No path, raw child-process output, or private-data-like string is logged.
+    return p.returncode, p.stdout.decode('utf-8', errors='replace').strip().splitlines()
+
+
+def expect(script: Path, mode: str, code: int, status: str) -> None:
+    ret, lines = invoke(script, mode)
+    expected_lines = ([status, 'game=dino', 'recording_playback=not_executed']
+                      if code == 0 else [status])
+    # A second line is accepted only from a generated synthetic-only catch,
+    # and it can contain ONLY predeclared class and phase labels.
+    synthetic_diag = (len(lines) == 2 and
+        lines[1].startswith('synthetic_failure_class=') and
+        all(ch.isascii() and (ch.isalnum() or ch in '=_') for ch in lines[1]))
+    if (ret == code == 2 and status == 'status=private_verification_refused' and
+            lines[0] == status and synthetic_diag):
+        return
+    if ret != code or lines != expected_lines:
+        allowed = {'status=public_runner_forbidden',
+                   'status=synthetic_runner_branch_only',
+                   'status=native_verification_failed',
+                   'status=private_verification_refused'}
+        actual_status = lines[0] if lines and lines[0] in allowed else 'unknown'
+        # Only fixed status/phase/class; no raw child output or local paths.
+        reason = '_' + lines[1] if synthetic_diag else ''
+        raise SyntheticSmokeError(
+            'synthetic_case_' + mode + '_rc_' + str(ret) +
+            '_lines_' + str(len(lines)) + '_status_' + actual_status.replace('status=', '') + reason)
+
+
+def run() -> dict[str, object]:
+    if sys.platform != 'win32' or os.getenv('GITHUB_ACTIONS', '').lower() != 'true':
+        raise SyntheticSmokeError('requires_public_windows_synthetic_runner')
+    with tempfile.TemporaryDirectory(prefix='stage367-synthetic-mame-') as tmp:
+        root = Path(tmp)
+        production = root / 'production_guard_only'
+        production.mkdir()
+        unmodified = production / 'verifyroms.ps1'
+        unmodified.write_text(POWERSHELL, encoding='utf-8', newline='\n')
+        expect(unmodified, 'good', 3, 'status=public_runner_forbidden')
+
+        testroot = root / 'synthetic_fixture_only'
+        testroot.mkdir()
+        (testroot / 'roms').mkdir()
+        source = testroot / 'synthetic_stub.cs'
+        source.write_text(SOURCE, encoding='utf-8')
+        exe = testroot / 'mame0106.exe'
+        csc = csc_path()
+        if not csc.is_file():
+            raise SyntheticSmokeError('csharp_compiler_unavailable')
+        try:
+            build = subprocess.run(
+                [str(csc), '/nologo', '/target:exe', '/out:' + str(exe), str(source)],
+                cwd=testroot, capture_output=True, timeout=75, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SyntheticSmokeError('synthetic_stub_build_failed') from exc
+        if build.returncode != 0 or not exe.is_file():
+            raise SyntheticSmokeError('synthetic_stub_build_failed')
+        rom = testroot / 'roms' / 'dino.zip'
+        rom.write_bytes(FAKE_ROM)
+        exe_sha, rom_sha = sha(exe.read_bytes()), sha(FAKE_ROM)
+        xml_sha = sha(b'STAGE367 synthetic no XML or real driver involved')
+        ps = testroot / 'verifyroms.ps1'
+        ps.write_text(synthetic_copy(exe_sha, rom_sha, xml_sha), encoding='utf-8', newline='\n')
+        files = {}
+        for relpath in ('mame0106.exe', 'roms/dino.zip', 'verifyroms.ps1'):
+            value = (testroot / relpath).read_bytes()
+            files[relpath] = {'size': len(value), 'sha256': sha(value)}
+        manifest = {
+            'schema': SCHEMA, 'game': 'dino',
+            'execution_status': 'not_executed',
+            'recording_playback': 'not_executed',
+            'historical_driver_xml_sha256': xml_sha,
+            'files': files,
+        }
+        manifest_path = testroot / 'capsule.json'
+        manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding='utf-8')
+        expect(ps, 'good', 0, 'status=synthetic_runner_branch_only')
+        for mode in ('missing_summary','bad_marker','not_found','nonzero','silent','stderr_only'):
+            expect(ps, mode, 2, 'status=native_verification_failed')
+        expect(ps, 'oversized', 2, 'status=private_verification_refused')
+        rom.write_bytes(FAKE_ROM + b'synthetic mutation')
+        expect(ps, 'good', 2, 'status=private_verification_refused')
+        rom.write_bytes(FAKE_ROM)
+        forged = json.loads(manifest_path.read_text(encoding='utf-8'))
+        forged['files']['mame0106.exe']['sha256'] = '0' * 64
+        manifest_path.write_text(json.dumps(forged), encoding='utf-8')
+        expect(ps, 'good', 2, 'status=private_verification_refused')
+    return {
+        'schema': 'stage367-windows-powershell-synthetic-only-v1',
+        'status': 'synthetic_windows_powershell_branch_tests_passed',
+        'synthetic_cases': 11,
+        'real_rom_content_used': False,
+        'real_mame_binary_executed': False,
+        'historical_mame_verifyroms_verified': False,
+        'recording_playback_verified': False,
+    }
+
+
+def main() -> int:
+    try:
+        print(json.dumps(run(), sort_keys=True))
+        return 0
+    except SyntheticSmokeError as exc:
+        print('status=synthetic_windows_powershell_smoke_failed')
+        print('failure_class=' + str(exc))
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+)) {
+            $errorKind = 'Other'
+        }
+        $errorId = [String]$_.FullyQualifiedErrorId
+        if (-not [regex]::IsMatch($errorId, '^[A-Za-z0-9_]{2,72}
+    script = script.replace(original, diagnostic, 1)
+    return script
+
+
+def csc_path() -> Path:
+    root = Path(os.environ.get('WINDIR', r'C:\Windows'))
+    return root / 'Microsoft.NET' / 'Framework' / 'v4.0.30319' / 'csc.exe'
+
+
+def invoke(script: Path, mode: str = 'good') -> tuple[int, list[str]]:
+    env = os.environ.copy()
+    env['STAGE367_SYNTHETIC_MODE'] = mode
+    try:
+        p = subprocess.run(
+            ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive',
+             '-ExecutionPolicy', 'Bypass', '-File', str(script)],
+            cwd=script.parent, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=105, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SyntheticSmokeError('synthetic_powershell_launch_failed') from exc
+    if len(p.stdout) > 32768 or len(p.stderr) > 32768:
+        raise SyntheticSmokeError('synthetic_runner_output_overflow')
+    # No path, raw child-process output, or private-data-like string is logged.
+    return p.returncode, p.stdout.decode('utf-8', errors='replace').strip().splitlines()
+
+
+def expect(script: Path, mode: str, code: int, status: str) -> None:
+    ret, lines = invoke(script, mode)
+    expected_lines = ([status, 'game=dino', 'recording_playback=not_executed']
+                      if code == 0 else [status])
+    # A second line is accepted only from a generated synthetic-only catch,
+    # and it can contain ONLY predeclared class and phase labels.
+    synthetic_diag = (len(lines) == 2 and
+        lines[1].startswith('synthetic_failure_class=') and
+        all(ch.isascii() and (ch.isalnum() or ch in '=_') for ch in lines[1]))
+    if (ret == code == 2 and status == 'status=private_verification_refused' and
+            lines[0] == status and synthetic_diag):
+        return
+    if ret != code or lines != expected_lines:
+        allowed = {'status=public_runner_forbidden',
+                   'status=synthetic_runner_branch_only',
+                   'status=native_verification_failed',
+                   'status=private_verification_refused'}
+        actual_status = lines[0] if lines and lines[0] in allowed else 'unknown'
+        # Only fixed status/phase/class; no raw child output or local paths.
+        reason = '_' + lines[1] if synthetic_diag else ''
+        raise SyntheticSmokeError(
+            'synthetic_case_' + mode + '_rc_' + str(ret) +
+            '_lines_' + str(len(lines)) + '_status_' + actual_status.replace('status=', '') + reason)
+
+
+def run() -> dict[str, object]:
+    if sys.platform != 'win32' or os.getenv('GITHUB_ACTIONS', '').lower() != 'true':
+        raise SyntheticSmokeError('requires_public_windows_synthetic_runner')
+    with tempfile.TemporaryDirectory(prefix='stage367-synthetic-mame-') as tmp:
+        root = Path(tmp)
+        production = root / 'production_guard_only'
+        production.mkdir()
+        unmodified = production / 'verifyroms.ps1'
+        unmodified.write_text(POWERSHELL, encoding='utf-8', newline='\n')
+        expect(unmodified, 'good', 3, 'status=public_runner_forbidden')
+
+        testroot = root / 'synthetic_fixture_only'
+        testroot.mkdir()
+        (testroot / 'roms').mkdir()
+        source = testroot / 'synthetic_stub.cs'
+        source.write_text(SOURCE, encoding='utf-8')
+        exe = testroot / 'mame0106.exe'
+        csc = csc_path()
+        if not csc.is_file():
+            raise SyntheticSmokeError('csharp_compiler_unavailable')
+        try:
+            build = subprocess.run(
+                [str(csc), '/nologo', '/target:exe', '/out:' + str(exe), str(source)],
+                cwd=testroot, capture_output=True, timeout=75, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SyntheticSmokeError('synthetic_stub_build_failed') from exc
+        if build.returncode != 0 or not exe.is_file():
+            raise SyntheticSmokeError('synthetic_stub_build_failed')
+        rom = testroot / 'roms' / 'dino.zip'
+        rom.write_bytes(FAKE_ROM)
+        exe_sha, rom_sha = sha(exe.read_bytes()), sha(FAKE_ROM)
+        xml_sha = sha(b'STAGE367 synthetic no XML or real driver involved')
+        ps = testroot / 'verifyroms.ps1'
+        ps.write_text(synthetic_copy(exe_sha, rom_sha, xml_sha), encoding='utf-8', newline='\n')
+        files = {}
+        for relpath in ('mame0106.exe', 'roms/dino.zip', 'verifyroms.ps1'):
+            value = (testroot / relpath).read_bytes()
+            files[relpath] = {'size': len(value), 'sha256': sha(value)}
+        manifest = {
+            'schema': SCHEMA, 'game': 'dino',
+            'execution_status': 'not_executed',
+            'recording_playback': 'not_executed',
+            'historical_driver_xml_sha256': xml_sha,
+            'files': files,
+        }
+        manifest_path = testroot / 'capsule.json'
+        manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding='utf-8')
+        expect(ps, 'good', 0, 'status=synthetic_runner_branch_only')
+        for mode in ('missing_summary','bad_marker','not_found','nonzero','silent','stderr_only'):
+            expect(ps, mode, 2, 'status=native_verification_failed')
+        expect(ps, 'oversized', 2, 'status=private_verification_refused')
+        rom.write_bytes(FAKE_ROM + b'synthetic mutation')
+        expect(ps, 'good', 2, 'status=private_verification_refused')
+        rom.write_bytes(FAKE_ROM)
+        forged = json.loads(manifest_path.read_text(encoding='utf-8'))
+        forged['files']['mame0106.exe']['sha256'] = '0' * 64
+        manifest_path.write_text(json.dumps(forged), encoding='utf-8')
+        expect(ps, 'good', 2, 'status=private_verification_refused')
+    return {
+        'schema': 'stage367-windows-powershell-synthetic-only-v1',
+        'status': 'synthetic_windows_powershell_branch_tests_passed',
+        'synthetic_cases': 11,
+        'real_rom_content_used': False,
+        'real_mame_binary_executed': False,
+        'historical_mame_verifyroms_verified': False,
+        'recording_playback_verified': False,
+    }
+
+
+def main() -> int:
+    try:
+        print(json.dumps(run(), sort_keys=True))
+        return 0
+    except SyntheticSmokeError as exc:
+        print('status=synthetic_windows_powershell_smoke_failed')
+        print('failure_class=' + str(exc))
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+)) {
+            $errorId = 'Other'
+        }
+        $member = 'unknown'
+        if ($relative -ceq 'mame0106.exe') { $member = 'exe' }
+        if ($relative -ceq 'roms/dino.zip') { $member = 'rom' }
+        if ($relative -ceq 'verifyroms.ps1') { $member = 'script' }
+        Write-Output ('synthetic_failure_class=unclassified_at_' +
+            $stage367Phase + '_type_' + $errorKind + '_id_' +
+            $errorId + '_member_' + $member)
     }
     exit 2"""
     script = script.replace(original, diagnostic, 1)
