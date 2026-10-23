@@ -204,8 +204,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sh -n tools/wolfmame0106_private_wine_launcher.sh
-          chmod +x tools/wolfmame0106_private_wine_launcher.sh
+          sh -n "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh"
+          chmod +x "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh"
           cd /tmp/stage332-mame
           sha256sum -c SHA256SUMS.txt
           printf '%s\n' 'a3b0526056c2ecd10415a5757f0085aa6977992feddbb232ca60c7c446f81d44  mame0106.exe' | sha256sum -c -
