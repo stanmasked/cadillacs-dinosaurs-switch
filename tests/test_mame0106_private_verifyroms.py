@@ -39,16 +39,22 @@ class PrivateVerifyRomsTests(unittest.TestCase):
         self.xml_sha = p.digest(self.xml)
 
     def audit(self, **kw):
-        return p.offline_audit(self.archive,self.xml,rom_sha=self.sha,
-                               xml_sha=self.xml_sha,**kw)
+        # Unit fixtures are guaranteed synthetic. Bypass the environment gate
+        # ONLY inside this fixture helper; production code remains unchanged.
+        with patch.object(p, 'guard_public_runner'):
+            return p.offline_audit(self.archive, self.xml, rom_sha=self.sha,
+                                   xml_sha=self.xml_sha, **kw)
 
     def test_valid_synthetic_rom_set(self):
         result = self.audit()
         self.assertEqual((result['verified_roms'],result['offline_audit']), (2,'pass'))
 
     def test_default_production_pins_reject_synthetic(self):
-        with self.assertRaises(p.PrivateProbeError):
-            p.offline_audit(self.archive,self.xml)
+        # Assert pinned-hash rejection rather than satisfying assertRaises
+        # accidentally through the public-runner guard.
+        with patch.object(p, 'guard_public_runner'):
+            with self.assertRaisesRegex(p.PrivateProbeError, 'untrusted_input_or_driver'):
+                p.offline_audit(self.archive, self.xml)
 
     def test_tampered_payload_fails_even_with_outer_repin(self):
         self.make_archive({'synthetic_a.bin':b'corrupt', 'synthetic_b.bin':self.payloads['synthetic_b.bin']})
@@ -70,9 +76,11 @@ class PrivateVerifyRomsTests(unittest.TestCase):
         with self.assertRaises(p.PrivateProbeError):self.audit()
 
     def test_public_actions_rejected_before_disk_access(self):
-        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true'}):
-            with self.assertRaisesRegex(p.PrivateProbeError,'public_runner_forbidden'):
-                self.audit()
+        # This test intentionally does not bypass the production guard.
+        with patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
+            with self.assertRaisesRegex(p.PrivateProbeError, 'public_runner_forbidden'):
+                p.offline_audit(self.archive, self.xml,
+                                rom_sha=self.sha, xml_sha=self.xml_sha)
 
     def test_native_output_requires_two_markers(self):
         ok = b'romset dino is good\n1 romsets found, 1 were OK.\n'
@@ -89,9 +97,11 @@ class PrivateVerifyRomsTests(unittest.TestCase):
                          'native_negative_evidence_present')
 
     def test_no_native_windows_runtime_not_reported_as_pass(self):
-        if os.name=='nt':self.skipTest('native platform test only on Linux')
-        self.assertEqual(p.native_verify(self.archive,self.dir/'nonexistent.exe'),
-                         'not_run_no_native_windows_runtime')
+        if os.name == 'nt':
+            self.skipTest('native platform test only on non-Windows')
+        with patch.object(p, 'guard_public_runner'):
+            self.assertEqual(p.native_verify(self.archive, self.dir / 'nonexistent.exe'),
+                             'not_run_no_native_windows_runtime')
 
     def test_missing_binary_cannot_impersonate_original(self):
         with self.assertRaisesRegex(p.PrivateProbeError,'executable_digest_mismatch'):
