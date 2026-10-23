@@ -124,7 +124,16 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
         $okFirst = [int]$hasRomset
         $okSecond = [int]$hasSummary
         $hasNegative = [int]$negative
-        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative)
+        $exitValue = 'null'
+        if ($null -ne $process.ExitCode) {
+            $numExit = [int]$process.ExitCode
+            if ($numExit -ge -100000 -and $numExit -le 100000) {
+                $exitValue = [String]$numExit
+            } else {
+                $exitValue = 'outofrange'
+            }
+        }
+        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative + '_code_' + $exitValue)
     }
     exit 2"""
     if script.count(original_bad) != 1:
