@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: debian:trixie
+      # This trusted push/dispatch-only workflow registers QEMU for nested i386 execve.
+      options: --cap-add=SYS_ADMIN
     timeout-minutes: 45
     steps:
       - name: Install Node.js action runtime and Wine32 build dependencies
@@ -240,6 +242,15 @@ jobs:
           export WINE_BIN=wine
           export WINEDEBUG=-all
           mkdir -p "$WINEPREFIX"
+          # Register the pinned static QEMU helper for nested 32-bit ELF execve.
+          # This is a trusted push/dispatch-only job; the container gets SYS_ADMIN
+          # solely to mount its own binfmt_misc instance on the ephemeral runner.
+          mount --make-rprivate / 2>/dev/null || true
+          mkdir -p /tmp/bfmt-qemu
+          mount -t binfmt_misc binfmt_misc /tmp/bfmt-qemu
+          printf ':qemu-i386:M::\\x7fELF\\x01\\x01\\x01\\x00::%s:OCF\n' \
+            "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" > /tmp/bfmt-qemu/register
+          test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled
           # Initialize the isolated 32-bit prefix before bounded MAME probes.
           timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env \
             WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u \

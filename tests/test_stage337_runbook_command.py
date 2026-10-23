@@ -41,6 +41,17 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("test -x /usr/lib/wine/wine64-preloader", text)
         self.assertIn("Offline Wine bundle is missing a required preloader package", text)
 
+    def test_workflow_registers_qemu_before_wineboot(self):
+        text = WINE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("options: --cap-add=SYS_ADMIN", text)
+        mount_at = text.index("mount -t binfmt_misc binfmt_misc /tmp/bfmt-qemu")
+        register_at = text.index('> /tmp/bfmt-qemu/register')
+        enabled_at = text.index('test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled')
+        wineboot_at = text.index("WINEPREFIX=\\"$WINEPREFIX\\" WINEARCH=win32 WINEDEBUG=-all wineboot -u")
+        self.assertLess(mount_at, register_at)
+        self.assertLess(register_at, enabled_at)
+        self.assertLess(enabled_at, wineboot_at)
+
 
 if __name__ == "__main__":
     unittest.main()
