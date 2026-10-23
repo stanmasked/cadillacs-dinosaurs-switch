@@ -133,7 +133,19 @@ def synthetic_copy(binary_sha: str, rom_sha: str, xml_sha: str) -> str:
                 $exitValue = 'outofrange'
             }
         }
-        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative + '_code_' + $exitValue)
+        $kind = [String]$process.GetType().Name
+        if (-not [regex]::IsMatch($kind, '^[A-Za-z]{2,64}$')) { $kind = 'Other' }
+        $hasExited = [int]$process.HasExited
+        $explicitCode = 'null'
+        try {
+            $boxedProcess = [System.Diagnostics.Process]$process
+            $boxedProcess.Refresh()
+            $value = $boxedProcess.ExitCode
+            if ($null -ne $value) { $explicitCode = [String]$value }
+        } catch {
+            $explicitCode = 'exception'
+        }
+        Write-Output ('synthetic_failure_class=runtime_gate_exit_' + $okExit + '_first_' + $okFirst + '_second_' + $okSecond + '_negative_' + $hasNegative + '_code_' + $exitValue + '_ptype_' + $kind + '_exited_' + $hasExited + '_explicit_' + $explicitCode)
     }
     exit 2"""
     if script.count(original_bad) != 1:
