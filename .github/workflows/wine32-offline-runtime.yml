@@ -200,15 +200,15 @@ jobs:
           github-token: ${{ github.token }}
           path: /tmp/stage332-mame
 
-      - name: Stage332 ROM-free Wine32 MAME startup audit
+      - name: Stage333 ROM-free Wine32 launcher audit
         shell: bash
         run: |
           set -euo pipefail
+          sh -n tools/wolfmame0106_private_wine_launcher.sh
+          chmod +x tools/wolfmame0106_private_wine_launcher.sh
           cd /tmp/stage332-mame
           sha256sum -c SHA256SUMS.txt
-          printf '%s\n' \
-            'a3b0526056c2ecd10415a5757f0085aa6977992feddbb232ca60c7c446f81d44  mame0106.exe' \
-            | sha256sum -c -
+          printf '%s\n' 'a3b0526056c2ecd10415a5757f0085aa6977992feddbb232ca60c7c446f81d44  mame0106.exe' | sha256sum -c -
           grep -Fxq 'source_commit=0a83d596c83b4d1a72cb3a7b1d2835b809206f2f' source-pin.txt
           python3 - <<'PY'
           from pathlib import Path
@@ -218,23 +218,24 @@ jobs:
           pe = struct.unpack_from('<I', exe, 0x3c)[0]
           assert exe[pe:pe + 6] == b'PE\x00\x00\x4c\x01'
           PY
-          mkdir -p /tmp/stage332-romfree-wine
-          export WINEARCH=win32
+          export MAME0106_EXE=/tmp/stage332-mame/mame0106.exe
           export WINEPREFIX=/tmp/stage332-romfree-wine
+          export WINE_BIN=wine
           export WINEDEBUG=-all
-          # All outputs are transient and contain no source-game data.
-          timeout --signal=TERM --kill-after=5s 90s \
-            xvfb-run -a wine ./mame0106.exe -help \
-            > /tmp/stage332-mame-help.txt 2>&1
-          grep -q 'M.A.M.E. v0.106' /tmp/stage332-mame-help.txt
-          timeout --signal=TERM --kill-after=5s 90s \
-            xvfb-run -a wine ./mame0106.exe -showconfig \
-            > /tmp/stage332-mame-config.txt 2>&1
-          grep -qi mngcounttrace /tmp/stage332-mame-config.txt
-          timeout --signal=TERM --kill-after=5s 120s \
-            xvfb-run -a wine ./mame0106.exe -listxml \
-            > /tmp/stage332-mame-driver.xml 2>/tmp/stage332-mame-stderr.txt
-          grep -q '<game name="dino"' /tmp/stage332-mame-driver.xml
-          printf '%s\n' \
-            'STAGE332_ROM_FREE_MAME_0106_WINE32_HELP_LISTXML_PASS' \
-            'Original ROM, INP, WLF and game captures: NOT USED'
+          mkdir -p "$WINEPREFIX"
+          # Negative guard test: a MAME executable inside the repository is refused.
+          printf '%s\n' 'not an executable' > "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
+          if MAME0106_EXE="$GITHUB_WORKSPACE/stage333-forbidden-mame.exe" WINEPREFIX="$WINEPREFIX" WINE_BIN=wine "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-negative-guard.txt 2>&1; then
+            echo 'launcher unexpectedly accepted a repository-local MAME path' >&2
+            exit 1
+          fi
+          grep -q 'outside the repository' /tmp/stage333-negative-guard.txt
+          rm -f "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
+          # Exercise the exact launcher path consumed by private gate/capture tools.
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-mame-help.txt 2>&1
+          grep -q 'M.A.M.E. v0.106' /tmp/stage333-mame-help.txt
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage333-mame-config.txt 2>&1
+          grep -qi mngcounttrace /tmp/stage333-mame-config.txt
+          timeout --signal=TERM --kill-after=5s 120s xvfb-run -a "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt
+          grep -q '<game name="dino"' /tmp/stage333-mame-driver.xml
+          printf '%s\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
