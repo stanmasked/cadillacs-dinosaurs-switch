@@ -89,7 +89,7 @@ jobs:
           # Debian Trixie made qemu-user-static a transitional package.
           # Fetch the last Bookworm static emulator through signed APT metadata;
           # extract only qemu-i386-static, never install it on the runner.
-          printf '%s\\n' 'deb https://deb.debian.org/debian bookworm main' \
+          printf '%s\n' 'deb https://deb.debian.org/debian bookworm main' \
             > /etc/apt/sources.list.d/bookworm-qemu-helper.list
           apt-get update
           mkdir -p /tmp/qemu-helper/download /tmp/qemu-helper/root qemu-i386-helper
@@ -108,7 +108,7 @@ jobs:
             "$GITHUB_WORKSPACE/qemu-i386-helper/COPYRIGHT.txt"
           "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" --version \
             > "$GITHUB_WORKSPACE/qemu-i386-helper/version.txt"
-          printf '%s\\n' \
+          printf '%s\n' \
             'source=Debian Bookworm signed APT repository' \
             'package=qemu-user-static' \
             'version=1:7.2+dfsg-7+deb12u18+b3' \
