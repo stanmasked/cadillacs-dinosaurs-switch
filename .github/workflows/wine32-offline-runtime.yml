@@ -526,10 +526,22 @@ jobs:
           export MAME0106_EXE=/tmp/stage332-mame/mame0106.exe
           export WINEPREFIX=/tmp/stage356-romfree-wine64
           export WINEARCH=win64
-          export WINE_BIN=wine64
+          export WINE_BIN=wine
           mkdir -p "$WINEPREFIX"
+          wine64_bin=$(dpkg-query -L wine64 2>/dev/null | awk '$0 ~ /\/wine64$/ {print; exit}' || true)
+          if [ -z "$wine64_bin" ] || [ ! -x "$wine64_bin" ]; then
+            wine64_bin=$(find /usr/lib/wine /usr/lib/x86_64-linux-gnu/wine -maxdepth 2 -name wine64 -executable -print -quit 2>/dev/null || true)
+          fi
           version_status=0
-          timeout --signal=TERM --kill-after=3s 10s wine64 --version > /tmp/stage356-wine64-version.txt 2>&1 || version_status=$?
+          wine64_binary_status=found
+          if [ -n "$wine64_bin" ] && [ -x "$wine64_bin" ]; then
+            export WINE_BIN="$wine64_bin"
+            timeout --signal=TERM --kill-after=3s 10s "$wine64_bin" --version > /tmp/stage356-wine64-version.txt 2>&1 || version_status=$?
+          else
+            wine64_binary_status=missing
+            version_status=127
+            printf 'native Wine64 loader not found via package inventory or standard library paths\n' > /tmp/stage356-wine64-version.txt
+          fi
           mame_binary_status=present
           if [ ! -f "$MAME0106_EXE" ]; then mame_binary_status=missing; fi
           boot_status=skipped
@@ -542,7 +554,7 @@ jobs:
             timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all wineboot -u > /tmp/stage356-wine64-wineboot.txt 2>&1 || boot_status=$?
             if [ "$boot_status" -eq 0 ]; then
               help_status=0
-              timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN=wine64 sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage356-wine64-help.txt 2>&1 || help_status=$?
+              timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage356-wine64-help.txt 2>&1 || help_status=$?
               if [ "$help_status" -eq 0 ] && ! grep -q 'M.A.M.E. v0.106' /tmp/stage356-wine64-help.txt; then help_status=1; fi
               if [ "$help_status" = 0 ]; then
                 config_status=0
@@ -556,11 +568,11 @@ jobs:
               fi
             fi
           fi
-          python3 - "$version_status" "$mame_binary_status" "$boot_status" "$help_status" "$config_status" "$listxml_status" "$dino_driver_present" <<'PY'
+          python3 - "$version_status" "$wine64_binary_status" "$mame_binary_status" "$boot_status" "$help_status" "$config_status" "$listxml_status" "$dino_driver_present" <<'PY'
           import re
           import sys
           from pathlib import Path
-          version_status, mame_binary_status, boot_status, help_status, config_status, listxml_status, dino = sys.argv[1:]
+          version_status, wine64_binary_status, mame_binary_status, boot_status, help_status, config_status, listxml_status, dino = sys.argv[1:]
           def read_log(path):
               p = Path(path)
               raw = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
@@ -578,7 +590,8 @@ jobs:
           prefix_files = [p for p in prefix.rglob("*") if p.is_file()] if prefix.exists() else []
           prefix_bytes = sum(p.stat().st_size for p in prefix_files)
           report = [
-              "schema=stage356-wine64-fallback-diagnostic-v1",
+              "schema=stage356-wine64-fallback-diagnostic-v2",
+              f"wine64_binary_status={wine64_binary_status}",
               f"wine64_version_status={version_status}",
               f"mame_binary_status={mame_binary_status}",
               f"wineboot_status={boot_status}",
@@ -605,6 +618,7 @@ jobs:
           PY
           fallback_status=0
           if [ "$version_status" -ne 0 ]; then fallback_status=$version_status
+          elif [ "$wine64_binary_status" != found ]; then fallback_status=127
           elif [ "$mame_binary_status" != present ]; then fallback_status=2
           elif [ "$boot_status" != 0 ]; then fallback_status=$boot_status
           elif [ "$help_status" != 0 ]; then fallback_status=$help_status
