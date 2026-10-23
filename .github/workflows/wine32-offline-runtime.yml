@@ -82,6 +82,52 @@ jobs:
           print(f'Bundled {len(missing_mirrors)} amd64 Multi-Arch mirrors')
           PY
 
+      - name: Prepare isolated QEMU i386 ELF helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Debian Trixie made qemu-user-static a transitional package.
+          # Fetch the last Bookworm static emulator through signed APT metadata;
+          # extract only qemu-i386-static, never install it on the runner.
+          printf '%s\\n' 'deb https://deb.debian.org/debian bookworm main' \
+            > /etc/apt/sources.list.d/bookworm-qemu-helper.list
+          apt-get update
+          mkdir -p /tmp/qemu-helper/download /tmp/qemu-helper/root qemu-i386-helper
+          cd /tmp/qemu-helper/download
+          apt-get download 'qemu-user-static=1:7.2+dfsg-7+deb12u18+b3'
+          deb=$(find . -maxdepth 1 -type f -name 'qemu-user-static_*.deb' -print -quit)
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = qemu-user-static
+          test "$(dpkg-deb -f "$deb" Version)" = '1:7.2+dfsg-7+deb12u18+b3'
+          test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          dpkg-deb -x "$deb" /tmp/qemu-helper/root
+          helper=/tmp/qemu-helper/root/usr/bin/qemu-i386-static
+          test -x "$helper"
+          cp "$helper" "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static"
+          cp /tmp/qemu-helper/root/usr/share/doc/qemu-user-static/copyright \
+            "$GITHUB_WORKSPACE/qemu-i386-helper/COPYRIGHT.txt"
+          "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" --version \
+            > "$GITHUB_WORKSPACE/qemu-i386-helper/version.txt"
+          printf '%s\\n' \
+            'source=Debian Bookworm signed APT repository' \
+            'package=qemu-user-static' \
+            'version=1:7.2+dfsg-7+deb12u18+b3' \
+            'architecture=amd64' \
+            'purpose=private local execution of i386 Wine binaries only' \
+            'contains_original_game_data=no' \
+            > "$GITHUB_WORKSPACE/qemu-i386-helper/metadata.txt"
+          cd "$GITHUB_WORKSPACE/qemu-i386-helper"
+          sha256sum qemu-i386-static COPYRIGHT.txt version.txt metadata.txt > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
+      - name: Upload isolated QEMU i386 helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-i386-static-private-runtime-helper
+          path: qemu-i386-helper/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Prepare offline Debian package bundle
         shell: bash
         run: |
