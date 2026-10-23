@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   bundle-wine32:
@@ -188,3 +189,52 @@ jobs:
           path: wine32-offline/
           retention-days: 7
           if-no-files-found: error
+
+      # Fetch only the ROM-free Stage329 source-pinned technical binary.
+      # Never stage original ROM, INP, WLF or captures in public CI.
+      - name: Download pinned ROM-free MAME 0.106 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: historical-mame0106-runtime-rom-free
+          run-id: 39859311511
+          github-token: \${{ github.token }}
+          path: /tmp/stage332-mame
+
+      - name: Stage332 ROM-free Wine32 MAME startup audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/stage332-mame
+          sha256sum -c SHA256SUMS.txt
+          printf '%s\n' \
+            'a3b0526056c2ecd10415a5757f0085aa6977992feddbb232ca60c7c446f81d44  mame0106.exe' \
+            | sha256sum -c -
+          grep -Fxq 'source_commit=0a83d596c83b4d1a72cb3a7b1d2835b809206f2f' source-pin.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          exe = Path('mame0106.exe').read_bytes()
+          assert exe.startswith(b'MZ')
+          pe = struct.unpack_from('<I', exe, 0x3c)[0]
+          assert exe[pe:pe + 6] == b'PE\x00\x00\x4c\x01'
+          PY
+          mkdir -p /tmp/stage332-romfree-wine
+          export WINEARCH=win32
+          export WINEPREFIX=/tmp/stage332-romfree-wine
+          export WINEDEBUG=-all
+          # All outputs are transient and contain no source-game data.
+          timeout --signal=TERM --kill-after=5s 90s \
+            xvfb-run -a wine ./mame0106.exe -help \
+            > /tmp/stage332-mame-help.txt 2>&1
+          grep -q 'M.A.M.E. v0.106' /tmp/stage332-mame-help.txt
+          timeout --signal=TERM --kill-after=5s 90s \
+            xvfb-run -a wine ./mame0106.exe -showconfig \
+            > /tmp/stage332-mame-config.txt 2>&1
+          grep -qi mngcounttrace /tmp/stage332-mame-config.txt
+          timeout --signal=TERM --kill-after=5s 120s \
+            xvfb-run -a wine ./mame0106.exe -listxml \
+            > /tmp/stage332-mame-driver.xml 2>/tmp/stage332-mame-stderr.txt
+          grep -q '<game name="dino"' /tmp/stage332-mame-driver.xml
+          printf '%s\n' \
+            'STAGE332_ROM_FREE_MAME_0106_WINE32_HELP_LISTXML_PASS' \
+            'Original ROM, INP, WLF and game captures: NOT USED'
