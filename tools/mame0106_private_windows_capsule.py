@@ -67,6 +67,20 @@ $schema = 'mame0106-private-windows-run-v1'
 if ($env:GITHUB_ACTIONS -eq 'true') { Write-Output 'status=public_runner_forbidden'; exit 3 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $temp = $null
+# .NET streaming SHA256; no dependence on optional PowerShell modules.
+function Get-CapsuleSha256([string]$path) {
+    $stream = [System.IO.File]::OpenRead($path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([System.BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
 try {
     $manifest = Get-Content -LiteralPath (Join-Path $root 'capsule.json') -Raw | ConvertFrom-Json
     if ($manifest.schema -ne 'mame0106-private-windows-capsule-v1' -or
@@ -96,11 +110,7 @@ try {
         $entryProperty = $manifest.files.PSObject.Properties[$relative]
         if ($null -eq $entryProperty) { throw 'missing_capsule_digest' }
         $expected = $entryProperty.Value
-        $digestRecord = Get-FileHash -LiteralPath $file -Algorithm SHA256 -ErrorAction Stop
-        if ($null -eq $digestRecord -or $null -eq $digestRecord.Hash) {
-            throw 'missing_file_sha256'
-        }
-        $actualHash = ([String]$digestRecord.Hash).ToLowerInvariant()
+        $actualHash = Get-CapsuleSha256 -path $file
         if ($fileInfo.Length -ne [Int64]$expected.size -or
             $actualHash -cne [String]$expected.sha256) { throw 'wrong_capsule_digest' }
     }
@@ -112,9 +122,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'mame0106.exe') -Destination $exe
     $privateZip = Join-Path $roms 'dino.zip'
     Copy-Item -LiteralPath (Join-Path $root 'roms/dino.zip') -Destination $privateZip
-    if ((Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+    if ((Get-CapsuleSha256 -path $exe) -cne
             [String]$manifest.files.'mame0106.exe'.sha256 -or
-        (Get-FileHash $privateZip -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+        (Get-CapsuleSha256 -path $privateZip) -cne
             [String]$manifest.files.'roms/dino.zip'.sha256) { throw 'staged_content_changed' }
     $out = Join-Path $temp 'mame-stdout.private.txt'
     $err = Join-Path $temp 'mame-stderr.private.txt'

@@ -152,7 +152,9 @@ class CapsuleTests(unittest.TestCase):
         self.assertIn('GITHUB_ACTIONS',p.POWERSHELL)
         self.assertIn('status=native_verified',p.POWERSHELL)
         self.assertIn('recording_playback=not_executed',p.POWERSHELL)
-        self.assertIn('Get-FileHash',p.POWERSHELL)
+        self.assertIn('Get-CapsuleSha256',p.POWERSHELL)
+        self.assertIn('SHA256]::Create()',p.POWERSHELL)
+        self.assertNotIn('Get-FileHash',p.POWERSHELL)
         self.assertNotIn('dino.inp',p.POWERSHELL)
 
 
