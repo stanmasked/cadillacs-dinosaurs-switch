@@ -232,10 +232,10 @@ jobs:
           grep -q 'outside the repository' /tmp/stage333-negative-guard.txt
           rm -f "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
           # Exercise the exact launcher path consumed by private gate/capture tools.
-          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-mame-help.txt 2>&1
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-mame-help.txt 2>&1
           grep -q 'M.A.M.E. v0.106' /tmp/stage333-mame-help.txt
-          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage333-mame-config.txt 2>&1
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage333-mame-config.txt 2>&1
           grep -qi mngcounttrace /tmp/stage333-mame-config.txt
-          timeout --signal=TERM --kill-after=5s 120s xvfb-run -a "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt
+          timeout --signal=TERM --kill-after=5s 120s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt
           grep -q '<game name="dino"' /tmp/stage333-mame-driver.xml
           printf '%s\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
