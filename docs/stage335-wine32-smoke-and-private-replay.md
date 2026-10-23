@@ -70,14 +70,14 @@ to local paths (never place them in a public workflow input or log):
 Then run the bounded private capture runner:
 
 ```sh
-python3 tools/wolfmame0106_private_mng_capture.py \\
-  --emulator /private/cadillacs/wolfmame-wrapper.sh \\
-  --rom-dir /private/cadillacs/roms \\
-  --inp /private/cadillacs/recordings/dino.inp \\
-  --wlf /private/cadillacs/recordings/dino.wlf \\
-  --frames 121 --start-frame 0 --seconds 180 \\
-  --capture-out /private/cadillacs/audits/stage337-first121.mng \\
-  --trace-out /private/cadillacs/audits/stage337-counts.csv \\
+python3 tools/wolfmame0106_private_mng_capture.py \
+  --emulator /private/cadillacs/wolfmame-wrapper.sh \
+  --rom-dir /private/cadillacs/roms \
+  --inp /private/cadillacs/recordings/dino.inp \
+  --wlf /private/cadillacs/recordings/dino.wlf \
+  --frames 121 --start-frame 0 --seconds 180 \
+  --capture-out /private/cadillacs/audits/stage337-first121.mng \
+  --trace-out /private/cadillacs/audits/stage337-counts.csv \
   --out /private/cadillacs/audits/stage337-receipt.json
 ```
 
