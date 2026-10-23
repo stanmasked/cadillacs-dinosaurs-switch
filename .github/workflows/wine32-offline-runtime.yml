@@ -41,6 +41,46 @@ jobs:
             install -y --no-install-recommends \
               ca-certificates curl unzip python3 xvfb xauth wine wine32:i386 wine64
           wine --version
+          # Debian Multi-Arch: same libraries must have matching i386 and
+          # amd64 versions. Runner images may already have the amd64 half
+          # installed, so only the i386 .deb lands in APT's download cache.
+          # Explicitly carry matching amd64 .deb files for offline hosts.
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          root = Path('/tmp/wine-debs')
+          installed_archives = set()
+          i386_multiarch = set()
+          for archive in sorted(root.glob('*.deb')):
+              def field(key):
+                  return subprocess.check_output(
+                      ['dpkg-deb', '-f', str(archive), key],
+                      text=True).strip()
+              package = field('Package')
+              version = field('Version')
+              arch = field('Architecture')
+              installed_archives.add((package, version, arch))
+              if arch == 'i386' and field('Multi-Arch') == 'same':
+                  i386_multiarch.add((package, version))
+
+          missing_mirrors = sorted(
+              (package, version) for package, version in i386_multiarch
+              if (package, version, 'amd64') not in installed_archives)
+          for package, version in missing_mirrors:
+              subprocess.run(
+                  ['apt-get', 'download', f'{package}:amd64={version}'],
+                  cwd=root, check=True)
+          for package, version in missing_mirrors:
+              candidates = root.glob(f'{package}_*amd64.deb')
+              if not any(
+                  subprocess.check_output(
+                      ['dpkg-deb', '-f', str(candidate), 'Version'],
+                      text=True).strip() == version
+                  for candidate in candidates):
+                  raise SystemExit(f'Missing matching amd64 .deb: {package}')
+          print(f'Bundled {len(missing_mirrors)} amd64 Multi-Arch mirrors')
+          PY
 
       - name: Prepare offline Debian package bundle
         shell: bash
