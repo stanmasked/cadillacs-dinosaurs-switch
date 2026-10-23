@@ -73,7 +73,7 @@ class Stage337RunbookTests(unittest.TestCase):
         )
         self.assertEqual(
             result.stdout,
-            b":qemu-i386:M::\\x7fELF\\x01\\x01\\x01\\x00::/private/qemu-i386-static:OCF\\n",
+            b":qemu-i386:M::\x7fELF\x01\x01\x01\x00::/private/qemu-i386-static:OCF\n",
         )
 
 
