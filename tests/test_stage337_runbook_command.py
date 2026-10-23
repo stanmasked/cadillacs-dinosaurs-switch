@@ -113,6 +113,8 @@ class Stage337RunbookTests(unittest.TestCase):
         self.assertIn("steps.wine32_audit.outcome == 'failure'", text)
         self.assertIn("WINEARCH=win64", text)
         self.assertIn('WINE_BIN="$wine64_bin"', text)
+        self.assertEqual(text.count('WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh"'), 3)
+        self.assertNotIn("WINE_BIN=wine64", text)
         self.assertIn("dpkg-query -L wine64", text)
         self.assertIn("wine64_binary_status=found", text)
         self.assertIn("schema=stage356-wine64-fallback-diagnostic-v2", text)

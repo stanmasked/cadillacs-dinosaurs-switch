@@ -558,12 +558,12 @@ jobs:
               if [ "$help_status" -eq 0 ] && ! grep -q 'M.A.M.E. v0.106' /tmp/stage356-wine64-help.txt; then help_status=1; fi
               if [ "$help_status" = 0 ]; then
                 config_status=0
-                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN=wine64 sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage356-wine64-config.txt 2>&1 || config_status=$?
+                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage356-wine64-config.txt 2>&1 || config_status=$?
                 if [ "$config_status" = 0 ] && ! grep -qi mngcounttrace /tmp/stage356-wine64-config.txt; then config_status=1; fi
               fi
               if [ "$help_status" = 0 ] && [ "$config_status" = 0 ]; then
                 listxml_status=0
-                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN=wine64 sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage356-wine64-listxml.xml 2> /tmp/stage356-wine64-stderr.txt || listxml_status=$?
+                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage356-wine64-listxml.xml 2> /tmp/stage356-wine64-stderr.txt || listxml_status=$?
                 if [ "$listxml_status" = 0 ] && grep -q '<game name="dino"' /tmp/stage356-wine64-listxml.xml; then dino_driver_present=yes; fi
               fi
             fi
