@@ -47,7 +47,7 @@ class Stage337RunbookTests(unittest.TestCase):
         mount_at = text.index("mount -t binfmt_misc binfmt_misc /tmp/bfmt-qemu")
         register_at = text.index('> /tmp/bfmt-qemu/register')
         enabled_at = text.index('test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled')
-        wineboot_at = text.index("WINEPREFIX=\\"$WINEPREFIX\\" WINEARCH=win32 WINEDEBUG=-all wineboot -u")
+        wineboot_at = text.index('WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u')
         self.assertLess(mount_at, register_at)
         self.assertLess(register_at, enabled_at)
         self.assertLess(enabled_at, wineboot_at)
