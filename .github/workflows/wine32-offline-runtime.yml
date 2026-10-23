@@ -108,6 +108,11 @@ jobs:
             "$GITHUB_WORKSPACE/qemu-i386-helper/COPYRIGHT.txt"
           "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" --version \
             > "$GITHUB_WORKSPACE/qemu-i386-helper/version.txt"
+          # Exercise a real i386 Wine ELF through QEMU, not just the helper's CLI.
+          "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" -L / \
+            /usr/lib/wine/wine --version \
+            > "$GITHUB_WORKSPACE/qemu-i386-helper/wine32-under-qemu.txt" 2>&1
+          grep -q 'wine-10.0' "$GITHUB_WORKSPACE/qemu-i386-helper/wine32-under-qemu.txt"
           printf '%s\n' \
             'source=Debian Bookworm signed APT repository' \
             'package=qemu-user-static' \
@@ -117,7 +122,7 @@ jobs:
             'contains_original_game_data=no' \
             > "$GITHUB_WORKSPACE/qemu-i386-helper/metadata.txt"
           cd "$GITHUB_WORKSPACE/qemu-i386-helper"
-          sha256sum qemu-i386-static COPYRIGHT.txt version.txt metadata.txt > SHA256SUMS.txt
+          sha256sum qemu-i386-static COPYRIGHT.txt version.txt wine32-under-qemu.txt metadata.txt > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
 
       - name: Upload isolated QEMU i386 helper
