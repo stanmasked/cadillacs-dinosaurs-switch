@@ -358,11 +358,11 @@ jobs:
           printf ':qemu-i386:M::\x7fELF\x01\x01\x01\x00::%s:OCF\n' \
             "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" > /tmp/bfmt-qemu/register
           test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled
-          # Bound Wineboot but record periodic process/prefix progress before timeout.
+          # Capture process and prefix progress; retry only when a timed-out first boot created a substantial prefix.
           wineboot_status=0
           : > /tmp/stage352-wineboot-progress.txt
           wineboot_started_at=$(date +%s)
-          timeout --signal=TERM --kill-after=5s 300s xvfb-run -a env \
+          timeout --signal=TERM --kill-after=5s 180s xvfb-run -a env \
             WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u \
             > /tmp/stage352-wineboot.txt 2>&1 &
           wineboot_pid=$!
@@ -371,48 +371,88 @@ jobs:
               sleep 30
               if ! kill -0 "$wineboot_pid" 2>/dev/null; then break; fi
               elapsed=$(( $(date +%s) - wineboot_started_at ))
-              wine_processes=$(ps -eo comm= | grep -E '^(wine|wineboot|wineserver|qemu-i386-static|xvfb-run|Xvfb)' | wc -l || true)
+              process_snapshot=$(ps -eo pid=,ppid=,stat=,etime=,pcpu=,comm=,args= | grep -E '[w]ine|[q]emu-i386|[X]vfb' | awk '{print $3 " " $4 " " $5 " " $6}' | head -n 12 || true)
+              process_count=$(printf '%s\n' "$process_snapshot" | sed '/^$/d' | wc -l | tr -d ' ')
               prefix_files=$(find "$WINEPREFIX" -type f 2>/dev/null | wc -l | tr -d ' ')
               prefix_bytes=$(du -sb "$WINEPREFIX" 2>/dev/null | awk '{print $1}' || printf '0')
-              printf 'elapsed_sec=%s wine_processes=%s prefix_files=%s prefix_bytes=%s\n' "$elapsed" "$wine_processes" "$prefix_files" "$prefix_bytes" >> /tmp/stage352-wineboot-progress.txt
+              printf 'elapsed_sec=%s matching_processes=%s prefix_files=%s prefix_bytes=%s\n' "$elapsed" "$process_count" "$prefix_files" "$prefix_bytes" >> /tmp/stage352-wineboot-progress.txt
+              if [ -n "$process_snapshot" ]; then printf '%s\n' "$process_snapshot" | sed 's/^/process=/' >> /tmp/stage352-wineboot-progress.txt; fi
             done
           ) &
           monitor_pid=$!
           wait "$wineboot_pid" || wineboot_status=$?
           kill "$monitor_pid" 2>/dev/null || true
           wait "$monitor_pid" 2>/dev/null || true
-          python3 - "$wineboot_status" "$wineboot_started_at" <<'PY'
+          wineboot_first_status=$wineboot_status
+          wineboot_retry_status=skipped
+          wineserver_kill_status=skipped
+          wineboot_retry_attempted=no
+          prefix_files_before_retry=$(find "$WINEPREFIX" -type f 2>/dev/null | wc -l | tr -d ' ')
+          prefix_bytes_before_retry=$(du -sb "$WINEPREFIX" 2>/dev/null | awk '{print $1}' || printf '0')
+          if [ "$wineboot_status" -eq 124 ] && [ "$prefix_files_before_retry" -ge 900 ] && [ "$prefix_bytes_before_retry" -ge 600000000 ]; then
+            wineboot_retry_attempted=yes
+            wineserver_kill_status=0
+            timeout --signal=TERM --kill-after=5s 15s env WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineserver -k > /tmp/stage355-wineserver-kill.txt 2>&1 || wineserver_kill_status=$?
+            wineboot_retry_status=0
+            timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u > /tmp/stage355-wineboot-retry.txt 2>&1 || wineboot_retry_status=$?
+            if [ "$wineboot_retry_status" -eq 0 ]; then wineboot_status=0; else wineboot_status=$wineboot_retry_status; fi
+          fi
+          python3 - "$wineboot_status" "$wineboot_first_status" "$wineboot_retry_status" "$wineserver_kill_status" "$wineboot_retry_attempted" "$wineboot_started_at" <<'PY'
           import re
           import sys
           import time
           from pathlib import Path
           status = int(sys.argv[1])
-          started_at = int(sys.argv[2])
-          log_path = Path("/tmp/stage352-wineboot.txt")
-          progress_path = Path("/tmp/stage352-wineboot-progress.txt")
+          first_status = int(sys.argv[2])
+          retry_status = sys.argv[3]
+          kill_status = sys.argv[4]
+          retry_attempted = sys.argv[5]
+          started_at = int(sys.argv[6])
           prefix_path = Path("/tmp/stage332-romfree-wine")
-          raw = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
-          lines = raw.splitlines()
-          tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in lines[-20:]]
+          progress_path = Path("/tmp/stage352-wineboot-progress.txt")
+          def read_log(path):
+              p = Path(path)
+              raw = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+              lines = raw.splitlines()
+              tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in lines[-10:]]
+              return raw, lines, tail
+          first_raw, first_lines, first_tail = read_log("/tmp/stage352-wineboot.txt")
+          retry_raw, retry_lines, retry_tail = read_log("/tmp/stage355-wineboot-retry.txt")
+          kill_raw, kill_lines, kill_tail = read_log("/tmp/stage355-wineserver-kill.txt")
           progress = progress_path.read_text(encoding="utf-8", errors="replace").splitlines() if progress_path.exists() else []
           prefix_files = [path for path in prefix_path.rglob("*") if path.is_file()] if prefix_path.exists() else []
           prefix_bytes = sum(path.stat().st_size for path in prefix_files)
           report = [
-              "schema=stage352-wineboot-diagnostic-v2",
-              f"exit_status={status}",
-              "timeout_seconds=300",
+              "schema=stage352-wineboot-diagnostic-v3",
+              f"first_exit_status={first_status}",
+              f"retry_attempted={retry_attempted}",
+              f"wineserver_kill_status={kill_status}",
+              f"retry_exit_status={retry_status}",
+              f"effective_exit_status={status}",
+              "timeout_seconds=180",
+              "retry_timeout_seconds=90",
               f"elapsed_seconds={int(time.time()) - started_at}",
-              f"log_bytes={len(raw.encode('utf-8'))}",
-              f"log_lines={len(lines)}",
+              f"first_log_bytes={len(first_raw.encode('utf-8'))}",
+              f"first_log_lines={len(first_lines)}",
+              f"retry_log_bytes={len(retry_raw.encode('utf-8'))}",
+              f"retry_log_lines={len(retry_lines)}",
+              f"wineserver_kill_log_bytes={len(kill_raw.encode('utf-8'))}",
+              f"wineserver_kill_log_lines={len(kill_lines)}",
               f"progress_sample_count={len(progress)}",
               f"final_prefix_file_count={len(prefix_files)}",
               f"final_prefix_bytes={prefix_bytes}",
               "progress_samples_begin",
-              *progress[-10:],
+              *progress[-18:],
               "progress_samples_end",
-              "log_tail_begin",
-              *tail,
-              "log_tail_end",
+              "first_log_tail_begin",
+              *first_tail,
+              "first_log_tail_end",
+              "wineserver_kill_log_tail_begin",
+              *kill_tail,
+              "wineserver_kill_log_tail_end",
+              "retry_log_tail_begin",
+              *retry_tail,
+              "retry_log_tail_end",
           ]
           Path("/tmp/stage352-wineboot-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
           print("\n".join(report))
@@ -497,7 +537,7 @@ jobs:
           # Remove generated technical files after their short-lived artifacts are uploaded.
           umount /tmp/bfmt-qemu 2>/dev/null || true
           rm -rf /tmp/stage332-mame /tmp/stage332-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu
-          rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage352-wineboot-progress.txt /tmp/stage333-negative-guard.txt
+          rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage352-wineboot-progress.txt /tmp/stage355-wineserver-kill.txt /tmp/stage355-wineboot-retry.txt /tmp/stage333-negative-guard.txt
           rm -f /tmp/stage333-mame-help.txt /tmp/stage333-mame-config.txt
           rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt
           rm -f /tmp/stage348-listxml-diagnostic.txt /tmp/stage352-wineboot-diagnostic.txt
