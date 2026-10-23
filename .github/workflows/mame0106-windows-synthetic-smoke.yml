@@ -1,0 +1,42 @@
+name: MAME 0.106 Windows PowerShell synthetic-only smoke
+
+on:
+  pull_request:
+    paths:
+      - 'tools/mame0106_private_windows_capsule.py'
+      - 'tools/mame0106_windows_synthetic_smoke.py'
+      - 'tests/test_mame0106_private_windows_capsule.py'
+      - 'tests/test_mame0106_windows_synthetic_smoke.py'
+      - '.github/workflows/mame0106-windows-synthetic-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pure-synthetic-windows-runner:
+    name: PowerShell 5.1 synthetic branch and public-runner guard
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit test exact guard isolation and immutable source pins
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_windows_synthetic_smoke.py' -q
+      - name: Compile C-sharp fake executable and test PowerShell 5.1 behavior
+        shell: pwsh
+        run: python -m tools.mame0106_windows_synthetic_smoke
+      - name: Assert private historical inputs have not been staged
+        shell: pwsh
+        run: |
+          if (Test-Path 'roms/dino.zip') { throw 'Private ROMs not allowed' }
+          if (Test-Path 'dino.inp') { throw 'Original inputs not allowed' }
+          if (Test-Path 'dino.wlf') { throw 'Original recordings not allowed' }
+          if (Test-Path 'mame0106.exe') { throw 'Original executable not allowed in source' }

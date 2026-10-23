@@ -139,6 +139,14 @@ class CapsuleTests(unittest.TestCase):
                 p.validate_capsule(self.out,archive_sha='0'*64,rom_sha=self.romsha,
                                    exe_sha=self.exesha,xml_sha=self.xmlsha)
 
+    def test_runner_independent_trusted_component_pins(self):
+        from tools.mame0106_private_verifyroms import PINNED_ROM_SHA256, PINNED_XML_SHA256, EXE_SHA
+        for pin in (EXE_SHA, PINNED_ROM_SHA256, PINNED_XML_SHA256):
+            self.assertEqual(p.POWERSHELL.count(pin), 1)
+        self.assertIn("throw 'untrusted_component_pin'", p.POWERSHELL)
+        self.assertIn("$manifest.files.'mame0106.exe'.sha256", p.POWERSHELL)
+        self.assertIn("$manifest.files.'roms/dino.zip'.sha256", p.POWERSHELL)
+
     def test_windows_script_has_restricted_execution_claim(self):
         self.assertIn('WaitForExit(90000)',p.POWERSHELL)
         self.assertIn('GITHUB_ACTIONS',p.POWERSHELL)

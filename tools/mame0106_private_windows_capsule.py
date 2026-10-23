@@ -72,6 +72,18 @@ try {
     if ($manifest.schema -ne 'mame0106-private-windows-capsule-v1' -or
         $manifest.execution_status -ne 'not_executed' -or
         $manifest.game -ne 'dino') { throw 'bad_manifest' }
+    # This independent code pin prevents self-consistent but substituted
+    # executable/ROM/manifest files from claiming historical MAME verification.
+    # The private ZIP's SHA-256 must also be checked against the owner manifest
+    # before extraction; this script is not a signature of its own contents.
+    if ([String]$manifest.files.'mame0106.exe'.sha256 -cne
+            'a3b0526056c2ecd10415a5757f0085aa6977992feddbb232ca60c7c446f81d44' -or
+        [String]$manifest.files.'roms/dino.zip'.sha256 -cne
+            '66fb8ad8e1f419b40bdfdaa250e86c865939178e7e732d49327854cb6ccdc8dd' -or
+        [String]$manifest.historical_driver_xml_sha256 -cne
+            'b6a89430b5e982ad533ea96faa53084506b4ca62f0f63ea6cdedd74324dda4c8') {
+        throw 'untrusted_component_pin'
+    }
     $relPaths = @('mame0106.exe', 'roms/dino.zip', 'verifyroms.ps1')
     foreach ($relative in $relPaths) {
         $file = Join-Path $root $relative
