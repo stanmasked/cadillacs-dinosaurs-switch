@@ -124,5 +124,49 @@ class EvidenceGateTests(unittest.TestCase):
             gate.classify_evidence({'schema': 'untrusted'})
 
 
+    def test_stage371_archive_byte_count_and_test_count_are_exact(self):
+        for key, value in [('archive_bytes', gate.STAGE371_ARCHIVE_BYTES - 1),
+                           ('archive_bytes', gate.STAGE371_ARCHIVE_BYTES + 1),
+                           ('synthetic_test_cases_passed', 18),
+                           ('synthetic_test_cases_passed', 20)]:
+            with self.subTest(field=key, value=value):
+                data = self.preflight()
+                data[key] = value
+                with self.assertRaisesRegex(gate.EvidenceError, 'invalid_preflight_observation'):
+                    gate.classify_evidence(data)
+
+    def test_stage371_timestamp_requires_iso_utc(self):
+        for timestamp in ('2026-10-24 00:00:08+00:00',
+                          '2026-10-24T00:00:08+02:00',
+                          '2026-13-24T00:00:08Z',
+                          '2026-10-24T99:00:08Z',
+                          '2026-10-24T00:00:08',
+                          '2026-10-24T00:00:08.1234567Z'):
+            with self.subTest(timestamp=timestamp):
+                data = self.preflight()
+                data['checked_utc'] = timestamp
+                with self.assertRaises(gate.EvidenceError):
+                    gate.classify_evidence(data)
+
+    def test_nonfinite_json_is_rejected_before_classification(self):
+        self.path.write_text('{"schema":NaN}', encoding='utf-8')
+        with self.assertRaisesRegex(gate.EvidenceError, 'nonfinite_json_constant'):
+            gate.audit(self.path)
+
+    def test_changed_file_identity_refused(self):
+        import stat
+        from types import SimpleNamespace
+        self.write(self.preflight())
+        forged = SimpleNamespace(st_mode=stat.S_IFREG, st_size=0,
+                                 st_dev=-1, st_ino=-1)
+        with patch.object(gate.os, 'fstat', return_value=forged):
+            with self.assertRaisesRegex(gate.EvidenceError, 'report_changed_during_open'):
+                gate.audit(self.path)
+
+    def test_complete_unmodified_stage371_synthetic_fixture(self):
+        self.write(self.preflight())
+        self.assertEqual(gate.audit(self.path), 'offline_preflight_only')
+
+
 if __name__ == '__main__':
     unittest.main()
