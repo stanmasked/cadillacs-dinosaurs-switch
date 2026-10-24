@@ -116,6 +116,8 @@ jobs:
           helper=/tmp/qemu-helper/root/usr/bin/qemu-i386-static
           test -x "$helper"
           cp "$helper" "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static"
+          # Preserve the signed-APT package digest alongside the helper binary.
+          sha256sum "$deb" | awk '{print $1}' > "$GITHUB_WORKSPACE/qemu-i386-helper/package-sha256.txt"
           cp /tmp/qemu-helper/root/usr/share/doc/qemu-user-static/copyright \
             "$GITHUB_WORKSPACE/qemu-i386-helper/COPYRIGHT.txt"
           "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" --version \
@@ -132,9 +134,11 @@ jobs:
             'architecture=amd64' \
             'purpose=private local execution of i386 Wine binaries only' \
             'contains_original_game_data=no' \
+            'package_sha256_file=package-sha256.txt' \
+            'validated_with=Stage393 synthetic PRoot/QEMU nested-exec regression' \
             > "$GITHUB_WORKSPACE/qemu-i386-helper/metadata.txt"
           cd "$GITHUB_WORKSPACE/qemu-i386-helper"
-          sha256sum qemu-i386-static COPYRIGHT.txt version.txt wine32-under-qemu.txt metadata.txt > SHA256SUMS.txt
+          sha256sum qemu-i386-static package-sha256.txt COPYRIGHT.txt version.txt wine32-under-qemu.txt metadata.txt > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
 
       - name: Upload isolated QEMU i386 helper
