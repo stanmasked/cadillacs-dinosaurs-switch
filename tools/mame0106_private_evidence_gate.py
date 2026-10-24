@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
+import os
+import re
 import stat
 from pathlib import Path
 import sys
@@ -34,6 +36,8 @@ ARCHIVE_NAME = 'Stage369_MAME0106_Private_Windows_Verify_Capsule.zip'
 NOTE = ('Archive checksum verified and source-only receipt wrapper tested; '
         'real native execution not attempted.')
 MAX_REPORT_BYTES = 4096
+STAGE371_ARCHIVE_BYTES = 29169673
+STAGE371_SYNTHETIC_TESTS = 19
 
 
 class EvidenceError(Exception):
@@ -59,27 +63,57 @@ def _is_link_or_reparse(path: Path) -> bool:
     )
 
 
+def _file_identity(s: os.stat_result) -> tuple[int, int, int]:
+    return (s.st_dev, s.st_ino, s.st_size)
+
+
 def _read_private_report(path: Path) -> object:
     guard_private()
-    if (not path.is_file() or
-            _is_link_or_reparse(path) or
-            any(_is_link_or_reparse(parent) for parent in path.parents) or
-            path.resolve() == REPO_ROOT or REPO_ROOT in path.resolve().parents):
+    if (not path.is_file() or _is_link_or_reparse(path) or
+            any(_is_link_or_reparse(parent) for parent in path.parents)):
         raise EvidenceError('unsafe_report_path')
-    if not 0 < path.stat().st_size <= MAX_REPORT_BYTES:
+    target = path.resolve()
+    if target == REPO_ROOT or REPO_ROOT in target.parents:
+        raise EvidenceError('unsafe_report_path')
+    before = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_REPORT_BYTES:
         raise EvidenceError('invalid_report_length')
-    with path.open('rb') as f:
-        payload = f.read(MAX_REPORT_BYTES + 1)
-    if not 0 < len(payload) <= MAX_REPORT_BYTES:
+
+    # Keep the descriptor attached to the file that was inspected. On Linux,
+    # O_NOFOLLOW rejects a last-moment symlink swap; on Windows the reparse
+    # check and file identity comparisons must provide the equivalent guard.
+    flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(path, flags)
+    with os.fdopen(fd, 'rb') as stream:
+        opened = os.fstat(stream.fileno())
+        after = path.stat(follow_symlinks=False)
+        if (not stat.S_ISREG(opened.st_mode) or _is_link_or_reparse(path) or
+                _file_identity(before) != _file_identity(opened) or
+                _file_identity(opened) != _file_identity(after)):
+            raise EvidenceError('report_changed_during_open')
+        payload = stream.read(MAX_REPORT_BYTES + 1)
+        final = os.fstat(stream.fileno())
+        if _file_identity(opened) != _file_identity(final):
+            raise EvidenceError('report_changed_during_read')
+    if not 0 < len(payload) <= MAX_REPORT_BYTES or len(payload) != before.st_size:
         raise EvidenceError('invalid_report_length')
     try:
-        return json.loads(payload.decode('utf-8'), object_pairs_hook=_unique_object)
+        return json.loads(
+            payload.decode('utf-8'), object_pairs_hook=_unique_object,
+            parse_constant=lambda _value: _reject_nonfinite_json()
+        )
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise EvidenceError('invalid_report_json') from exc
 
 
+def _reject_nonfinite_json() -> None:
+    raise EvidenceError('nonfinite_json_constant')
+
+
 def _valid_utc_timestamp(value: object) -> bool:
     if type(value) is not str or len(value) > 40:
+        return False
+    if re.fullmatch(r'20\d\d-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|\+00:00)', value) is None:
         return False
     try:
         date = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -114,9 +148,9 @@ def classify_evidence(data: object) -> str:
                for key, value in expected.items()):
             raise EvidenceError('preflight_provenance_mismatch')
         if (type(data['archive_bytes']) is not int or
-                not 0 < data['archive_bytes'] <= 55 * 1024 * 1024 or
+                data['archive_bytes'] != STAGE371_ARCHIVE_BYTES or
                 type(data['synthetic_test_cases_passed']) is not int or
-                not 0 <= data['synthetic_test_cases_passed'] <= 100000 or
+                data['synthetic_test_cases_passed'] != STAGE371_SYNTHETIC_TESTS or
                 not _valid_utc_timestamp(data['checked_utc'])):
             raise EvidenceError('invalid_preflight_observation')
         return 'offline_preflight_only'
