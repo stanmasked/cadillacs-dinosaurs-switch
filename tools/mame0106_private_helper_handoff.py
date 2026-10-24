@@ -15,7 +15,7 @@ import stat
 import sys
 import zipfile
 
-SCHEMA = "cadillacs-stage380-owner-private-python-helper-romfree-v2"
+SCHEMA = "cadillacs-stage381-owner-private-python-helper-romfree-v2"
 MODULES = (
     "tools/mame0106_romfree_native_windows_probe.py",
     "tools/mame0106_private_rom_name_adapter.py",
