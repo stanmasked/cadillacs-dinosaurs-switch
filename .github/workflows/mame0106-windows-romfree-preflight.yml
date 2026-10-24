@@ -4,6 +4,11 @@ on:
   push:
     paths:
       - '.github/workflows/mame0106-windows-romfree-preflight.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/mame0106-windows-romfree-preflight.yml'
+      - 'tools/mame0106_romfree_native_windows_probe.py'
+      - 'tests/test_mame0106_romfree_native_windows_probe.py'
   workflow_dispatch:
 
 permissions:
@@ -27,6 +32,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Run source-only native probe synthetic tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_romfree_native_windows_probe.py' -q
+      - name: Assert no original game data in public checkout
+        shell: pwsh
+        run: |
+          foreach ($relative in @('roms/dino.zip', 'dino.inp', 'dino.wlf', 'mame0106.exe')) {
+            if (Test-Path -LiteralPath $relative) { throw 'Private input forbidden in public checkout' }
+          }
       - name: Download pinned ROM-free MAME build
         uses: actions/download-artifact@v4
         with:
