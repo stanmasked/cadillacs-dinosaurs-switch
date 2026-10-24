@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
+import stat
 from pathlib import Path
 import sys
 
@@ -48,11 +49,21 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+def _is_link_or_reparse(path: Path) -> bool:
+    # On Windows, junctions are reparse points even where is_symlink() is
+    # false. Avoid comparing resolve() text to the original path: drive case
+    # and 8.3/long path aliases may legitimately differ.
+    attrs = getattr(path.lstat(), 'st_file_attributes', 0)
+    return path.is_symlink() or bool(
+        attrs & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
+    )
+
+
 def _read_private_report(path: Path) -> object:
     guard_private()
-    if (path.is_symlink() or not path.is_file() or
-            path.parent.is_symlink() or
-            path.parent.resolve() != path.parent or
+    if (not path.is_file() or
+            _is_link_or_reparse(path) or
+            any(_is_link_or_reparse(parent) for parent in path.parents) or
             path.resolve() == REPO_ROOT or REPO_ROOT in path.resolve().parents):
         raise EvidenceError('unsafe_report_path')
     if not 0 < path.stat().st_size <= MAX_REPORT_BYTES:
