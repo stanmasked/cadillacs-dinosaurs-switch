@@ -147,7 +147,7 @@ jobs:
           cd /tmp
           set +e
           PROOT_TMP_DIR=/tmp \
-            "$src/src/proot" -r "$root" -b /tmp:/tmp -q /usr/local/bin/run-qemu-i386 /usr/local/bin/parent \
+            "$src/src/proot" -r "$root" -b /tmp:/tmp -q "$root/usr/local/bin/run-qemu-i386" /usr/local/bin/parent \
               > "$RUNNER_TEMP/proot-nested-exec.stdout" \
               2> "$RUNNER_TEMP/proot-nested-exec.stderr"
           rc=$?
