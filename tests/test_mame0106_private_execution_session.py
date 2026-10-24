@@ -105,7 +105,7 @@ class OwnerPrivateSessionTests(unittest.TestCase):
             self._fake_run(False)(_capsule, path)
             return {'status': 'native_verified'}
         with patch.object(native, '_windows_owner_guard'), \
-             patch.object(native, 'run', side_effect=forged), \\
+             patch.object(native, 'run', side_effect=forged), \
              patch.object(gate, 'guard_private', return_value=None):
             with self.assertRaisesRegex(p.SessionError, 'evidence_disagrees'):
                 p.execute(self.capsule, self.session)
