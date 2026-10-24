@@ -48,6 +48,7 @@ jobs:
           test "$(dpkg-deb -f "$deb" Package)" = qemu-user-static
           test "$(dpkg-deb -f "$deb" Version)" = '1:7.2+dfsg-7+deb12u18+b3'
           test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          sha256sum "$deb" | awk '{print $1}' > "$RUNNER_TEMP/qemu-package-sha256.txt"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/qemu-root"
           install -m 0755 "$RUNNER_TEMP/qemu-root/usr/bin/qemu-i386-static" \
             "$RUNNER_TEMP/qemu-i386-static"
