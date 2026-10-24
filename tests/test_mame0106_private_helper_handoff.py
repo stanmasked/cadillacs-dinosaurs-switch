@@ -1,4 +1,4 @@
-"""Stage380 handoff ZIP tests use synthetic files and safe public sources only."""
+"""Stage381 handoff ZIP tests use synthetic files and safe public sources only."""
 import hashlib
 import json
 import subprocess
@@ -50,7 +50,7 @@ class SyntheticRomfreeHandoffTests(unittest.TestCase):
             self.assertFalse(manifest["game_private_inputs_included"])
             self.assertFalse(manifest["mame_executable_included"])
             self.assertFalse(manifest["historical_inp_playback_executed"])
-            self.assertTrue(all(x.endswith(".py") or x.startswith("STAGE380-")
+            self.assertTrue(all(x.endswith(".py") or x.startswith("STAGE381-")
                                 for x in z.namelist()))
             self.assertNotIn("roms/dino.zip", z.namelist())
             self.assertNotIn("dino.inp", z.namelist())
