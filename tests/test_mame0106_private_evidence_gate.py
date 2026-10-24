@@ -15,6 +15,10 @@ class EvidenceGateTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.path = self.root / 'synthetic-evidence.json'
+        # Public CI may exercise synthetic JSON, never the real private reader.
+        self.synthetic_guard = patch.object(gate, 'guard_private', return_value=None)
+        self.synthetic_guard.start()
+        self.addCleanup(self.synthetic_guard.stop)
 
     def preflight(self):
         return {
@@ -110,8 +114,10 @@ class EvidenceGateTests(unittest.TestCase):
 
     def test_public_ci_rejects_real_report_read(self):
         self.write(self.preflight())
-        with patch.dict('os.environ', {'GITHUB_ACTIONS': 'true'}):
-            self.assertEqual(gate.main(['--report', str(self.path)]), 2)
+        from tools.mame0106_private_windows_capsule import guard_private as production_guard
+        with patch.object(gate, 'guard_private', production_guard):
+            with patch.dict('os.environ', {'GITHUB_ACTIONS': 'true'}):
+                self.assertEqual(gate.main(['--report', str(self.path)]), 2)
 
     def test_unknown_schema_refused(self):
         with self.assertRaises(gate.EvidenceError):
