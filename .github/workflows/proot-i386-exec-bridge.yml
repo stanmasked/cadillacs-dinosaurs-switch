@@ -116,30 +116,24 @@ jobs:
           ld -m elf_i386 -o "$root/usr/local/bin/child" "$RUNNER_TEMP/child.o"
           as --32 -o "$RUNNER_TEMP/parent.o" "$RUNNER_TEMP/parent.s"
           ld -m elf_i386 -o "$root/usr/local/bin/parent" "$RUNNER_TEMP/parent.o"
-          cat > "$RUNNER_TEMP/run-qemu-i386.sh" <<'EOF'
+          install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$root/usr/local/bin/qemu-i386-static"
+          cat > "$root/usr/local/bin/run-qemu-i386.sh" <<'EOF'
           #!/bin/sh
           set -eu
-          : "${QEMU_BINARY:?}"
-          : "${QEMU_INVOCATIONS:?}"
-          printf '%s\n' 'qemu_invoked' >> "$QEMU_INVOCATIONS"
-          if [ -n "${QEMU_LD_PREFIX-}" ]; then
-            exec "$QEMU_BINARY" -L "$QEMU_LD_PREFIX" "$@"
-          fi
-          exec "$QEMU_BINARY" "$@"
+          printf '%s\n' 'qemu_invoked' >> /tmp/qemu-invocations.txt
+          exec /usr/local/bin/qemu-i386-static -L / "$@"
           EOF
-          chmod 0755 "$RUNNER_TEMP/run-qemu-i386.sh"
-          : > "$RUNNER_TEMP/qemu-invocations.txt"
+          chmod 0755 "$root/usr/local/bin/run-qemu-i386.sh"
+          : > /tmp/qemu-invocations.txt
           cd /tmp
           set +e
           PROOT_TMP_DIR=/tmp \
-          QEMU_BINARY="$RUNNER_TEMP/qemu-i386-static" \
-          QEMU_INVOCATIONS="$RUNNER_TEMP/qemu-invocations.txt" \
-            "$src/src/proot" -r "$root" -b /tmp:/tmp -q "$RUNNER_TEMP/run-qemu-i386.sh" /usr/local/bin/parent \
+            "$src/src/proot" -r "$root" -b /tmp:/tmp -q /usr/local/bin/run-qemu-i386.sh /usr/local/bin/parent \
               > "$RUNNER_TEMP/proot-nested-exec.stdout" \
               2> "$RUNNER_TEMP/proot-nested-exec.stderr"
           rc=$?
           set -e
-          calls=$(wc -l < "$RUNNER_TEMP/qemu-invocations.txt" | tr -d ' ')
+          calls=$(wc -l < /tmp/qemu-invocations.txt | tr -d ' ')
           printf 'synthetic_parent_exec_child_exit=%s\nqemu_invocation_count=%s\n' \
             "$rc" "$calls" > "$RUNNER_TEMP/proot-nested-exec-report.txt"
           if [ "$rc" -ne 42 ] || [ "$calls" -lt 2 ]; then
@@ -158,7 +152,8 @@ jobs:
           mkdir -p "$out/lib" "$out/test-fixtures"
           install -m 0755 "$src/src/proot" "$out/proot"
           install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$out/qemu-i386-static"
-          install -m 0755 "$RUNNER_TEMP/run-qemu-i386.sh" "$out/run-qemu-i386.sh"
+          install -m 0755 "$src/src/loader-m32.elf" "$out/loader-m32.elf"
+          install -m 0755 "$root/usr/local/bin/run-qemu-i386.sh" "$out/run-qemu-i386.sh"
           install -m 0644 "$RUNNER_TEMP/parent.s" "$out/test-fixtures/parent.s"
           install -m 0644 "$RUNNER_TEMP/child.s" "$out/test-fixtures/child.s"
           install -m 0644 "$RUNNER_TEMP/proot-nested-exec-report.txt" "$out/synthetic-test-report.txt"
@@ -200,7 +195,7 @@ jobs:
               "Synthetic parent->child i386 ELF test exited 42 and verified at least two QEMU invocations.\n"
               "Includes the exact upstream source archive, GPL license, local patch, QEMU helper and dynamic dependencies.\n"
               "No ROM, MAME binary, INP/WLF recording, capture or other game content is included.\n"
-              "For Wine32, set QEMU_LD_PREFIX to the isolated Wine rootfs and QEMU_BINARY to this bundle's qemu-i386-static; use run-qemu-i386.sh as PRoot's -q command.\n"
+              "For Wine32, place qemu-i386-static and run-qemu-i386.sh in the guest rootfs at /usr/local/bin, bind host /tmp to guest /tmp, set PROOT_TMP_DIR=/tmp, then use -q /usr/local/bin/run-qemu-i386.sh. The wrapper uses QEMU -L / inside the guest root.\n"
               "Use run-proot.sh to keep helper library paths out of the guest environment.\n",
               encoding="utf-8")
           (out / "source-pin.txt").write_text(
