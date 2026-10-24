@@ -1,0 +1,65 @@
+name: Renew frozen ROM-free MAME 0.106 technical archive
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mame0106-romfree-golden-renewal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: golden-romfree-0106-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renew-exact-romfree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout only public technical verifier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch previously frozen ROM-free technical source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: historical-mame0106-runtime-rom-free
+          run-id: 39859311511
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/frozen-romfree
+      - name: Enforce complete immutable 12-part source and technical digest pins
+        shell: bash
+        env:
+          ROMFREE_DIR: ${{ runner.temp }}/frozen-romfree
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.mame0106_romfree_native_windows_probe import (
+              EXE_SHA, verify_bundle, verify_frozen_components)
+          root = Path(os.environ["ROMFREE_DIR"])
+          assert verify_bundle(root, expected_exe_sha=EXE_SHA) == 8
+          assert verify_frozen_components(root) == 12
+          assert {p.name for p in root.iterdir()} == {
+              "dino-driver.xml", "MAME-0106-LICENSE.txt",
+              "mame0106-build-compat.patch", "mame0106-help.txt",
+              "mame0106-inprocess-count-trace-combined.patch",
+              "mame0106-showconfig.txt", "mame0106-source.zip",
+              "mame0106-windowed-mng-capture.patch", "mame0106.exe",
+              "runtime-status.txt", "SHA256SUMS.txt", "source-pin.txt"
+          }
+          print("stage383_frozen_components=12")
+          print("stage383_original_game_files_used=no")
+          print("stage383_mame_execution=not_executed")
+          PY
+      - name: Publish identical verified technical files for 90 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-mame0106-runtime-rom-free
+          path: ${{ runner.temp }}/frozen-romfree/*
+          if-no-files-found: error
+          retention-days: 90
