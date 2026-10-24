@@ -144,6 +144,7 @@ class ReceiptTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0,
                 stdout=b'\n'.join(x.encode() for x in p.EXPECTED_LINES)+b'\n',stderr=b'')
         with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell', return_value='C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'), \
              patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
              patch.object(p, '_validate_stage369_capsule') as check, \
              patch.object(p.subprocess,'run',side_effect=fake_subprocess):
@@ -159,6 +160,7 @@ class ReceiptTests(unittest.TestCase):
             for name in p.FIXED_FILES:
                 z.writestr(name,b'SYNTHETIC')
         with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell', return_value='C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'), \
              patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
              patch.object(p, '_validate_stage369_capsule'), \
              patch.object(p.subprocess,'run',return_value=types.SimpleNamespace(returncode=9,stdout=b'status=native_verified\ngame=dino\nrecording_playback=not_executed\n',stderr=b'')):
@@ -171,11 +173,54 @@ class ReceiptTests(unittest.TestCase):
             for name in p.FIXED_FILES:
                 z.writestr(name,b'SYNTHETIC')
         with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell', return_value='C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'), \
              patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
              patch.object(p, '_validate_stage369_capsule'), \
              patch.object(p.subprocess,'run',side_effect=subprocess.TimeoutExpired('SYNTHETIC',135)):
             with self.assertRaisesRegex(p.ReceiptError,'private_powershell_execution_not_completed'):
                 p._stage_and_execute(self.archive)
+
+    def test_stage378_system_powershell_never_uses_path_search(self):
+        # The fixture is synthetically resolved; no real PowerShell or ROM is
+        # executed in this regression.
+        with zipfile.ZipFile(self.archive, 'x') as z:
+            for name in p.FIXED_FILES:
+                z.writestr(name, b'PURE SYNTHETIC BYTES')
+        exact = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+        from types import SimpleNamespace
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell', return_value=exact) as resolver, \
+             patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
+             patch.object(p, '_validate_stage369_capsule'), \
+             patch.dict(os.environ, {'PATH': str(self.root)}, clear=False), \
+             patch.object(p.subprocess, 'run', return_value=SimpleNamespace(
+                 returncode=2, stdout=b'', stderr=b'')) as runner:
+            observation = p._stage_and_execute(self.archive)
+        self.assertEqual(observation['status'], 'not_verified')
+        resolver.assert_called_once()
+        self.assertEqual(runner.call_args.args[0][0], exact)
+
+    def test_stage378_missing_trusted_powershell_never_launches_process(self):
+        with zipfile.ZipFile(self.archive, 'x') as z:
+            for name in p.FIXED_FILES:
+                z.writestr(name, b'PURE SYNTHETIC BYTES')
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell',
+                          side_effect=p.ReceiptError('trusted_powershell_unavailable')), \
+             patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
+             patch.object(p, '_validate_stage369_capsule'), \
+             patch.object(p.subprocess, 'run') as runner:
+            with self.assertRaisesRegex(p.ReceiptError, 'trusted_powershell_unavailable'):
+                p._stage_and_execute(self.archive)
+        runner.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows-only OS-owned executable resolver')
+    def test_stage378_genuine_windows_system_powershell_exists(self):
+        # Resolves the genuine Windows OS binary but does NOT run MAME.
+        candidate = Path(p._trusted_system_powershell())
+        self.assertTrue(candidate.is_absolute())
+        self.assertEqual(candidate.name.lower(), 'powershell.exe')
+        self.assertTrue(candidate.is_file())
 
     def test_stage377_snapshot_requires_exact_pinned_bytes(self):
         # A complete synthetic ZIP must NEVER pass the production SHA pin.
@@ -195,6 +240,7 @@ class ReceiptTests(unittest.TestCase):
         destination = self.root / 'synthetic-snapshot.zip'
         digest = p.hashfile(self.archive)[0]
         with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell', return_value='C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'), \
              patch.object(p, 'STAGE369_SHA256', digest):
             p._snapshot_private_capsule(self.archive, destination)
         self.assertEqual(destination.read_bytes(), self.archive.read_bytes())
@@ -232,6 +278,7 @@ class ReceiptTests(unittest.TestCase):
         # A second ZIP/member audit of the exact pinned snapshot is mandatory,
         # even though the caller already checked its original path.
         with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, '_trusted_system_powershell', return_value='C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'), \
              patch.object(p, 'STAGE369_SHA256', original_sha), \
              patch.object(p, '_validate_stage369_capsule', side_effect=p.ReceiptError('staged_audit_failed')) as audit, \
              patch.object(p.subprocess, 'run') as execute:
