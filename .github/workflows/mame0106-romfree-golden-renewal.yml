@@ -34,7 +34,8 @@ jobs:
           ROMFREE_DIR: ${{ runner.temp }}/frozen-romfree
         run: |
           set -euo pipefail
-          # Artifact names are ambiguous after a job rerun. Use exact ID only.\n          # This source contains the same 12 frozen components, audited 12/12.
+          # Artifact names are ambiguous after a job rerun. Use exact ID only.
+          # The source contains the same 12 frozen components, audited 12/12.
           curl --fail --location --silent --show-error --retry 2 \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
@@ -42,8 +43,17 @@ jobs:
             "https://api.github.com/repos/stanmasked/cadillacs-dinosaurs-switch/actions/artifacts/12551316232/zip" \
             --output "${ROMFREE_ZIP}"
           echo "c9296bcc2608dae2ab82494ea89ad6a5f3850a3e145fce620272b798858bb53a  ${ROMFREE_ZIP}" | sha256sum --check --status
-          python -m tools.mame0106_romfree_archive_restore \
-            --archive "${ROMFREE_ZIP}" --extract-to "${ROMFREE_DIR}"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.mame0106_romfree_archive_restore import audit, restore
+          archive = Path(os.environ["ROMFREE_ZIP"])
+          destination = Path(os.environ["ROMFREE_DIR"])
+          pin = "c9296bcc2608dae2ab82494ea89ad6a5f3850a3e145fce620272b798858bb53a"
+          assert audit(archive, archive_sha=pin)["members_verified"] == 12
+          restore(archive, destination, archive_sha=pin)
+          print("stage383_exact_source_archive_verified=True")
+          PY
       - name: Enforce complete immutable 12-part source and technical digest pins
         shell: bash
         env:
