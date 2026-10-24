@@ -57,6 +57,13 @@ jobs:
       - name: Reproduce Stage385 with synthetic 16-member CRC and SHA1 evidence
         shell: pwsh
         run: python -m unittest discover -s tests -p 'test_mame0106_private_stage385_reproduce.py' -q
+      - name: Export ROM-free Stage385 private-host reproduction source only
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage385-private-offline-auditor-source-only
+          path: tools/mame0106_private_stage385_reproduce.py
+          if-no-files-found: error
+          retention-days: 3
       - name: Compile C-sharp fake executable and test PowerShell 5.1 behavior
         shell: pwsh
         run: python -m tools.mame0106_windows_synthetic_smoke
