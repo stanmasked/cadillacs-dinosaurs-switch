@@ -77,10 +77,12 @@ class OwnerPrivateSessionTests(unittest.TestCase):
         self.assertFalse(self.session.exists())
 
     def test_non_windows_host_guard_refuses_before_writing(self):
+        # Paths are instantiated before patching os.name. Calling argparse
+        # while Windows' pathlib sees a simulated POSIX host is unsupported.
         with patch.object(native.os, 'name', 'posix'):
             with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}):
-                self.assertEqual(p.main(['--capsule', str(self.capsule),
-                                         '--session-dir', str(self.session)]), 2)
+                with self.assertRaisesRegex(native.ReceiptError, 'private_windows_host_required'):
+                    p.execute(self.capsule, self.session)
         self.assertFalse(self.session.exists())
 
     def test_parent_symlink_refused(self):
