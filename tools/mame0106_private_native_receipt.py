@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import stat
 import subprocess
 import sys
 import tempfile
@@ -213,6 +214,37 @@ def _snapshot_private_capsule(archive: Path, snapshot: Path) -> None:
         raise ReceiptError('private_snapshot_readback_mismatch')
 
 
+def _trusted_system_powershell() -> str:
+    """Resolve OS-owned Windows PowerShell without consulting PATH or SystemRoot.
+
+    This source-only helper does not start any process. A missing/unexpected
+    system executable fails closed instead of searching attacker-controlled
+    working directories or environment paths.
+    """
+    if os.name != 'nt':
+        raise ReceiptError('private_windows_host_required')
+    try:
+        import ctypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        getter = kernel.GetSystemWindowsDirectoryW
+        getter.argtypes = (ctypes.c_wchar_p, ctypes.c_uint32)
+        getter.restype = ctypes.c_uint32
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = getter(buffer, len(buffer))
+        if not 0 < length < len(buffer):
+            raise ReceiptError('system_windows_directory_unavailable')
+        executable = (Path(buffer.value) / 'System32' / 'WindowsPowerShell'
+                      / 'v1.0' / 'powershell.exe')
+        if (not executable.is_file() or executable.is_symlink() or
+                bool(getattr(executable.stat(follow_symlinks=False),
+                             'st_file_attributes', 0) &
+                     getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0))):
+            raise ReceiptError('trusted_powershell_unavailable')
+        return str(executable)
+    except (AttributeError, OSError, TypeError, ValueError) as exc:
+        raise ReceiptError('trusted_powershell_resolution_failed') from exc
+
+
 def _stage_and_execute(archive: Path) -> dict[str, object]:
     # Owner-private execution. Bind a fresh copy to the actual tested digest,
     # then unpack ONLY that copy. Never unzip an unchecked mutable source.
@@ -233,8 +265,9 @@ def _stage_and_execute(archive: Path) -> dict[str, object]:
         if hashfile(snapshot)[0] != STAGE369_SHA256:
             raise ReceiptError('private_snapshot_changed_during_extraction')
         try:
+            system_powershell = _trusted_system_powershell()
             process = subprocess.run(
-                ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive',
+                [system_powershell, '-NoLogo', '-NoProfile', '-NonInteractive',
                  '-File', str(root / 'verifyroms.ps1')],
                 cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, timeout=135, check=False,
