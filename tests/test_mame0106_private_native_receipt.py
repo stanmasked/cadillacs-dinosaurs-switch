@@ -143,7 +143,8 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual(kwargs['timeout'],135)
             return types.SimpleNamespace(returncode=0,
                 stdout=b'\n'.join(x.encode() for x in p.EXPECTED_LINES)+b'\n',stderr=b'')
-        with patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
              patch.object(p, '_validate_stage369_capsule') as check, \
              patch.object(p.subprocess,'run',side_effect=fake_subprocess):
             result=p._stage_and_execute(self.archive)
@@ -157,7 +158,8 @@ class ReceiptTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive,'x') as z:
             for name in p.FIXED_FILES:
                 z.writestr(name,b'SYNTHETIC')
-        with patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
              patch.object(p, '_validate_stage369_capsule'), \
              patch.object(p.subprocess,'run',return_value=types.SimpleNamespace(returncode=9,stdout=b'status=native_verified\ngame=dino\nrecording_playback=not_executed\n',stderr=b'')):
             result=p._stage_and_execute(self.archive)
@@ -168,7 +170,8 @@ class ReceiptTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive,'x') as z:
             for name in p.FIXED_FILES:
                 z.writestr(name,b'SYNTHETIC')
-        with patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, 'STAGE369_SHA256', p.hashfile(self.archive)[0]), \
              patch.object(p, '_validate_stage369_capsule'), \
              patch.object(p.subprocess,'run',side_effect=subprocess.TimeoutExpired('SYNTHETIC',135)):
             with self.assertRaisesRegex(p.ReceiptError,'private_powershell_execution_not_completed'):
@@ -180,8 +183,9 @@ class ReceiptTests(unittest.TestCase):
             for name in p.FIXED_FILES:
                 z.writestr(name, b'SYNTHETIC-ONLY')
         destination = self.root / 'synthetic-snapshot.zip'
-        with self.assertRaisesRegex(p.ReceiptError, 'private_snapshot_digest_mismatch'):
-            p._snapshot_private_capsule(self.archive, destination)
+        with patch.object(p, 'guard_private', return_value=None):
+            with self.assertRaisesRegex(p.ReceiptError, 'private_snapshot_digest_mismatch'):
+                p._snapshot_private_capsule(self.archive, destination)
         self.assertTrue(destination.exists())
 
     def test_stage377_snapshot_matches_synthetic_bytes_with_test_pin(self):
@@ -190,7 +194,8 @@ class ReceiptTests(unittest.TestCase):
                 z.writestr(name, b'SYNTHETIC-ONLY')
         destination = self.root / 'synthetic-snapshot.zip'
         digest = p.hashfile(self.archive)[0]
-        with patch.object(p, 'STAGE369_SHA256', digest):
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, 'STAGE369_SHA256', digest):
             p._snapshot_private_capsule(self.archive, destination)
         self.assertEqual(destination.read_bytes(), self.archive.read_bytes())
 
@@ -209,6 +214,7 @@ class ReceiptTests(unittest.TestCase):
                         replacement.writestr(name, b'SYNTHETIC REPLACEMENT')
             return {'status': 'offline_capsule_integrity_pass'}
         with patch.object(p, '_windows_owner_guard'), \
+             patch.object(p, 'guard_private', return_value=None), \
              patch.object(p, 'STAGE369_SHA256', original_sha), \
              patch.object(p, '_validate_stage369_capsule', side_effect=replaced_during_first_check), \
              patch.object(p.subprocess, 'run') as execute:
@@ -225,7 +231,8 @@ class ReceiptTests(unittest.TestCase):
         original_sha = p.hashfile(self.archive)[0]
         # A second ZIP/member audit of the exact pinned snapshot is mandatory,
         # even though the caller already checked its original path.
-        with patch.object(p, 'STAGE369_SHA256', original_sha), \
+        with patch.object(p, 'guard_private', return_value=None), \
+             patch.object(p, 'STAGE369_SHA256', original_sha), \
              patch.object(p, '_validate_stage369_capsule', side_effect=p.ReceiptError('staged_audit_failed')) as audit, \
              patch.object(p.subprocess, 'run') as execute:
             with self.assertRaisesRegex(p.ReceiptError, 'staged_audit_failed'):
