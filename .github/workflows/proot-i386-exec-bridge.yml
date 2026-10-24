@@ -117,18 +117,37 @@ jobs:
           as --32 -o "$RUNNER_TEMP/parent.o" "$RUNNER_TEMP/parent.s"
           ld -m elf_i386 -o "$root/usr/local/bin/parent" "$RUNNER_TEMP/parent.o"
           install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$root/usr/local/bin/qemu-i386-static"
-          cat > "$root/usr/local/bin/run-qemu-i386.sh" <<'EOF'
-          #!/bin/sh
-          set -eu
-          printf '%s\n' 'qemu_invoked' >> /tmp/qemu-invocations.txt
-          exec /usr/local/bin/qemu-i386-static -L / "$@"
+          cat > "$RUNNER_TEMP/qemu-wrapper.c" <<'EOF'
+          #define _GNU_SOURCE
+          #include <errno.h>
+          #include <fcntl.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <unistd.h>
+          int main(int argc, char **argv) {
+              int fd = open("/tmp/qemu-invocations.txt", O_WRONLY | O_APPEND | O_CREAT, 0600);
+              if (fd < 0) { perror("open invocation marker"); return 120; }
+              if (write(fd, "qemu_invoked\n", 13) != 13) { perror("write invocation marker"); close(fd); return 121; }
+              if (close(fd) != 0) { perror("close invocation marker"); return 122; }
+              char **qargv = calloc((size_t)argc + 3, sizeof(char *));
+              if (!qargv) { perror("calloc"); return 123; }
+              qargv[0] = "/usr/local/bin/qemu-i386-static";
+              qargv[1] = "-L";
+              qargv[2] = "/";
+              for (int i = 1; i < argc; ++i) qargv[i + 2] = argv[i];
+              qargv[argc + 2] = NULL;
+              execv(qargv[0], qargv);
+              perror("execv qemu-i386-static");
+              return errno == ENOENT ? 127 : 126;
+          }
           EOF
-          chmod 0755 "$root/usr/local/bin/run-qemu-i386.sh"
+          gcc -O2 -Wall -Wextra -Werror -static -o "$root/usr/local/bin/run-qemu-i386" "$RUNNER_TEMP/qemu-wrapper.c"
+          file "$root/usr/local/bin/run-qemu-i386" | grep -F 'statically linked'
           : > /tmp/qemu-invocations.txt
           cd /tmp
           set +e
           PROOT_TMP_DIR=/tmp \
-            "$src/src/proot" -r "$root" -b /tmp:/tmp -q /usr/local/bin/run-qemu-i386.sh /usr/local/bin/parent \
+            "$src/src/proot" -r "$root" -b /tmp:/tmp -q /usr/local/bin/run-qemu-i386 /usr/local/bin/parent \
               > "$RUNNER_TEMP/proot-nested-exec.stdout" \
               2> "$RUNNER_TEMP/proot-nested-exec.stderr"
           rc=$?
@@ -152,7 +171,7 @@ jobs:
           mkdir -p "$out/lib" "$out/test-fixtures"
           install -m 0755 "$src/src/proot" "$out/proot"
           install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$out/qemu-i386-static"
-          install -m 0755 "$RUNNER_TEMP/proot-test-root/usr/local/bin/run-qemu-i386.sh" "$out/run-qemu-i386.sh"
+          install -m 0755 "$RUNNER_TEMP/proot-test-root/usr/local/bin/run-qemu-i386" "$out/run-qemu-i386.sh"
           install -m 0644 "$RUNNER_TEMP/parent.s" "$out/test-fixtures/parent.s"
           install -m 0644 "$RUNNER_TEMP/child.s" "$out/test-fixtures/child.s"
           install -m 0644 "$RUNNER_TEMP/proot-nested-exec-report.txt" "$out/synthetic-test-report.txt"
@@ -194,7 +213,7 @@ jobs:
               "Synthetic parent->child i386 ELF test exited 42 and verified at least two QEMU invocations.\n"
               "Includes the exact upstream source archive, GPL license, local patch, QEMU helper and dynamic dependencies.\n"
               "No ROM, MAME binary, INP/WLF recording, capture or other game content is included.\n"
-              "For Wine32, place qemu-i386-static and run-qemu-i386.sh in the guest rootfs at /usr/local/bin, bind host /tmp to guest /tmp, set PROOT_TMP_DIR=/tmp, then use -q /usr/local/bin/run-qemu-i386.sh. The wrapper uses QEMU -L / inside the guest root.\n"
+              "For Wine32, place qemu-i386-static and run-qemu-i386.sh in the guest rootfs at /usr/local/bin, bind host /tmp to guest /tmp, set PROOT_TMP_DIR=/tmp, then use -q /usr/local/bin/run-qemu-i386. The wrapper uses QEMU -L / inside the guest root.\n"
               "Use run-proot.sh to keep helper library paths out of the guest environment.\n",
               encoding="utf-8")
           (out / "source-pin.txt").write_text(
