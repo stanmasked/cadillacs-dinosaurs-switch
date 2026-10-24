@@ -1,4 +1,4 @@
-"""Stage380: deterministic ROM-free helper ZIP for an owner-private Windows host.
+"""Stage381: deterministic ROM-free helper ZIP for an owner-private Windows host.
 
 Build only from an explicit inventory of public Python source. Never ingest
 the owner's ROM, historical MAME EXE, recordings, or extracted game data.
@@ -15,7 +15,7 @@ import stat
 import sys
 import zipfile
 
-SCHEMA = "cadillacs-stage380-owner-private-python-helper-romfree-v1"
+SCHEMA = "cadillacs-stage380-owner-private-python-helper-romfree-v2"
 MODULES = (
     "tools/mame0106_romfree_native_windows_probe.py",
     "tools/mame0106_private_rom_name_adapter.py",
@@ -27,12 +27,12 @@ MODULES = (
     "tools/mame0106_private_session_audit.py",
     "tools/mame0106_private_helper_handoff.py",
 )
-INSTRUCTIONS = "STAGE380-PRIVATE-WINDOWS-RUNBOOK.txt"
-MANIFEST = "STAGE380-SHA256-MANIFEST.json"
+INSTRUCTIONS = "STAGE381-PRIVATE-WINDOWS-RUNBOOK.txt"
+MANIFEST = "STAGE381-SHA256-MANIFEST.json"
 MAX_SOURCE_BYTES = 150_000
 MAX_ARCHIVE_BYTES = 500_000
 REVISION = re.compile(r"[a-f0-9]{40}\Z")
-RUNBOOK = """Cadillacs and Dinosaurs Remake — Stage380 owner-private Windows helper
+RUNBOOK = """Cadillacs and Dinosaurs Remake — Stage381 owner-private Windows helper
 =====================================================================
 This archive contains PUBLIC SOURCE CODE ONLY. No ROM, MAME executable,
 original input recording, private frames or emulator captures.
@@ -53,11 +53,11 @@ python -m tools.mame0106_private_helper_handoff --verify "<ZIP-PATH>"
    If verification refuses or fails, do not execute the private runner.
 5. Run genuine owner-private ROM verification (example only):
 
-python -m tools.mame0106_private_execution_session --capsule "C:\\Private\\Stage369_MAME0106_Private_Windows_Verify_Capsule.zip" --session-dir "C:\\Private\\Stage380-first-session"
+python -m tools.mame0106_private_execution_session --capsule "C:\\Private\\Stage369_MAME0106_Private_Windows_Verify_Capsule.zip" --session-dir "C:\\Private\\Stage381-first-session"
 
 6. Independently audit its two JSON records:
 
-python -m tools.mame0106_private_session_audit --session-dir "C:\\Private\\Stage380-first-session" --require-native-positive
+python -m tools.mame0106_private_session_audit --session-dir "C:\\Private\\Stage381-first-session" --require-native-positive
 
 The session folder must be new, outside this source directory. A positive
 result is a LOCAL, UNAUTHENTICATED SELF-REPORT, NOT independent execution
@@ -118,7 +118,7 @@ def build(root: Path, out: Path, source_revision: str) -> dict[str, object]:
     sources[INSTRUCTIONS] = RUNBOOK.encode("utf-8")
     metadata = {
         "schema": SCHEMA,
-        "stage": "Stage380",
+        "stage": "Stage381",
         "source_revision": source_revision,
         "game_private_inputs_included": False,
         "mame_executable_included": False,
@@ -171,7 +171,7 @@ def verify(archive_path: Path, *, expected_revision: str | None = None) -> dict[
                     "schema", "stage", "source_revision",
                     "game_private_inputs_included", "mame_executable_included",
                     "historical_inp_playback_executed", "files"} or
-                    manifest["schema"] != SCHEMA or manifest["stage"] != "Stage380" or
+                    manifest["schema"] != SCHEMA or manifest["stage"] != "Stage381" or
                     manifest["game_private_inputs_included"] is not False or
                     manifest["mame_executable_included"] is not False or
                     manifest["historical_inp_playback_executed"] is not False or
