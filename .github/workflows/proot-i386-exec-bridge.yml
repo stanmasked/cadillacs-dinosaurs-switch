@@ -171,7 +171,7 @@ jobs:
           mkdir -p "$out/lib" "$out/test-fixtures"
           install -m 0755 "$src/src/proot" "$out/proot"
           install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$out/qemu-i386-static"
-          install -m 0755 "$RUNNER_TEMP/proot-test-root/usr/local/bin/run-qemu-i386" "$out/run-qemu-i386.sh"
+          install -m 0755 "$RUNNER_TEMP/proot-test-root/usr/local/bin/run-qemu-i386" "$out/run-qemu-i386"
           install -m 0644 "$RUNNER_TEMP/parent.s" "$out/test-fixtures/parent.s"
           install -m 0644 "$RUNNER_TEMP/child.s" "$out/test-fixtures/child.s"
           install -m 0644 "$RUNNER_TEMP/proot-nested-exec-report.txt" "$out/synthetic-test-report.txt"
@@ -213,7 +213,7 @@ jobs:
               "Synthetic parent->child i386 ELF test exited 42 and verified at least two QEMU invocations.\n"
               "Includes the exact upstream source archive, GPL license, local patch, QEMU helper and dynamic dependencies.\n"
               "No ROM, MAME binary, INP/WLF recording, capture or other game content is included.\n"
-              "For Wine32, place qemu-i386-static and run-qemu-i386.sh in the guest rootfs at /usr/local/bin, bind host /tmp to guest /tmp, set PROOT_TMP_DIR=/tmp, then use -q /usr/local/bin/run-qemu-i386. The wrapper uses QEMU -L / inside the guest root.\n"
+              "For Wine32, place qemu-i386-static and run-qemu-i386 in the guest rootfs at /usr/local/bin, bind host /tmp to guest /tmp, set PROOT_TMP_DIR=/tmp, then use -q /usr/local/bin/run-qemu-i386. The wrapper uses QEMU -L / inside the guest root.\n"
               "Use run-proot.sh to keep helper library paths out of the guest environment.\n",
               encoding="utf-8")
           (out / "source-pin.txt").write_text(
@@ -228,7 +228,7 @@ jobs:
           chmod 0755 "$out/run-proot.sh"
           (
             cd "$out"
-            sha256sum proot qemu-i386-static run-qemu-i386.sh run-proot.sh lib/* test-fixtures/* \
+            sha256sum proot qemu-i386-static run-qemu-i386 run-proot.sh qemu-wrapper.c lib/* test-fixtures/* \
               synthetic-test-report.txt qemu-version.txt proot-version.txt proot-source.tar.gz \
               proot-force-i386-qemu.patch.txt COPYING README.txt source-pin.txt > SHA256SUMS.txt
             sha256sum -c SHA256SUMS.txt
