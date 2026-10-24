@@ -9,6 +9,7 @@ on:
       - 'tools/mame0106_private_evidence_gate.py'
       - 'tools/mame0106_private_execution_session.py'
       - 'tools/mame0106_private_session_audit.py'
+      - 'tools/mame0106_private_stage385_reproduce.py'
       - 'tools/mame0106_private_helper_handoff.py'
       - 'tests/test_mame0106_private_windows_capsule.py'
       - 'tests/test_mame0106_windows_synthetic_smoke.py'
@@ -16,6 +17,7 @@ on:
       - 'tests/test_mame0106_private_evidence_gate.py'
       - 'tests/test_mame0106_private_execution_session.py'
       - 'tests/test_mame0106_private_session_audit.py'
+      - 'tests/test_mame0106_private_stage385_reproduce.py'
       - 'tests/test_mame0106_private_helper_handoff.py'
       - '.github/workflows/mame0106-windows-synthetic-smoke.yml'
   workflow_dispatch:
@@ -52,6 +54,9 @@ jobs:
       - name: Audit Stage379 synthetic sealed private session with no game files
         shell: pwsh
         run: python -m unittest discover -s tests -p 'test_mame0106_private_session_audit.py' -q
+      - name: Reproduce Stage385 with synthetic 16-member CRC and SHA1 evidence
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_stage385_reproduce.py' -q
       - name: Compile C-sharp fake executable and test PowerShell 5.1 behavior
         shell: pwsh
         run: python -m tools.mame0106_windows_synthetic_smoke
