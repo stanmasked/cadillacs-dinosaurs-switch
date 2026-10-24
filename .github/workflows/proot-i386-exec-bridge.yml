@@ -132,7 +132,7 @@ jobs:
           set +e
           QEMU_BINARY="$RUNNER_TEMP/qemu-i386-static" \
           QEMU_INVOCATIONS="$RUNNER_TEMP/qemu-invocations.txt" \
-            "$src/src/proot" -r "$root" -q "$RUNNER_TEMP/run-qemu-i386.sh" /tmp/parent \
+            "$src/src/proot" -R "$root" -q "$RUNNER_TEMP/run-qemu-i386.sh" /tmp/parent \
               > "$RUNNER_TEMP/proot-nested-exec.stdout" \
               2> "$RUNNER_TEMP/proot-nested-exec.stderr"
           rc=$?
