@@ -549,13 +549,26 @@ jobs:
           mame_binary_status=present
           if [ ! -f "$MAME0106_EXE" ]; then mame_binary_status=missing; fi
           boot_status=skipped
+          wineboot_exe_status=skipped
           help_status=skipped
           config_status=skipped
           listxml_status=skipped
           dino_driver_present=no
           if [ "$version_status" -eq 0 ] && [ "$mame_binary_status" = present ]; then
-            boot_status=0
-            timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all wineboot -u > /tmp/stage356-wine64-wineboot.txt 2>&1 || boot_status=$?
+            # Debian's wineboot wrapper prefers the i386 loader whenever it is
+            # installed, even when WINEARCH=win64. Invoke the PE bootstrap with
+            # the native Wine64 ELF loader so this fallback actually tests Wine64.
+            wineboot_exe=$(find /usr/lib/x86_64-linux-gnu/wine /usr/lib/wine -path '*/x86_64-windows/wineboot.exe' -type f -print -quit 2>/dev/null || true)
+            if [ -n "$wineboot_exe" ] && [ -f "$wineboot_exe" ]; then
+              wineboot_exe_status=found
+              wine64_dllpath=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine
+              boot_status=0
+              timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINELOADER="$wine64_bin" WINEDLLPATH="$wine64_dllpath" "$wine64_bin" "$wineboot_exe" -u > /tmp/stage356-wine64-wineboot.txt 2>&1 || boot_status=$?
+            else
+              wineboot_exe_status=missing
+              boot_status=127
+              printf '%s\n' 'native Wine64 x86_64-windows/wineboot.exe not found' > /tmp/stage356-wine64-wineboot.txt
+            fi
             if [ "$boot_status" -eq 0 ]; then
               help_status=0
               timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage356-wine64-help.txt 2>&1 || help_status=$?
@@ -572,11 +585,11 @@ jobs:
               fi
             fi
           fi
-          python3 - "$version_status" "$wine64_binary_status" "$mame_binary_status" "$boot_status" "$help_status" "$config_status" "$listxml_status" "$dino_driver_present" <<'PY'
+          python3 - "$version_status" "$wine64_binary_status" "$mame_binary_status" "$wineboot_exe_status" "$boot_status" "$help_status" "$config_status" "$listxml_status" "$dino_driver_present" <<'PY'
           import re
           import sys
           from pathlib import Path
-          version_status, wine64_binary_status, mame_binary_status, boot_status, help_status, config_status, listxml_status, dino = sys.argv[1:]
+          version_status, wine64_binary_status, mame_binary_status, wineboot_exe_status, boot_status, help_status, config_status, listxml_status, dino = sys.argv[1:]
           def read_log(path):
               p = Path(path)
               raw = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
@@ -598,6 +611,8 @@ jobs:
               f"wine64_binary_status={wine64_binary_status}",
               f"wine64_version_status={version_status}",
               f"mame_binary_status={mame_binary_status}",
+              f"wineboot_exe_status={wineboot_exe_status}",
+              "wineboot_invocation=direct_native_wine64_loader",
               f"wineboot_status={boot_status}",
               f"help_status={help_status}",
               f"showconfig_status={config_status}",
@@ -624,6 +639,7 @@ jobs:
           if [ "$version_status" -ne 0 ]; then fallback_status=$version_status
           elif [ "$wine64_binary_status" != found ]; then fallback_status=127
           elif [ "$mame_binary_status" != present ]; then fallback_status=2
+          elif [ "$wineboot_exe_status" != found ]; then fallback_status=127
           elif [ "$boot_status" != 0 ]; then fallback_status=$boot_status
           elif [ "$help_status" != 0 ]; then fallback_status=$help_status
           elif [ "$config_status" != 0 ]; then fallback_status=$config_status
