@@ -354,7 +354,7 @@ jobs:
           export WINE_BIN=wine
           export WINEDEBUG=-all
           # Set the multiarch Wine library roots explicitly for extracted/offline runtimes.
-          export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine
+          export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu/wine
           mkdir -p "$WINEPREFIX"
           # Register the pinned static QEMU helper for nested 32-bit ELF execve.
           # This is a trusted push/dispatch-only job; the container gets SYS_ADMIN
@@ -545,7 +545,7 @@ jobs:
             # Keep the native loader and multiarch DLL search path for every
             # later MAME invocation, not just the prefix bootstrap command.
             export WINELOADER="$wine64_bin"
-            export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine
+            export WINEDLLPATH=/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu/wine:/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/i386-linux-gnu/wine
             timeout --signal=TERM --kill-after=3s 10s "$wine64_bin" --version > /tmp/stage356-wine64-version.txt 2>&1 || version_status=$?
           else
             wine64_binary_status=missing

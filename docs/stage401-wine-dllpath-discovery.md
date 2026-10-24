@@ -1,4 +1,4 @@
-# Stage401–402 — private Wine DLL search-path diagnosis
+# Stage401–403 — private Wine DLL search-path diagnosis
 
 ## Stage401 finding
 
@@ -13,10 +13,14 @@ The extracted runtime is not a full package installation: maintainer scripts and
 
 ## Stage402 correction
 
-The first Stage401 workflow edit explicitly exported only the parent Wine directories. That explicit value prevented the launcher's fallback discovery from running, and it did not match the locally successful `i386-unix` path. Stage402 corrects both workflow exports (Wine32 bootstrap and native Wine64 fallback) to prefer `/usr/lib/i386-linux-gnu/wine/i386-unix` and `/usr/lib/x86_64-linux-gnu/wine/x86_64-unix`, followed by the parent directories. Regression tests now require both exact exports and verify that Unix-specific paths precede the parent fallbacks.
+The first Stage401 workflow edit explicitly exported only the parent Wine directories. Stage402 added the Unix-specific library directories. The subsequent architecture audit found that both blocks initially used the same order, which is inappropriate for the 64-bit fallback.
+
+## Stage403 correction
+
+The Wine32 bootstrap now prioritizes `/usr/lib/i386-linux-gnu/wine/i386-unix` and its i386 parent before the amd64 paths. The native Wine64 fallback prioritizes `/usr/lib/x86_64-linux-gnu/wine/x86_64-unix` and its amd64 parent before the i386 paths. Regression tests assert the exact distinct path lists and check the order within each workflow block. Caller-supplied `WINEDLLPATH` remains untouched by the launcher.
 
 ## Limits
 
-A local MAME `-help` attempt under the extracted-rootfs PRoot/QEMU bridge still did not complete and eventually reported a `kernel32.dll` load failure; the process also produced child-process and file-descriptor errors. This change addresses DLL search-path discovery only. It does **not** establish that MAME starts in this PRoot environment, that the native Wine64 fallback works, or that the original game and recording can be replayed.
+A local MAME `-help` attempt under the extracted-rootfs PRoot/QEMU bridge still did not complete and eventually reported a `kernel32.dll` load failure; the process also produced child-process and file-descriptor errors. These changes address DLL search-path configuration only. They do **not** establish that MAME starts in this PRoot environment, that the native Wine64 fallback works, or that the original game and recording can be replayed.
 
 All diagnostics used the ROM-free technical MAME artifact and public Wine packages only. No original ROM, `dino.inp`, `dino.wlf`, extracted game resources, or gameplay captures were used. Keep PR #139 Draft and `main` unchanged until a real private replay passes the independent frame/trace checks.
