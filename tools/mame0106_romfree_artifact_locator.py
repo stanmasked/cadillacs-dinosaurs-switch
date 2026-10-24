@@ -18,6 +18,10 @@ from urllib import request, error
 NAME = "historical-mame0106-runtime-rom-free"
 # Original immutable artifact ID 12461451785 on GitHub run #39859311511.
 ARCHIVE_SHA256 = "5a495bdcbe832dbe1261fc935ef0f8db2f36c7eb21ad3c0be19385d87da5781a"
+# Stage383 exact 12-file rearchive: every member SHA matches ARCHIVE_SHA256
+# byte-for-byte, despite changed outer ZIP metadata. No rebuilt exe accepted.
+RENEWED_ARCHIVE_SHA256 = "c9296bcc2608dae2ab82494ea89ad6a5f3850a3e145fce620272b798858bb53a"
+ALLOWED_ARCHIVE_SHA256 = frozenset((ARCHIVE_SHA256, RENEWED_ARCHIVE_SHA256))
 ARCHIVE_SIZE = 41450235
 OWNER = "stanmasked"
 REPOSITORY = "cadillacs-dinosaurs-switch"
@@ -46,7 +50,7 @@ def _parse_utc(value: object) -> datetime:
 
 def choose(pages: list[dict], now: datetime) -> dict[str, object]:
     """Pure offline selector. Old, expired, unknown-digest builds fail closed."""
-    if not pages or now.tzinfo is None or not PIN.fullmatch(ARCHIVE_SHA256):
+    if not pages or now.tzinfo is None or any(not PIN.fullmatch(x) for x in ALLOWED_ARCHIVE_SHA256):
         raise ArtifactSelectionError("selector_inputs_invalid")
     candidates = []
     for page in pages:
@@ -59,8 +63,9 @@ def choose(pages: list[dict], now: datetime) -> dict[str, object]:
             if (item.get("name") != NAME or item.get("expired") is not False or
                     type(item.get("size_in_bytes")) is not int or
                     item["size_in_bytes"] != ARCHIVE_SIZE or
-                    item.get("digest") != "sha256:" + ARCHIVE_SHA256 or
-                    type(workflow) is not dict):
+                    item.get("digest") not in {
+                        "sha256:" + pin for pin in ALLOWED_ARCHIVE_SHA256
+                    } or type(workflow) is not dict):
                 continue
             run_id = workflow.get("id")
             if type(run_id) is not int or not GITHUB_RUN_ID.fullmatch(str(run_id)):
@@ -71,15 +76,15 @@ def choose(pages: list[dict], now: datetime) -> dict[str, object]:
                 continue
             if type(item.get("id")) is not int or item["id"] <= 0:
                 continue
-            candidates.append((creation, expiration, run_id, item["id"]))
+            candidates.append((creation, expiration, run_id, item["id"], item["digest"][7:]))
     if not candidates:
         raise ArtifactSelectionError("no_live_exact_pinned_romfree_artifact")
-    created, expiration, run_id, artifact_id = max(candidates)
+    created, expiration, run_id, artifact_id, approved_digest = max(candidates)
     return {
         "status": "exact_pinned_romfree_artifact_found",
         "run_id": run_id,
         "artifact_id": artifact_id,
-        "archive_sha256": ARCHIVE_SHA256,
+        "archive_sha256": approved_digest,
         "expires_at": expiration.isoformat(),
         "original_game_data_included": False,
     }
