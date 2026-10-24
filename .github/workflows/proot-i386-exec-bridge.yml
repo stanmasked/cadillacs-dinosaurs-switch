@@ -129,11 +129,12 @@ jobs:
           EOF
           chmod 0755 "$RUNNER_TEMP/run-qemu-i386.sh"
           : > "$RUNNER_TEMP/qemu-invocations.txt"
+          cd /tmp
           set +e
-          PROOT_TMP_DIR=/tmp \
+          PROOT_TMP_DIR="$root/tmp" \
           QEMU_BINARY="$RUNNER_TEMP/qemu-i386-static" \
           QEMU_INVOCATIONS="$RUNNER_TEMP/qemu-invocations.txt" \
-            "$src/src/proot" -R "$root" -q "$RUNNER_TEMP/run-qemu-i386.sh" /usr/local/bin/parent \
+            "$src/src/proot" -r "$root" -q "$RUNNER_TEMP/run-qemu-i386.sh" /usr/local/bin/parent \
               > "$RUNNER_TEMP/proot-nested-exec.stdout" \
               2> "$RUNNER_TEMP/proot-nested-exec.stderr"
           rc=$?
