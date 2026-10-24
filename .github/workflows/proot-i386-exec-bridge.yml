@@ -152,7 +152,6 @@ jobs:
           mkdir -p "$out/lib" "$out/test-fixtures"
           install -m 0755 "$src/src/proot" "$out/proot"
           install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$out/qemu-i386-static"
-          install -m 0755 "$src/src/loader-m32.elf" "$out/loader-m32.elf"
           install -m 0755 "$root/usr/local/bin/run-qemu-i386.sh" "$out/run-qemu-i386.sh"
           install -m 0644 "$RUNNER_TEMP/parent.s" "$out/test-fixtures/parent.s"
           install -m 0644 "$RUNNER_TEMP/child.s" "$out/test-fixtures/child.s"
