@@ -7,10 +7,12 @@ on:
       - 'tools/mame0106_windows_synthetic_smoke.py'
       - 'tools/mame0106_private_native_receipt.py'
       - 'tools/mame0106_private_evidence_gate.py'
+      - 'tools/mame0106_private_execution_session.py'
       - 'tests/test_mame0106_private_windows_capsule.py'
       - 'tests/test_mame0106_windows_synthetic_smoke.py'
       - 'tests/test_mame0106_private_native_receipt.py'
       - 'tests/test_mame0106_private_evidence_gate.py'
+      - 'tests/test_mame0106_private_execution_session.py'
       - '.github/workflows/mame0106-windows-synthetic-smoke.yml'
   workflow_dispatch:
 
@@ -40,6 +42,9 @@ jobs:
       - name: Classify Stage372 synthetic evidence without private files
         shell: pwsh
         run: python -m unittest discover -s tests -p 'test_mame0106_private_evidence_gate.py' -q
+      - name: Validate Stage376 owner-private session with synthetic evidence only
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_execution_session.py' -q
       - name: Compile C-sharp fake executable and test PowerShell 5.1 behavior
         shell: pwsh
         run: python -m tools.mame0106_windows_synthetic_smoke
