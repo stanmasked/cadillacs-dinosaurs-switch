@@ -35,7 +35,7 @@ class Stage385SyntheticTests(unittest.TestCase):
             self.payloads[f"not-game-{n:02d}.bin"] = (
                 self.synthetic * (size // len(self.synthetic) + 1))[:size]
         xml = ET.Element("mame")
-        game = ET.SubElement(xml, "game", {"name": "dino"})
+        game = ET.SubElement(xml, "game", {"name": "dino", "runnable": "yes"})
         for name, content in self.payloads.items():
             ET.SubElement(game, "rom", {
                 "name": name, "size": str(len(content)),
