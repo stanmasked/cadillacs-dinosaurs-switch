@@ -353,6 +353,8 @@ jobs:
           export WINEPREFIX=/tmp/stage332-romfree-wine
           export WINE_BIN=wine
           export WINEDEBUG=-all
+          # Set the multiarch Wine library roots explicitly for extracted/offline runtimes.
+          export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine
           mkdir -p "$WINEPREFIX"
           # Register the pinned static QEMU helper for nested 32-bit ELF execve.
           # This is a trusted push/dispatch-only job; the container gets SYS_ADMIN

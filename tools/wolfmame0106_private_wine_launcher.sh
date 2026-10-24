@@ -49,4 +49,30 @@ esac
 export WINEARCH="$wine_arch"
 export WINEDEBUG=${WINEDEBUG:--all}
 
+# Extracted Debian Wine bundles do not run package maintainer scripts, so the
+# alternatives-based /usr/bin/wine setup may be absent and Wine may not find
+# ntdll.so by itself. Respect a caller's explicit WINEDLLPATH; otherwise derive
+# a deterministic path from the multiarch Wine directories that actually exist.
+if [ -z "${WINEDLLPATH:-}" ]; then
+    wine_dllpath=
+    for candidate in \
+        /usr/lib/i386-linux-gnu/wine/i386-unix \
+        /usr/lib/x86_64-linux-gnu/wine/x86_64-unix \
+        /usr/lib/i386-linux-gnu/wine \
+        /usr/lib/x86_64-linux-gnu/wine; do
+        [ -d "$candidate" ] || continue
+        case ":$wine_dllpath:" in
+            *":$candidate:"*) continue ;;
+        esac
+        if [ -n "$wine_dllpath" ]; then
+            wine_dllpath="$wine_dllpath:$candidate"
+        else
+            wine_dllpath="$candidate"
+        fi
+    done
+    if [ -n "$wine_dllpath" ]; then
+        export WINEDLLPATH="$wine_dllpath"
+    fi
+fi
+
 exec "$wine_bin" "$MAME0106_EXE" "$@"
