@@ -64,5 +64,65 @@ class NativeWindowsRomFreeTests(unittest.TestCase):
             p.verify_bundle(self.root, expected_exe_sha=p.sha256_file(binary))
 
 
+class FrozenArtifactPinsTests(NativeWindowsRomFreeTests):
+    """Completely synthetic, public test data; no real executable or ROM."""
+
+    def synthetic_frozen_pins(self):
+        for name in ("MAME-0106-LICENSE.txt", "runtime-status.txt"):
+            (self.root / name).write_text("SYNTHETIC " + name, encoding="utf-8")
+        return {name: p.sha256_file(self.root / name)
+                for name in p.FROZEN_COMPONENT_SHA256}
+
+    def test_all_synthetic_frozen_components_match(self):
+        pins = self.synthetic_frozen_pins()
+        self.assertEqual(p.verify_frozen_components(self.root, pins), 12)
+
+    def test_rewritten_manifest_not_sufficient_for_provenance(self):
+        pins = self.synthetic_frozen_pins()
+        (self.root / "mame0106-help.txt").write_text("FORGED BUT CONSISTENT", encoding="utf-8")
+        self.write_manifest()
+        self.assertEqual(p.verify_bundle(self.root, expected_exe_sha=self.own_sha), 8)
+        with self.assertRaisesRegex(p.ProbeError, "frozen_component_mismatch"):
+            p.verify_frozen_components(self.root, pins)
+
+    def test_unexpected_extra_component_rejected(self):
+        pins = self.synthetic_frozen_pins()
+        (self.root / "untrusted-private.bin").write_bytes(b"SYNTHETIC")
+        with self.assertRaisesRegex(p.ProbeError, "frozen_inventory_mismatch"):
+            p.verify_frozen_components(self.root, pins)
+
+    def test_missing_component_rejected(self):
+        pins = self.synthetic_frozen_pins()
+        (self.root / "runtime-status.txt").unlink()
+        with self.assertRaisesRegex(p.ProbeError, "frozen_inventory_mismatch"):
+            p.verify_frozen_components(self.root, pins)
+
+    def test_original_pins_not_satisfied_by_synthetic_files(self):
+        self.synthetic_frozen_pins()
+        with self.assertRaisesRegex(p.ProbeError, "frozen_component_mismatch"):
+            p.verify_frozen_components(self.root)
+
+    def test_symlink_to_valid_bytes_rejected(self):
+        pins = self.synthetic_frozen_pins()
+        source = self.root / "mame0106-help.txt"
+        copy = self.root.parent / "public-synthetic-copy.txt"
+        copy.write_bytes(source.read_bytes())
+        source.unlink()
+        try:
+            source.symlink_to(copy)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlinks unavailable")
+        with self.assertRaisesRegex(p.ProbeError, "frozen_member_type"):
+            p.verify_frozen_components(self.root, pins)
+
+    def test_invalid_digest_and_path_pin_rejected(self):
+        pins = self.synthetic_frozen_pins()
+        for forged in ({**pins, "source-pin.txt": "INVALID"},
+                       {**pins, "../fake": "0"*64}):
+            with self.subTest(keys=list(forged)[-1]):
+                with self.assertRaises(p.ProbeError):
+                    p.verify_frozen_components(self.root, forged)
+
+
 if __name__ == "__main__":
     unittest.main()
