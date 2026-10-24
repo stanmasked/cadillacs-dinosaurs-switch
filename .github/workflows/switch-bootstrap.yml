@@ -18,6 +18,8 @@ on:
       - 'tests/**'
       - 'mame0106-windowed-mng-capture.patch.txt'
       - '.github/workflows/switch-bootstrap.yml'
+      - '.github/workflows/proot-i386-exec-bridge.yml'
+      - '.github/workflows/wine32-offline-runtime.yml'
   workflow_dispatch:
 
 # Cancel superseded runs for the same event and PR/ref. Keep different
