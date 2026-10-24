@@ -38,16 +38,20 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update
-          mkdir -p "$RUNNER_TEMP/qemu-deb" "$RUNNER_TEMP/qemu-root"
-          cd "$RUNNER_TEMP/qemu-deb"
+          qemu_deb_dir="$(mktemp -d /tmp/qemu-deb.XXXXXX)"
+          chown _apt:root "$qemu_deb_dir"
+          chmod 0755 "$qemu_deb_dir"
+          mkdir -p "$RUNNER_TEMP/qemu-root"
+          cd "$qemu_deb_dir"
           apt-get download 'qemu-user=1:10.0.13+ds-0+deb13u1'
-          deb=$(find . -maxdepth 1 -type f -name 'qemu-user_*.deb' -print -quit)
+          deb=$(find "$qemu_deb_dir" -maxdepth 1 -type f -name 'qemu-user_*.deb' -print -quit)
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = qemu-user
           test "$(dpkg-deb -f "$deb" Version)" = '1:10.0.13+ds-0+deb13u1'
           test "$(dpkg-deb -f "$deb" Architecture)" = amd64
           sha256sum "$deb" | awk '{print $1}' > "$RUNNER_TEMP/qemu-package-sha256.txt"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/qemu-root"
+          rm -rf "$qemu_deb_dir"
           install -m 0755 "$RUNNER_TEMP/qemu-root/usr/bin/qemu-i386" \
             "$RUNNER_TEMP/qemu-i386-static"
           file "$RUNNER_TEMP/qemu-i386-static" | grep -F 'statically linked'
