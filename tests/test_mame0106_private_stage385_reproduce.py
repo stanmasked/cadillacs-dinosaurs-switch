@@ -22,6 +22,11 @@ class Stage385SyntheticTests(unittest.TestCase):
         self.cap = self.root / "synthetic-capsule.zip"
         self.report = self.root / "stage384.json"
         self.output = self.root / "stage385.json"
+        # Public CI must never read private owner files. Synthetic-only test
+        # fixture patches the guard but production module stays guarded.
+        guard = patch.object(p.capsule, "guard_private", return_value=None)
+        guard.start()
+        self.addCleanup(guard.stop)
         self.synthetic = b"SYNTHETIC FIXTURE DATA - NOT A GAME ROM"
         # Exactly 16 synthetic payloads comprising 7,995,392 fake bytes.
         self.payloads = {}
@@ -134,7 +139,9 @@ class Stage385SyntheticTests(unittest.TestCase):
             p._private_output(linked / "new.json")
 
     def test_public_actions_guard_stops_private_read(self):
-        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), patch.object(
+                p.capsule, "guard_private", side_effect=p.capsule.CapsuleError(
+                    "public_runner_forbidden")):
             with self.assertRaisesRegex(p.capsule.CapsuleError, "public_runner_forbidden"):
                 p.reproduce(self.cap, self.gold, self.report)
 
