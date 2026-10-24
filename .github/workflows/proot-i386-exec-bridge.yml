@@ -162,6 +162,25 @@ jobs:
           fi
           printf '%s\n' 'nested_i386_exec_via_qemu=pass' >> "$RUNNER_TEMP/proot-nested-exec-report.txt"
           printf '%s\n' 'private_game_data_used=no' >> "$RUNNER_TEMP/proot-nested-exec-report.txt"
+      - name: Preserve synthetic nested-exec diagnostics even on failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/proot-i386-exec-diagnostic"
+          mkdir -p "$out"
+          for f in proot-nested-exec.stdout proot-nested-exec.stderr proot-nested-exec-report.txt; do
+            if [ -f "$RUNNER_TEMP/$f" ]; then cp "$RUNNER_TEMP/$f" "$out/$f"; fi
+          done
+          if [ -f /tmp/qemu-invocations.txt ]; then cp /tmp/qemu-invocations.txt "$out/qemu-invocations.txt"; fi
+      - name: Upload synthetic nested-exec diagnostic only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proot-i386-nested-exec-diagnostic
+          path: proot-i386-exec-diagnostic/
+          if-no-files-found: warn
+          retention-days: 3
       - name: Package patched PRoot, source, dependencies and QEMU bridge
         shell: bash
         run: |
