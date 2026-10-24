@@ -9,12 +9,14 @@ on:
       - 'tools/mame0106_private_evidence_gate.py'
       - 'tools/mame0106_private_execution_session.py'
       - 'tools/mame0106_private_session_audit.py'
+      - 'tools/mame0106_private_helper_handoff.py'
       - 'tests/test_mame0106_private_windows_capsule.py'
       - 'tests/test_mame0106_windows_synthetic_smoke.py'
       - 'tests/test_mame0106_private_native_receipt.py'
       - 'tests/test_mame0106_private_evidence_gate.py'
       - 'tests/test_mame0106_private_execution_session.py'
       - 'tests/test_mame0106_private_session_audit.py'
+      - 'tests/test_mame0106_private_helper_handoff.py'
       - '.github/workflows/mame0106-windows-synthetic-smoke.yml'
   workflow_dispatch:
 
@@ -60,3 +62,16 @@ jobs:
           if (Test-Path 'dino.inp') { throw 'Original inputs not allowed' }
           if (Test-Path 'dino.wlf') { throw 'Original recordings not allowed' }
           if (Test-Path 'mame0106.exe') { throw 'Original executable not allowed in source' }
+      - name: Test and prepare deterministic Stage380 ROM-free private-host handoff
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p 'test_mame0106_private_helper_handoff.py' -q
+          python -m tools.mame0106_private_helper_handoff --output stage380-romfree-helper.zip --source-revision "${{ github.sha }}"
+          python -m tools.mame0106_private_helper_handoff --verify stage380-romfree-helper.zip
+      - name: Archive public-source-only Stage380 helper (never original games)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage380-romfree-owner-private-python-helper
+          path: stage380-romfree-helper.zip
+          if-no-files-found: error
+          retention-days: 3
