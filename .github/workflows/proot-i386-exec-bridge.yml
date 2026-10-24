@@ -242,9 +242,9 @@ jobs:
               "proot_repository=https://github.com/proot-me/proot\n"
               "proot_commit=25dc6a3134891f98a79f57ce1c2c1b23ff15cad1\n"
               "patch=proot-force-i386-qemu.patch.txt\n"
-              "qemu_package=qemu-user\n"
-              "qemu_package_version=1:10.0.13+ds-0+deb13u1\n"
-              "qemu_binary=/usr/bin/qemu-i386\n"
+              "qemu_package=qemu-user-static\n"
+              "qemu_package_version=1:7.2+dfsg-7+deb12u18+b3\n"
+              "qemu_binary=/usr/bin/qemu-i386-static\n"
               "qemu_package_sha256_file=qemu-package-sha256.txt\n"
               "original_game_data_included=no\n",
               encoding="utf-8")
