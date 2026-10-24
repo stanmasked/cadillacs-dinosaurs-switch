@@ -540,6 +540,10 @@ jobs:
           wine64_binary_status=found
           if [ -n "$wine64_bin" ] && [ -x "$wine64_bin" ]; then
             export WINE_BIN="$wine64_bin"
+            # Keep the native loader and multiarch DLL search path for every
+            # later MAME invocation, not just the prefix bootstrap command.
+            export WINELOADER="$wine64_bin"
+            export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine
             timeout --signal=TERM --kill-after=3s 10s "$wine64_bin" --version > /tmp/stage356-wine64-version.txt 2>&1 || version_status=$?
           else
             wine64_binary_status=missing

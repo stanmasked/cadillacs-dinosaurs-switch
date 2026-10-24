@@ -28,6 +28,11 @@ class Wine64FallbackWorkflowTests(unittest.TestCase):
             self.block,
         )
         self.assertIn("wineboot_invocation=direct_native_wine64_loader", self.block)
+        self.assertIn('export WINELOADER="$wine64_bin"', self.block)
+        self.assertIn(
+            "export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine",
+            self.block,
+        )
 
     def test_bootstrap_does_not_use_debian_wineboot_wrapper(self):
         self.assertNotIn("WINEARCH=win64 WINEDEBUG=-all wineboot -u", self.block)
