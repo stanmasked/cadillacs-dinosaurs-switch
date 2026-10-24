@@ -1,0 +1,89 @@
+name: Renew frozen ROM-free MAME 0.106 technical archive
+
+on:
+  # Renewal is deliberate: a change to this workflow, not every PR commit.
+  push:
+    branches:
+      - feature/mame0106-wine-offline-bundle-330
+    paths:
+      - '.github/workflows/mame0106-romfree-golden-renewal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: golden-romfree-0106-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renew-exact-romfree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout only public technical verifier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch exact owner-audited Stage383 90-day artifact ID and verify outer SHA before unpack
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ROMFREE_ZIP: ${{ runner.temp }}/frozen-original-romfree.zip
+          ROMFREE_DIR: ${{ runner.temp }}/frozen-romfree
+        run: |
+          set -euo pipefail
+          # Artifact names are ambiguous after a job rerun. Use exact ID only.
+          # The source contains the same 12 frozen components, audited 12/12.
+          curl --fail --location --silent --show-error --retry 2 \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/stanmasked/cadillacs-dinosaurs-switch/actions/artifacts/12551316232/zip" \
+            --output "${ROMFREE_ZIP}"
+          echo "c9296bcc2608dae2ab82494ea89ad6a5f3850a3e145fce620272b798858bb53a  ${ROMFREE_ZIP}" | sha256sum --check --status
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.mame0106_romfree_archive_restore import audit, restore
+          archive = Path(os.environ["ROMFREE_ZIP"])
+          destination = Path(os.environ["ROMFREE_DIR"])
+          pin = "c9296bcc2608dae2ab82494ea89ad6a5f3850a3e145fce620272b798858bb53a"
+          assert audit(archive, archive_sha=pin)["members_verified"] == 12
+          restore(archive, destination, archive_sha=pin)
+          print("stage383_exact_source_archive_verified=True")
+          PY
+      - name: Enforce complete immutable 12-part source and technical digest pins
+        shell: bash
+        env:
+          ROMFREE_DIR: ${{ runner.temp }}/frozen-romfree
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.mame0106_romfree_native_windows_probe import (
+              EXE_SHA, verify_bundle, verify_frozen_components)
+          root = Path(os.environ["ROMFREE_DIR"])
+          assert verify_bundle(root, expected_exe_sha=EXE_SHA) == 8
+          assert verify_frozen_components(root) == 12
+          assert {p.name for p in root.iterdir()} == {
+              "dino-driver.xml", "MAME-0106-LICENSE.txt",
+              "mame0106-build-compat.patch", "mame0106-help.txt",
+              "mame0106-inprocess-count-trace-combined.patch",
+              "mame0106-showconfig.txt", "mame0106-source.zip",
+              "mame0106-windowed-mng-capture.patch", "mame0106.exe",
+              "runtime-status.txt", "SHA256SUMS.txt", "source-pin.txt"
+          }
+          print("stage383_frozen_components=12")
+          print("stage383_original_game_files_used=no")
+          print("stage383_mame_execution=not_executed")
+          PY
+      - name: Publish identical verified technical files for 90 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-mame0106-runtime-rom-free
+          path: ${{ runner.temp }}/frozen-romfree/*
+          if-no-files-found: error
+          retention-days: 90

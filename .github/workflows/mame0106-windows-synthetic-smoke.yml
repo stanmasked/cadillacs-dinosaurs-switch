@@ -1,0 +1,90 @@
+name: MAME 0.106 Windows PowerShell synthetic-only smoke
+
+on:
+  pull_request:
+    paths:
+      - 'tools/mame0106_private_windows_capsule.py'
+      - 'tools/mame0106_windows_synthetic_smoke.py'
+      - 'tools/mame0106_private_native_receipt.py'
+      - 'tools/mame0106_private_evidence_gate.py'
+      - 'tools/mame0106_private_execution_session.py'
+      - 'tools/mame0106_private_session_audit.py'
+      - 'tools/mame0106_private_stage385_reproduce.py'
+      - 'tools/mame0106_private_helper_handoff.py'
+      - 'tests/test_mame0106_private_windows_capsule.py'
+      - 'tests/test_mame0106_windows_synthetic_smoke.py'
+      - 'tests/test_mame0106_private_native_receipt.py'
+      - 'tests/test_mame0106_private_evidence_gate.py'
+      - 'tests/test_mame0106_private_execution_session.py'
+      - 'tests/test_mame0106_private_session_audit.py'
+      - 'tests/test_mame0106_private_stage385_reproduce.py'
+      - 'tests/test_mame0106_private_helper_handoff.py'
+      - '.github/workflows/mame0106-windows-synthetic-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pure-synthetic-windows-runner:
+    name: PowerShell 5.1 synthetic branch and public-runner guard
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit test exact guard isolation and immutable source pins
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_windows_synthetic_smoke.py' -q
+      - name: Exercise private receipt contract using synthetic data only
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_native_receipt.py' -q
+      - name: Classify Stage372 synthetic evidence without private files
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_evidence_gate.py' -q
+      - name: Validate Stage376 owner-private session with synthetic evidence only
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_execution_session.py' -q
+      - name: Audit Stage379 synthetic sealed private session with no game files
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_session_audit.py' -q
+      - name: Reproduce Stage385 with synthetic 16-member CRC and SHA1 evidence
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_private_stage385_reproduce.py' -q
+      - name: Export ROM-free Stage385 private-host reproduction source only
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage385-private-offline-auditor-source-only
+          path: tools/mame0106_private_stage385_reproduce.py
+          if-no-files-found: error
+          retention-days: 3
+      - name: Compile C-sharp fake executable and test PowerShell 5.1 behavior
+        shell: pwsh
+        run: python -m tools.mame0106_windows_synthetic_smoke
+      - name: Assert private historical inputs have not been staged
+        shell: pwsh
+        run: |
+          if (Test-Path 'roms/dino.zip') { throw 'Private ROMs not allowed' }
+          if (Test-Path 'dino.inp') { throw 'Original inputs not allowed' }
+          if (Test-Path 'dino.wlf') { throw 'Original recordings not allowed' }
+          if (Test-Path 'mame0106.exe') { throw 'Original executable not allowed in source' }
+      - name: Test and prepare self-verifying Stage381 ROM-free private-host handoff
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p 'test_mame0106_private_helper_handoff.py' -q
+          python -m tools.mame0106_private_helper_handoff --output stage381-romfree-helper.zip --source-revision "${{ github.sha }}"
+          python -m tools.mame0106_private_helper_handoff --verify stage381-romfree-helper.zip
+          python -m compileall -q tools/mame0106_private_helper_handoff.py
+      - name: Archive public-source-only Stage381 helper (never original games)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage381-romfree-owner-private-python-helper
+          path: stage381-romfree-helper.zip
+          if-no-files-found: error
+          retention-days: 3

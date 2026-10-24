@@ -1,0 +1,275 @@
+name: PRoot forced i386 QEMU bridge (synthetic only)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/proot-i386-exec-bridge.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/proot-i386-exec-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proot-i386-exec-bridge-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    timeout-minutes: 20
+    steps:
+      - name: Install source-build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates git nodejs python3 binutils build-essential pkg-config file libarchive-dev libtalloc-dev
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch pinned static QEMU i386 helper from signed Debian archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'deb https://deb.debian.org/debian bookworm main' \
+            > /etc/apt/sources.list.d/bookworm-qemu-helper.list
+          apt-get update
+          mkdir -p "$RUNNER_TEMP/qemu-deb" "$RUNNER_TEMP/qemu-root"
+          cd "$RUNNER_TEMP/qemu-deb"
+          apt-get download 'qemu-user-static=1:7.2+dfsg-7+deb12u18+b3'
+          deb=$(find . -maxdepth 1 -type f -name 'qemu-user-static_*.deb' -print -quit)
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = qemu-user-static
+          test "$(dpkg-deb -f "$deb" Version)" = '1:7.2+dfsg-7+deb12u18+b3'
+          test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          sha256sum "$deb" | awk '{print $1}' > "$RUNNER_TEMP/qemu-package-sha256.txt"
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/qemu-root"
+          install -m 0755 "$RUNNER_TEMP/qemu-root/usr/bin/qemu-i386-static" \
+            "$RUNNER_TEMP/qemu-i386-static"
+          "$RUNNER_TEMP/qemu-i386-static" --version > "$RUNNER_TEMP/qemu-version.txt"
+      - name: Build pinned PRoot with i386 forced through QEMU on x86-64
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/proot-source"
+          git clone https://github.com/proot-me/proot.git "$src"
+          git -C "$src" checkout --detach 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1
+          test "$(git -C "$src" rev-parse HEAD)" = '25dc6a3134891f98a79f57ce1c2c1b23ff15cad1'
+          cp "$src/COPYING" "$RUNNER_TEMP/proot-COPYING"
+          git -C "$src" archive --format=tar.gz --output="$RUNNER_TEMP/proot-source.tar.gz" HEAD
+          python3 - "$src/src/arch.h" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1])
+          text = p.read_text(encoding="utf-8")
+          old = "#define HOST_ELF_MACHINE {62, 3, 6, 0}"
+          new = "#define HOST_ELF_MACHINE {62, 0}"
+          if text.count(old) != 1:
+              raise SystemExit("unexpected pinned PRoot x86-64 architecture macro")
+          p.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+          grep -Fq '#define HOST_ELF_MACHINE {62, 0}' "$src/src/arch.h"
+          git -C "$src" diff -- src/arch.h > "$RUNNER_TEMP/proot-force-i386-qemu.patch.txt"
+          test -s "$RUNNER_TEMP/proot-force-i386-qemu.patch.txt"
+          make -C "$src/src" loader.elf loader-m32.elf build.h
+          make -C "$src/src" proot
+          test -x "$src/src/proot"
+          "$src/src/proot" --version > "$RUNNER_TEMP/proot-version.txt"
+      - name: Verify nested i386 exec completes under QEMU user mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/proot-source"
+          root="$RUNNER_TEMP/proot-test-root"
+          mkdir -p "$root/tmp" "$root/usr/local/bin"
+          cat > "$RUNNER_TEMP/child.s" <<'EOF'
+          .section .text
+          .global _start
+          _start:
+            mov $1, %eax
+            mov $42, %ebx
+            int $0x80
+          EOF
+          cat > "$RUNNER_TEMP/parent.s" <<'EOF'
+          .section .data
+          child_path: .asciz "/usr/local/bin/child"
+          argv: .long child_path, 0
+          envp: .long 0
+          .section .text
+          .global _start
+          _start:
+            mov $11, %eax
+            mov $child_path, %ebx
+            mov $argv, %ecx
+            mov $envp, %edx
+            int $0x80
+            mov $1, %eax
+            mov $99, %ebx
+            int $0x80
+          EOF
+          as --32 -o "$RUNNER_TEMP/child.o" "$RUNNER_TEMP/child.s"
+          ld -m elf_i386 -o "$root/usr/local/bin/child" "$RUNNER_TEMP/child.o"
+          as --32 -o "$RUNNER_TEMP/parent.o" "$RUNNER_TEMP/parent.s"
+          ld -m elf_i386 -o "$root/usr/local/bin/parent" "$RUNNER_TEMP/parent.o"
+          install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$root/usr/local/bin/qemu-i386-static"
+          cat > "$RUNNER_TEMP/qemu-wrapper.c" <<'EOF'
+          #define _GNU_SOURCE
+          #include <errno.h>
+          #include <fcntl.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <unistd.h>
+          int main(int argc, char **argv) {
+              int fd = open("/tmp/qemu-invocations.txt", O_WRONLY | O_APPEND | O_CREAT, 0600);
+              if (fd < 0) { perror("open invocation marker"); return 120; }
+              if (write(fd, "qemu_invoked\n", 13) != 13) { perror("write invocation marker"); close(fd); return 121; }
+              if (close(fd) != 0) { perror("close invocation marker"); return 122; }
+              char **qargv = calloc((size_t)argc + 3, sizeof(char *));
+              if (!qargv) { perror("calloc"); return 123; }
+              qargv[0] = "/usr/local/bin/qemu-i386-static";
+              qargv[1] = "-L";
+              qargv[2] = "/";
+              for (int i = 1; i < argc; ++i) qargv[i + 2] = argv[i];
+              qargv[argc + 2] = NULL;
+              execv(qargv[0], qargv);
+              perror("execv qemu-i386-static");
+              return errno == ENOENT ? 127 : 126;
+          }
+          EOF
+          gcc -O2 -Wall -Wextra -Werror -static -o "$root/usr/local/bin/run-qemu-i386" "$RUNNER_TEMP/qemu-wrapper.c"
+          file "$root/usr/local/bin/run-qemu-i386" | grep -F 'statically linked'
+          : > /tmp/qemu-invocations.txt
+          cd /tmp
+          set +e
+          PROOT_TMP_DIR=/tmp \
+            "$src/src/proot" -r "$root" -b /tmp:/tmp -q "$root/usr/local/bin/run-qemu-i386" /usr/local/bin/parent \
+              > "$RUNNER_TEMP/proot-nested-exec.stdout" \
+              2> "$RUNNER_TEMP/proot-nested-exec.stderr"
+          rc=$?
+          set -e
+          calls=$(wc -l < /tmp/qemu-invocations.txt | tr -d ' ')
+          printf 'synthetic_parent_exec_child_exit=%s\nqemu_invocation_count=%s\n' \
+            "$rc" "$calls" > "$RUNNER_TEMP/proot-nested-exec-report.txt"
+          if [ "$rc" -ne 42 ] || [ "$calls" -lt 2 ]; then
+            echo 'forced i386 QEMU nested-exec test failed: child exit must be 42 and QEMU must be invoked' >&2
+            tail -40 "$RUNNER_TEMP/proot-nested-exec.stderr" >&2 || true
+            exit 1
+          fi
+          printf '%s\n' 'nested_i386_exec_via_qemu=pass' >> "$RUNNER_TEMP/proot-nested-exec-report.txt"
+          printf '%s\n' 'private_game_data_used=no' >> "$RUNNER_TEMP/proot-nested-exec-report.txt"
+      - name: Preserve synthetic nested-exec diagnostics even on failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/proot-i386-exec-diagnostic"
+          mkdir -p "$out"
+          for f in proot-nested-exec.stdout proot-nested-exec.stderr proot-nested-exec-report.txt; do
+            if [ -f "$RUNNER_TEMP/$f" ]; then cp "$RUNNER_TEMP/$f" "$out/$f"; fi
+          done
+          if [ -f /tmp/qemu-invocations.txt ]; then cp /tmp/qemu-invocations.txt "$out/qemu-invocations.txt"; fi
+      - name: Upload synthetic nested-exec diagnostic only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proot-i386-nested-exec-diagnostic
+          path: proot-i386-exec-diagnostic/
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Package patched PRoot, source, dependencies and QEMU bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/proot-source"
+          out="$RUNNER_TEMP/proot-i386-exec-bridge"
+          mkdir -p "$out/lib" "$out/test-fixtures"
+          install -m 0755 "$src/src/proot" "$out/proot"
+          install -m 0755 "$RUNNER_TEMP/qemu-i386-static" "$out/qemu-i386-static"
+          install -m 0755 "$RUNNER_TEMP/proot-test-root/usr/local/bin/run-qemu-i386" "$out/run-qemu-i386"
+          install -m 0644 "$RUNNER_TEMP/parent.s" "$out/test-fixtures/parent.s"
+          install -m 0644 "$RUNNER_TEMP/child.s" "$out/test-fixtures/child.s"
+          install -m 0644 "$RUNNER_TEMP/qemu-wrapper.c" "$out/qemu-wrapper.c"
+          install -m 0644 "$RUNNER_TEMP/proot-nested-exec-report.txt" "$out/synthetic-test-report.txt"
+          install -m 0644 "$RUNNER_TEMP/qemu-version.txt" "$out/qemu-version.txt"
+          install -m 0644 "$RUNNER_TEMP/qemu-package-sha256.txt" "$out/qemu-package-sha256.txt"
+          install -m 0644 "$RUNNER_TEMP/proot-version.txt" "$out/proot-version.txt"
+          install -m 0644 "$RUNNER_TEMP/proot-source.tar.gz" "$out/proot-source.tar.gz"
+          install -m 0644 "$RUNNER_TEMP/proot-force-i386-qemu.patch.txt" "$out/proot-force-i386-qemu.patch.txt"
+          install -m 0644 "$RUNNER_TEMP/proot-COPYING" "$out/COPYING"
+          python3 - "$out" <<'PY'
+          import re
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+          out = Path(sys.argv[1])
+          text = subprocess.check_output(["ldd", str(out / "proot")], text=True)
+          paths = set()
+          for line in text.splitlines():
+              match = re.search(r"=>\s+(/[^ ]+)", line)
+              if match:
+                  paths.add(Path(match.group(1)))
+                  continue
+              match = re.match(r"\s*(/[^ ]+)\s+\(", line)
+              if match:
+                  paths.add(Path(match.group(1)))
+          for source in sorted(paths):
+              if not source.is_file():
+                  raise SystemExit(f"unresolved PRoot dependency: {source.name}")
+              shutil.copy2(source.resolve(), out / "lib" / source.name)
+          (out / "run-proot.sh").write_text(
+              "#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n"
+              "unset LD_LIBRARY_PATH\n"
+              "exec \"$HERE/lib/ld-linux-x86-64.so.2\" --library-path \"$HERE/lib\" \"$HERE/proot\" \"$@\"\n",
+              encoding="utf-8")
+          (out / "README.txt").write_text(
+              "Stage386 forced-i386 PRoot/QEMU bridge\n"
+              "Built from PRoot commit 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1.\n"
+              "Public source patch removes EM_386 from the x86-64 host-ELF list so 32-bit children are routed through QEMU even when the host kernel lacks IA32 execution.\n"
+              "Synthetic parent->child i386 ELF test exited 42 and verified at least two QEMU launcher invocations. A separate direct QEMU -strace probe returned ENOEXEC for the nested i386 execve, so PRoot must intercept and reroute the child through the QEMU handler.\n"
+              "Includes the exact upstream source archive, GPL license, local patch, QEMU helper and dynamic dependencies.\n"
+              "No ROM, MAME binary, INP/WLF recording, capture or other game content is included.\n"
+              "For Wine32, place qemu-i386-static and run-qemu-i386 in the guest rootfs at /usr/local/bin. Bind host /tmp to guest /tmp, set PROOT_TMP_DIR=/tmp, and pass the wrapper's HOST filesystem path to PRoot's -q option (for example -q <rootfs-host-path>/usr/local/bin/run-qemu-i386); the wrapper uses the guest path /usr/local/bin/qemu-i386-static and QEMU -L /. The nested-exec regression requires at least two wrapper launches.\n"
+              "Use run-proot.sh to keep helper library paths out of the guest environment.\n",
+              encoding="utf-8")
+          (out / "source-pin.txt").write_text(
+              "proot_repository=https://github.com/proot-me/proot\n"
+              "proot_commit=25dc6a3134891f98a79f57ce1c2c1b23ff15cad1\n"
+              "patch=proot-force-i386-qemu.patch.txt\n"
+              "qemu_package=qemu-user-static\n"
+              "qemu_package_version=1:7.2+dfsg-7+deb12u18+b3\n"
+              "qemu_binary=/usr/bin/qemu-i386-static\n"
+              "qemu_package_sha256_file=qemu-package-sha256.txt\n"
+              "original_game_data_included=no\n",
+              encoding="utf-8")
+          PY
+          chmod 0755 "$out/run-proot.sh"
+          (
+            cd "$out"
+            sha256sum proot qemu-i386-static run-qemu-i386 run-proot.sh qemu-wrapper.c lib/* test-fixtures/* \
+              synthetic-test-report.txt qemu-version.txt qemu-package-sha256.txt proot-version.txt proot-source.tar.gz \
+              proot-force-i386-qemu.patch.txt COPYING README.txt source-pin.txt > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+          mkdir -p "$GITHUB_WORKSPACE/proot-i386-exec-bridge-artifact"
+          cp -a "$out/." "$GITHUB_WORKSPACE/proot-i386-exec-bridge-artifact/"
+      - name: Assert no original game inputs entered the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in roms/dino.zip dino.inp dino.wlf mame0106.exe; do
+            test ! -e "$f"
+          done
+      - name: Upload technical helper only
+        uses: actions/upload-artifact@v4
+        with:
+          name: proot-qemu-i386-nested-exec-helper
+          path: proot-i386-exec-bridge-artifact/
+          if-no-files-found: error
+          retention-days: 3

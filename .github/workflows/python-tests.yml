@@ -2,6 +2,7 @@ name: CPS-1 Python tools
 
 on:
   push:
+    branches: [main]
     paths:
       - 'tools/**'
       - 'source/cps1_tile.c'

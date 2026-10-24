@@ -6,6 +6,10 @@ on:
       - '.github/workflows/wine32-offline-runtime.yml'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
@@ -15,70 +19,135 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: debian:trixie
+      # This trusted push/dispatch-only workflow registers QEMU for nested i386 execve.
+      options: --cap-add=SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     timeout-minutes: 45
     steps:
-      - name: Install Wine32, Xvfb, and download tools
+      - name: Install Node.js action runtime and Wine32 build dependencies
         shell: bash
         run: |
           set -euo pipefail
           dpkg --add-architecture i386
           apt-get update
+          # JavaScript actions need Node.js and checkout needs Git inside this
+          # Debian job container. Install both before redirecting APT's archive
+          # cache so build-only tools are not included in the offline Wine bundle.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs git
+          node --version
           mkdir -p /tmp/wine-debs/partial
+          chown _apt:root /tmp/wine-debs/partial
+          chmod 700 /tmp/wine-debs/partial
           rm -f /tmp/wine-debs/*.deb
           DEBIAN_FRONTEND=noninteractive apt-get \
             -o Dir::Cache::archives=/tmp/wine-debs/ \
             -o APT::Keep-Downloaded-Packages=true \
             install -y --no-install-recommends \
-              ca-certificates curl unzip xvfb xauth wine wine32:i386 wine64
+              ca-certificates curl unzip python3 xvfb xauth wine wine32:i386 wine64 \
+              wine32-preloader:i386 wine64-preloader:amd64
           wine --version
+          # Include the optional prelinked loaders in the offline runtime bundle.
+          test -x /usr/lib/wine/wine-preloader
+          test -x /usr/lib/wine/wine64-preloader
+          # Debian Multi-Arch: same libraries must have matching i386 and
+          # amd64 versions. Runner images may already have the amd64 half
+          # installed, so only the i386 .deb lands in APT's download cache.
+          # Explicitly carry matching amd64 .deb files for offline hosts.
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
 
-      - name: Fetch and smoke-test source-pinned MAME artifact (ROM-free)
+          root = Path('/tmp/wine-debs')
+          installed_archives = set()
+          i386_multiarch = set()
+          for archive in sorted(root.glob('*.deb')):
+              def field(key):
+                  return subprocess.check_output(
+                      ['dpkg-deb', '-f', str(archive), key],
+                      text=True).strip()
+              package = field('Package')
+              version = field('Version')
+              arch = field('Architecture')
+              installed_archives.add((package, version, arch))
+              if arch == 'i386' and field('Multi-Arch') == 'same':
+                  i386_multiarch.add((package, version))
+
+          missing_mirrors = sorted(
+              (package, version) for package, version in i386_multiarch
+              if (package, version, 'amd64') not in installed_archives)
+          for package, version in missing_mirrors:
+              subprocess.run(
+                  ['apt-get', 'download', f'{package}:amd64={version}'],
+                  cwd=root, check=True)
+          for package, version in missing_mirrors:
+              candidates = root.glob(f'{package}_*amd64.deb')
+              if not any(
+                  subprocess.check_output(
+                      ['dpkg-deb', '-f', str(candidate), 'Version'],
+                      text=True).strip() == version
+                  for candidate in candidates):
+                  raise SystemExit(f'Missing matching amd64 .deb: {package}')
+          print(f'Bundled {len(missing_mirrors)} amd64 Multi-Arch mirrors')
+          PY
+
+      - name: Check out repository sources
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare isolated QEMU i386 ELF helper
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/stanmasked/cadillacs-dinosaurs-switch/actions/artifacts?per_page=100" \
-            --output /tmp/artifacts.json
-          artifact_id="$(python3 - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path('/tmp/artifacts.json').read_text())
-          candidates = [
-              a for a in data.get('artifacts', [])
-              if a.get('name') == 'historical-mame0106-runtime-rom-free'
-              and not a.get('expired', True)
-              and a.get('workflow_run', {}).get('head_branch')
-                  == 'feature/mame0106-synthetic-trace-counters-329'
-          ]
-          if not candidates:
-              raise SystemExit('No unexpired source-pinned MAME 0.106 artifact for the Stage329 branch')
-          print(max(candidates, key=lambda a: a['created_at'])['id'])
-          PY
-          )"
-          curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/stanmasked/cadillacs-dinosaurs-switch/actions/artifacts/${artifact_id}/zip" \
-            --output /tmp/mame-runtime.zip
-          mkdir -p /tmp/mame-runtime
-          unzip -q /tmp/mame-runtime.zip -d /tmp/mame-runtime
-          (cd /tmp/mame-runtime && sha256sum --check SHA256SUMS.txt)
-          export WINEPREFIX=/tmp/wineprefix
-          export WINEARCH=win32
-          export WINEDEBUG=-all
-          xvfb-run -a wine /tmp/mame-runtime/mame0106.exe -help > /tmp/mame-help.txt 2>&1
-          grep -q 'M.A.M.E. v0.106' /tmp/mame-help.txt
-          xvfb-run -a wine /tmp/mame-runtime/mame0106.exe -listxml > /tmp/mame-listxml.xml 2>/tmp/mame-listxml-stderr.txt
-          grep -q '<game name="dino"' /tmp/mame-listxml.xml
-          printf '%s\n' 'Wine32 MAME 0.106 help/listxml smoke tests: PASS' 'Original ROMs and input recordings used: NO'
+          # Debian Trixie made qemu-user-static a transitional package.
+          # Fetch the last Bookworm static emulator through signed APT metadata;
+          # extract only qemu-i386-static, never install it on the runner.
+          printf '%s\n' 'deb https://deb.debian.org/debian bookworm main' \
+            > /etc/apt/sources.list.d/bookworm-qemu-helper.list
+          apt-get update
+          mkdir -p /tmp/qemu-helper/download /tmp/qemu-helper/root qemu-i386-helper
+          cd /tmp/qemu-helper/download
+          apt-get download 'qemu-user-static=1:7.2+dfsg-7+deb12u18+b3'
+          deb=$(find . -maxdepth 1 -type f -name 'qemu-user-static_*.deb' -print -quit)
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = qemu-user-static
+          test "$(dpkg-deb -f "$deb" Version)" = '1:7.2+dfsg-7+deb12u18+b3'
+          test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          dpkg-deb -x "$deb" /tmp/qemu-helper/root
+          helper=/tmp/qemu-helper/root/usr/bin/qemu-i386-static
+          test -x "$helper"
+          cp "$helper" "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static"
+          # Preserve the signed-APT package digest alongside the helper binary.
+          sha256sum "$deb" | awk '{print $1}' > "$GITHUB_WORKSPACE/qemu-i386-helper/package-sha256.txt"
+          cp /tmp/qemu-helper/root/usr/share/doc/qemu-user-static/copyright \
+            "$GITHUB_WORKSPACE/qemu-i386-helper/COPYRIGHT.txt"
+          "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" --version \
+            > "$GITHUB_WORKSPACE/qemu-i386-helper/version.txt"
+          # Exercise a real i386 Wine ELF through QEMU, not just the helper's CLI.
+          "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" -L / \
+            /usr/lib/wine/wine --version \
+            > "$GITHUB_WORKSPACE/qemu-i386-helper/wine32-under-qemu.txt" 2>&1
+          grep -q 'wine-10.0' "$GITHUB_WORKSPACE/qemu-i386-helper/wine32-under-qemu.txt"
+          printf '%s\n' \
+            'source=Debian Bookworm signed APT repository' \
+            'package=qemu-user-static' \
+            'version=1:7.2+dfsg-7+deb12u18+b3' \
+            'architecture=amd64' \
+            'purpose=private local execution of i386 Wine binaries only' \
+            'contains_original_game_data=no' \
+            'package_sha256_file=package-sha256.txt' \
+            'validated_with=Stage393 synthetic PRoot/QEMU nested-exec regression' \
+            > "$GITHUB_WORKSPACE/qemu-i386-helper/metadata.txt"
+          cd "$GITHUB_WORKSPACE/qemu-i386-helper"
+          sha256sum qemu-i386-static package-sha256.txt COPYRIGHT.txt version.txt wine32-under-qemu.txt metadata.txt > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
+      - name: Upload isolated QEMU i386 helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-i386-static-private-runtime-helper
+          path: qemu-i386-helper/
+          retention-days: 3
+          if-no-files-found: error
 
       - name: Prepare offline Debian package bundle
         shell: bash
@@ -92,11 +161,19 @@ jobs:
           root = Path('wine32-offline/debs')
           rows = []
           for package in sorted(root.glob('*.deb')):
-              values = subprocess.check_output(
+              fields = subprocess.check_output(
                   ['dpkg-deb', '-f', str(package), 'Package', 'Version', 'Architecture'],
                   text=True
               ).splitlines()
-              if len(values) != 3:
+              parsed = []
+              for field in fields:
+                  if ': ' not in field:
+                      raise SystemExit(f'Invalid package metadata in {package.name}')
+                  parsed.append(field.split(': ', 1))
+              if [key for key, _ in parsed] != ['Package', 'Version', 'Architecture']:
+                  raise SystemExit(f'Unexpected package metadata fields in {package.name}')
+              values = [value for _, value in parsed]
+              if len(values) != 3 or any(not value for value in values):
                   raise SystemExit(f'Invalid package metadata in {package.name}')
               rows.append('\t'.join([package.name, *values, str(package.stat().st_size)]))
           if not rows:
@@ -119,11 +196,503 @@ jobs:
           (cd wine32-offline && find debs -type f -name '*.deb' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
           test -s wine32-offline/package-manifest.tsv
           test -s wine32-offline/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          rows = Path('wine32-offline/package-manifest.tsv').read_text(encoding='utf-8').splitlines()[1:]
+          packages = {(row.split('\t')[1], row.split('\t')[3]) for row in rows}
+          required = {('wine32-preloader', 'i386'), ('wine64-preloader', 'amd64')}
+          if not required.issubset(packages):
+              raise SystemExit('Offline Wine bundle is missing a required preloader package')
+          PY
 
-      - name: Upload short-lived offline Wine32 packages
+      - name: Split offline Wine32 package bundle into size-bounded parts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          mkdir -p wine32-offline-transfer
+          tar -cf /tmp/wine32-offline.tar wine32-offline
+          tar -tf /tmp/wine32-offline.tar >/dev/null
+          archive_size=$(stat -c %s /tmp/wine32-offline.tar)
+          archive_sha=$(sha256sum /tmp/wine32-offline.tar | cut -d ' ' -f1)
+          split -b 200M -d -a 2 /tmp/wine32-offline.tar wine32-offline-transfer/wine32-offline.tar.part-
+          python3 - "$archive_size" "$archive_sha" <<'PY'
+          from pathlib import Path
+          import hashlib
+          import sys
+          root = Path('wine32-offline-transfer')
+          archive_size = int(sys.argv[1])
+          archive_sha = sys.argv[2]
+          parts = sorted(root.glob('wine32-offline.tar.part-*'))
+          if not parts or len(parts) > 4:
+              raise SystemExit(f'Unexpected offline bundle part count: {len(parts)}')
+          if sum(part.stat().st_size for part in parts) != archive_size:
+              raise SystemExit('Split parts do not match the source archive byte count')
+          manifest = [
+              'schema=wine32-offline-transfer-v1',
+              f'archive_size_bytes={archive_size}',
+              f'archive_sha256={archive_sha}',
+              f'part_count={len(parts)}',
+              'part_name\tsize_bytes\tsha256',
+          ]
+          checksum_lines = []
+          for part in parts:
+              size = part.stat().st_size
+              if not 0 < size < 256 * 1024 * 1024:
+                  raise SystemExit(f'Part size outside required bounds: {part.name} ({size})')
+              digest = hashlib.sha256()
+              with part.open('rb') as source:
+                  for block in iter(lambda: source.read(1024 * 1024), b''):
+                      digest.update(block)
+              sha = digest.hexdigest()
+              manifest.append(f'{part.name}\t{size}\t{sha}')
+              checksum_lines.append(f'{sha}  {part.name}')
+          (root / 'parts-manifest.tsv').write_text('\n'.join(manifest) + '\n', encoding='utf-8')
+          (root / 'parts.sha256').write_text('\n'.join(checksum_lines) + '\n', encoding='utf-8')
+          (root / 'archive.sha256').write_text(f'{archive_sha}  wine32-offline.tar\n', encoding='utf-8')
+          (root / 'README-transfer.txt').write_text(
+              'Wine32 offline bundle transfer instructions\n'
+              'Download each part artifact and extract the part files plus metadata into one directory.\n'
+              'Verify every part with: sha256sum -c parts.sha256\n'
+              'Rebuild in suffix order with: cat wine32-offline.tar.part-* > wine32-offline.tar\n'
+              'Verify the reconstructed archive with: sha256sum -c archive.sha256\n'
+              'Compare its byte count with archive_size_bytes in parts-manifest.tsv, then inspect with tar -tf before extraction.\n'
+              'This bundle contains public Debian technical dependencies only; no original game data.\n',
+              encoding='utf-8')
+          print(f'archive_size_bytes={archive_size} part_count={len(parts)} sha256={archive_sha}')
+          PY
+          rebuilt_sha=$(cat wine32-offline-transfer/wine32-offline.tar.part-* | sha256sum | cut -d ' ' -f1)
+          test "$rebuilt_sha" = "$archive_sha"
+
+      - name: Upload offline Wine32 bundle part 00
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-00') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: wine32-debian-trixie-offline-packages
-          path: wine32-offline/
-          retention-days: 1
-          if-no-files-found: error
+          name: wine32-debian-trixie-offline-part-00
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-00
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Upload offline Wine32 bundle part 01
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-01') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine32-debian-trixie-offline-part-01
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-01
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Upload offline Wine32 bundle part 02
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-02') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine32-debian-trixie-offline-part-02
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-02
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Upload offline Wine32 bundle part 03
+        if: success() && hashFiles('wine32-offline-transfer/wine32-offline.tar.part-03') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine32-debian-trixie-offline-part-03
+          path: |
+            wine32-offline-transfer/wine32-offline.tar.part-03
+            wine32-offline-transfer/parts-manifest.tsv
+            wine32-offline-transfer/parts.sha256
+            wine32-offline-transfer/archive.sha256
+            wine32-offline-transfer/README-transfer.txt
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # Fetch only the ROM-free Stage329 source-pinned technical binary.
+      # Never stage original ROM, INP, WLF or captures in public CI.
+      - name: Download pinned ROM-free MAME 0.106 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: historical-mame0106-runtime-rom-free
+          run-id: 39859311511
+          github-token: ${{ github.token }}
+          path: /tmp/stage332-mame
+
+      - name: Stage333 ROM-free Wine32 launcher audit
+        id: wine32_audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh"
+          chmod +x "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh"
+          cd /tmp/stage332-mame
+          sha256sum -c SHA256SUMS.txt
+          printf '%s\n' 'b62bb2a0ea0543b35a24029537fc5f3389f2d23b27fce075fbf4e7ba50575c3a  mame0106.exe' | sha256sum -c -
+          grep -Fxq 'source_commit=0a83d596c83b4d1a72cb3a7b1d2835b809206f2f' source-pin.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          exe = Path('mame0106.exe').read_bytes()
+          assert exe.startswith(b'MZ')
+          pe = struct.unpack_from('<I', exe, 0x3c)[0]
+          assert exe[pe:pe + 6] == b'PE\x00\x00\x4c\x01'
+          PY
+          export MAME0106_EXE=/tmp/stage332-mame/mame0106.exe
+          export WINEPREFIX=/tmp/stage332-romfree-wine
+          export WINE_BIN=wine
+          export WINEDEBUG=-all
+          # Set the multiarch Wine library roots explicitly for extracted/offline runtimes.
+          export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu/wine
+          mkdir -p "$WINEPREFIX"
+          # Register the pinned static QEMU helper for nested 32-bit ELF execve.
+          # This is a trusted push/dispatch-only job; the container gets SYS_ADMIN
+          # solely to mount its own binfmt_misc instance on the ephemeral runner.
+          mount --make-rprivate / 2>/dev/null || true
+          mkdir -p /tmp/bfmt-qemu
+          mount -t binfmt_misc binfmt_misc /tmp/bfmt-qemu
+          printf ':qemu-i386:M::\x7fELF\x01\x01\x01\x00::%s:OCF\n' \
+            "$GITHUB_WORKSPACE/qemu-i386-helper/qemu-i386-static" > /tmp/bfmt-qemu/register
+          test "$(head -1 /tmp/bfmt-qemu/qemu-i386)" = enabled
+          # Capture process and prefix progress; retry only when a timed-out first boot created a substantial prefix.
+          wineboot_status=0
+          : > /tmp/stage352-wineboot-progress.txt
+          wineboot_started_at=$(date +%s)
+          timeout --signal=TERM --kill-after=5s 180s xvfb-run -a env \
+            WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u \
+            > /tmp/stage352-wineboot.txt 2>&1 &
+          wineboot_pid=$!
+          (
+            while kill -0 "$wineboot_pid" 2>/dev/null; do
+              sleep 30
+              if ! kill -0 "$wineboot_pid" 2>/dev/null; then break; fi
+              elapsed=$(( $(date +%s) - wineboot_started_at ))
+              process_snapshot=$(ps -eo pid=,ppid=,stat=,etime=,pcpu=,comm=,args= | awk -v root="$wineboot_pid" '
+                { pid[NR]=$1; parent[NR]=$2; state[NR]=$3; elapsed[NR]=$4; cpu[NR]=$5; comm[NR]=$6; args=""; for (j=7; j<=NF; j++) args=args (j==7 ? "" : " ") $j; cmdline[NR]=args }
+                END {
+                  keep[root]=1
+                  for (pass=0; pass<NR; pass++) for (i=1; i<=NR; i++) if (keep[parent[i]]) keep[pid[i]]=1
+                  for (i=1; i<=NR; i++) if (keep[pid[i]] && pid[i] != root && (comm[i] ~ /wine|qemu-i386|Xvfb|xvfb/ || cmdline[i] ~ /wine|qemu-i386|Xvfb|xvfb/)) printf "%s %s %s %s\n", state[i], elapsed[i], cpu[i], comm[i]
+                }' | head -n 12 || true)
+              process_count=$(printf '%s\n' "$process_snapshot" | sed '/^$/d' | wc -l | tr -d ' ')
+              prefix_files=$(find "$WINEPREFIX" -type f 2>/dev/null | wc -l | tr -d ' ')
+              prefix_bytes=$(du -sb "$WINEPREFIX" 2>/dev/null | awk '{print $1}' || printf '0')
+              printf 'elapsed_sec=%s matching_processes=%s prefix_files=%s prefix_bytes=%s\n' "$elapsed" "$process_count" "$prefix_files" "$prefix_bytes" >> /tmp/stage352-wineboot-progress.txt
+              if [ -n "$process_snapshot" ]; then printf '%s\n' "$process_snapshot" | sed 's/^/process=/' >> /tmp/stage352-wineboot-progress.txt; fi
+            done
+          ) &
+          monitor_pid=$!
+          wait "$wineboot_pid" || wineboot_status=$?
+          kill "$monitor_pid" 2>/dev/null || true
+          wait "$monitor_pid" 2>/dev/null || true
+          wineboot_first_status=$wineboot_status
+          wineboot_retry_status=skipped
+          wineserver_kill_status=skipped
+          wineboot_retry_attempted=no
+          prefix_files_before_retry=$(find "$WINEPREFIX" -type f 2>/dev/null | wc -l | tr -d ' ')
+          prefix_bytes_before_retry=$(du -sb "$WINEPREFIX" 2>/dev/null | awk '{print $1}' || printf '0')
+          if [ "$wineboot_status" -eq 124 ] && [ "$prefix_files_before_retry" -ge 900 ] && [ "$prefix_bytes_before_retry" -ge 600000000 ]; then
+            wineboot_retry_attempted=yes
+            wineserver_kill_status=0
+            timeout --signal=TERM --kill-after=5s 15s env WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineserver -k > /tmp/stage355-wineserver-kill.txt 2>&1 || wineserver_kill_status=$?
+            wineboot_retry_status=0
+            timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win32 WINEDEBUG=-all wineboot -u > /tmp/stage355-wineboot-retry.txt 2>&1 || wineboot_retry_status=$?
+            if [ "$wineboot_retry_status" -eq 0 ]; then wineboot_status=0; else wineboot_status=$wineboot_retry_status; fi
+          fi
+          python3 - "$wineboot_status" "$wineboot_first_status" "$wineboot_retry_status" "$wineserver_kill_status" "$wineboot_retry_attempted" "$wineboot_started_at" <<'PY'
+          import re
+          import sys
+          import time
+          from pathlib import Path
+          status = int(sys.argv[1])
+          first_status = int(sys.argv[2])
+          retry_status = sys.argv[3]
+          kill_status = sys.argv[4]
+          retry_attempted = sys.argv[5]
+          started_at = int(sys.argv[6])
+          prefix_path = Path("/tmp/stage332-romfree-wine")
+          progress_path = Path("/tmp/stage352-wineboot-progress.txt")
+          def read_log(path):
+              p = Path(path)
+              raw = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+              lines = raw.splitlines()
+              tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in lines[-10:]]
+              return raw, lines, tail
+          first_raw, first_lines, first_tail = read_log("/tmp/stage352-wineboot.txt")
+          retry_raw, retry_lines, retry_tail = read_log("/tmp/stage355-wineboot-retry.txt")
+          kill_raw, kill_lines, kill_tail = read_log("/tmp/stage355-wineserver-kill.txt")
+          progress = progress_path.read_text(encoding="utf-8", errors="replace").splitlines() if progress_path.exists() else []
+          prefix_files = [path for path in prefix_path.rglob("*") if path.is_file()] if prefix_path.exists() else []
+          prefix_bytes = sum(path.stat().st_size for path in prefix_files)
+          report = [
+              "schema=stage352-wineboot-diagnostic-v3",
+              f"first_exit_status={first_status}",
+              f"retry_attempted={retry_attempted}",
+              f"wineserver_kill_status={kill_status}",
+              f"retry_exit_status={retry_status}",
+              f"effective_exit_status={status}",
+              "timeout_seconds=180",
+              "retry_timeout_seconds=90",
+              f"elapsed_seconds={int(time.time()) - started_at}",
+              f"first_log_bytes={len(first_raw.encode('utf-8'))}",
+              f"first_log_lines={len(first_lines)}",
+              f"retry_log_bytes={len(retry_raw.encode('utf-8'))}",
+              f"retry_log_lines={len(retry_lines)}",
+              f"wineserver_kill_log_bytes={len(kill_raw.encode('utf-8'))}",
+              f"wineserver_kill_log_lines={len(kill_lines)}",
+              f"progress_sample_count={len(progress)}",
+              f"final_prefix_file_count={len(prefix_files)}",
+              f"final_prefix_bytes={prefix_bytes}",
+              "progress_samples_begin",
+              *progress[-18:],
+              "progress_samples_end",
+              "first_log_tail_begin",
+              *first_tail,
+              "first_log_tail_end",
+              "wineserver_kill_log_tail_begin",
+              *kill_tail,
+              "wineserver_kill_log_tail_end",
+              "retry_log_tail_begin",
+              *retry_tail,
+              "retry_log_tail_end",
+          ]
+          Path("/tmp/stage352-wineboot-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
+          PY
+          if [ "$wineboot_status" -ne 0 ]; then
+            echo "ROM-free Wine32 prefix initialization failed with status $wineboot_status" >&2
+            exit "$wineboot_status"
+          fi
+          # Negative guard test: a MAME executable inside the repository is refused.
+          printf '%s\n' 'not an executable' > "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
+          if MAME0106_EXE="$GITHUB_WORKSPACE/stage333-forbidden-mame.exe" WINEPREFIX="$WINEPREFIX" WINE_BIN=wine "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-negative-guard.txt 2>&1; then
+            echo 'launcher unexpectedly accepted a repository-local MAME path' >&2
+            exit 1
+          fi
+          grep -q 'outside the repository' /tmp/stage333-negative-guard.txt
+          rm -f "$GITHUB_WORKSPACE/stage333-forbidden-mame.exe"
+          # Exercise the exact launcher path consumed by private gate/capture tools.
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage333-mame-help.txt 2>&1
+          grep -q 'M.A.M.E. v0.106' /tmp/stage333-mame-help.txt
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage333-mame-config.txt 2>&1
+          grep -qi mngcounttrace /tmp/stage333-mame-config.txt
+          # -listxml may be slow under the Wine/QEMU compatibility layer.
+          # Keep it bounded and record only a small ROM-free diagnostic summary.
+          listxml_status=0
+          timeout --signal=TERM --kill-after=5s 90s xvfb-run -a sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage333-mame-driver.xml 2>/tmp/stage333-mame-stderr.txt || listxml_status=$?
+          python3 - "$listxml_status" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          status = int(sys.argv[1])
+          out_path = Path("/tmp/stage333-mame-driver.xml")
+          err_path = Path("/tmp/stage333-mame-stderr.txt")
+          stdout = out_path.read_bytes() if out_path.exists() else b""
+          stderr = err_path.read_text(encoding="utf-8", errors="replace").splitlines() if err_path.exists() else []
+          tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in stderr[-20:]]
+          dino_present = b'<game name="dino"' in stdout
+          report = [
+              "schema=stage348-listxml-diagnostic-v1",
+              f"exit_status={status}",
+              f"stdout_bytes={len(stdout)}",
+              f"stderr_lines={len(stderr)}",
+              f"xml_header_present={stdout.lstrip().startswith(b'<?xml')}",
+              f"dino_driver_present={dino_present}",
+              "stderr_tail_begin",
+              *tail,
+              "stderr_tail_end",
+          ]
+          Path("/tmp/stage348-listxml-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
+          PY
+          if [ "$listxml_status" -ne 0 ]; then
+            echo "ROM-free MAME -listxml probe failed with status $listxml_status" >&2
+            exit "$listxml_status"
+          fi
+          grep -q '<game name="dino"' /tmp/stage333-mame-driver.xml
+          printf '%s\n' 'STAGE333_PRIVATE_WINE_LAUNCHER_ROM_FREE_AUDIT_PASS' 'Original ROM, INP, WLF and game captures: NOT USED'
+
+      - name: Stage356 native Wine64 fallback audit
+        id: wine64_fallback
+        if: always() && steps.wine32_audit.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAME0106_EXE=/tmp/stage332-mame/mame0106.exe
+          export WINEPREFIX=/tmp/stage356-romfree-wine64
+          export WINEARCH=win64
+          export WINE_BIN=wine
+          mkdir -p "$WINEPREFIX"
+          wine64_bin=$(dpkg-query -L wine64 2>/dev/null | awk '$0 ~ /\/wine64$/ {print; exit}' || true)
+          if [ -z "$wine64_bin" ] || [ ! -x "$wine64_bin" ]; then
+            wine64_bin=$(find /usr/lib/wine /usr/lib/x86_64-linux-gnu/wine -maxdepth 2 -name wine64 -executable -print -quit 2>/dev/null || true)
+          fi
+          version_status=0
+          wine64_binary_status=found
+          if [ -n "$wine64_bin" ] && [ -x "$wine64_bin" ]; then
+            export WINE_BIN="$wine64_bin"
+            # Keep the native loader and multiarch DLL search path for every
+            # later MAME invocation, not just the prefix bootstrap command.
+            export WINELOADER="$wine64_bin"
+            export WINEDLLPATH=/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu/wine:/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/i386-linux-gnu/wine
+            timeout --signal=TERM --kill-after=3s 10s "$wine64_bin" --version > /tmp/stage356-wine64-version.txt 2>&1 || version_status=$?
+          else
+            wine64_binary_status=missing
+            version_status=127
+            printf 'native Wine64 loader not found via package inventory or standard library paths\n' > /tmp/stage356-wine64-version.txt
+          fi
+          mame_binary_status=present
+          if [ ! -f "$MAME0106_EXE" ]; then mame_binary_status=missing; fi
+          boot_status=skipped
+          wineboot_exe_status=skipped
+          help_status=skipped
+          config_status=skipped
+          listxml_status=skipped
+          dino_driver_present=no
+          if [ "$version_status" -eq 0 ] && [ "$mame_binary_status" = present ]; then
+            # Debian's wineboot wrapper prefers the i386 loader whenever it is
+            # installed, even when WINEARCH=win64. Invoke the PE bootstrap with
+            # the native Wine64 ELF loader so this fallback actually tests Wine64.
+            wineboot_exe=$(find /usr/lib/x86_64-linux-gnu/wine /usr/lib/wine -path '*/x86_64-windows/wineboot.exe' -type f -print -quit 2>/dev/null || true)
+            if [ -n "$wineboot_exe" ] && [ -f "$wineboot_exe" ]; then
+              wineboot_exe_status=found
+              wine64_dllpath=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine
+              boot_status=0
+              timeout --signal=TERM --kill-after=5s 120s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINELOADER="$wine64_bin" WINEDLLPATH="$wine64_dllpath" "$wine64_bin" "$wineboot_exe" -u > /tmp/stage356-wine64-wineboot.txt 2>&1 || boot_status=$?
+            else
+              wineboot_exe_status=missing
+              boot_status=127
+              printf '%s\n' 'native Wine64 x86_64-windows/wineboot.exe not found' > /tmp/stage356-wine64-wineboot.txt
+            fi
+            if [ "$boot_status" -eq 0 ]; then
+              help_status=0
+              timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -help > /tmp/stage356-wine64-help.txt 2>&1 || help_status=$?
+              if [ "$help_status" -eq 0 ] && ! grep -q 'M.A.M.E. v0.106' /tmp/stage356-wine64-help.txt; then help_status=1; fi
+              if [ "$help_status" = 0 ]; then
+                config_status=0
+                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -showconfig > /tmp/stage356-wine64-config.txt 2>&1 || config_status=$?
+                if [ "$config_status" = 0 ] && ! grep -qi mngcounttrace /tmp/stage356-wine64-config.txt; then config_status=1; fi
+              fi
+              if [ "$help_status" = 0 ] && [ "$config_status" = 0 ]; then
+                listxml_status=0
+                timeout --signal=TERM --kill-after=5s 90s xvfb-run -a env WINEPREFIX="$WINEPREFIX" WINEARCH=win64 WINEDEBUG=-all WINE_BIN="$wine64_bin" sh "$GITHUB_WORKSPACE/tools/wolfmame0106_private_wine_launcher.sh" -listxml > /tmp/stage356-wine64-listxml.xml 2> /tmp/stage356-wine64-stderr.txt || listxml_status=$?
+                if [ "$listxml_status" = 0 ] && grep -q '<game name="dino"' /tmp/stage356-wine64-listxml.xml; then dino_driver_present=yes; fi
+              fi
+            fi
+          fi
+          python3 - "$version_status" "$wine64_binary_status" "$mame_binary_status" "$wineboot_exe_status" "$boot_status" "$help_status" "$config_status" "$listxml_status" "$dino_driver_present" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          version_status, wine64_binary_status, mame_binary_status, wineboot_exe_status, boot_status, help_status, config_status, listxml_status, dino = sys.argv[1:]
+          def read_log(path):
+              p = Path(path)
+              raw = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+              lines = raw.splitlines()
+              tail = [re.sub(r"/(?:[^/\s:]+/)+[^/\s:]*", "<path>", line) for line in lines[-12:]]
+              return raw, lines, tail
+          version_raw, version_lines, version_tail = read_log("/tmp/stage356-wine64-version.txt")
+          boot_raw, boot_lines, boot_tail = read_log("/tmp/stage356-wine64-wineboot.txt")
+          help_raw, help_lines, help_tail = read_log("/tmp/stage356-wine64-help.txt")
+          config_raw, config_lines, config_tail = read_log("/tmp/stage356-wine64-config.txt")
+          stderr_raw, stderr_lines, stderr_tail = read_log("/tmp/stage356-wine64-stderr.txt")
+          xml_path = Path("/tmp/stage356-wine64-listxml.xml")
+          xml_raw = xml_path.read_bytes() if xml_path.exists() else b""
+          prefix = Path("/tmp/stage356-romfree-wine64")
+          prefix_files = [p for p in prefix.rglob("*") if p.is_file()] if prefix.exists() else []
+          prefix_bytes = sum(p.stat().st_size for p in prefix_files)
+          report = [
+              "schema=stage356-wine64-fallback-diagnostic-v2",
+              f"wine64_binary_status={wine64_binary_status}",
+              f"wine64_version_status={version_status}",
+              f"mame_binary_status={mame_binary_status}",
+              f"wineboot_exe_status={wineboot_exe_status}",
+              "wineboot_invocation=direct_native_wine64_loader",
+              f"wineboot_status={boot_status}",
+              f"help_status={help_status}",
+              f"showconfig_status={config_status}",
+              f"listxml_status={listxml_status}",
+              f"dino_driver_present={dino}",
+              f"listxml_bytes={len(xml_raw)}",
+              f"prefix_file_count={len(prefix_files)}",
+              f"prefix_bytes={prefix_bytes}",
+              f"wine64_version_log_lines={len(version_lines)}",
+              f"wineboot_log_lines={len(boot_lines)}",
+              f"help_log_lines={len(help_lines)}",
+              f"showconfig_log_lines={len(config_lines)}",
+              f"listxml_stderr_lines={len(stderr_lines)}",
+              "wine64_version_tail_begin", *version_tail, "wine64_version_tail_end",
+              "wineboot_tail_begin", *boot_tail, "wineboot_tail_end",
+              "help_tail_begin", *help_tail, "help_tail_end",
+              "showconfig_tail_begin", *config_tail, "showconfig_tail_end",
+              "listxml_stderr_tail_begin", *stderr_tail, "listxml_stderr_tail_end",
+          ]
+          Path("/tmp/stage356-wine64-diagnostic.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
+          PY
+          fallback_status=0
+          if [ "$version_status" -ne 0 ]; then fallback_status=$version_status
+          elif [ "$wine64_binary_status" != found ]; then fallback_status=127
+          elif [ "$mame_binary_status" != present ]; then fallback_status=2
+          elif [ "$wineboot_exe_status" != found ]; then fallback_status=127
+          elif [ "$boot_status" != 0 ]; then fallback_status=$boot_status
+          elif [ "$help_status" != 0 ]; then fallback_status=$help_status
+          elif [ "$config_status" != 0 ]; then fallback_status=$config_status
+          elif [ "$listxml_status" != 0 ]; then fallback_status=$listxml_status
+          elif [ "$dino_driver_present" != yes ]; then fallback_status=1
+          fi
+          exit "$fallback_status"
+      - name: Upload ROM-free Stage348 listxml diagnostic summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage348-listxml-diagnostic
+          path: /tmp/stage348-listxml-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Upload ROM-free Stage352 Wineboot diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage352-wineboot-diagnostic
+          path: /tmp/stage352-wineboot-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Upload ROM-free Stage356 Wine64 fallback diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage356-wine64-fallback-diagnostic
+          path: /tmp/stage356-wine64-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Clean ephemeral runtime material
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          # This workflow never receives original ROM/INP/WLF or gameplay captures.
+          # Remove generated technical files after their short-lived artifacts are uploaded.
+          umount /tmp/bfmt-qemu 2>/dev/null || true
+          rm -rf /tmp/stage332-mame /tmp/stage332-romfree-wine /tmp/wine-debs /tmp/bfmt-qemu
+          rm -f /tmp/stage333-wineboot.txt /tmp/stage352-wineboot.txt /tmp/stage352-wineboot-progress.txt /tmp/stage355-wineserver-kill.txt /tmp/stage355-wineboot-retry.txt /tmp/stage333-negative-guard.txt
+          rm -f /tmp/stage333-mame-help.txt /tmp/stage333-mame-config.txt
+          rm -f /tmp/stage333-mame-driver.xml /tmp/stage333-mame-stderr.txt
+          rm -f /tmp/stage348-listxml-diagnostic.txt /tmp/stage352-wineboot-diagnostic.txt
+          rm -f /tmp/wine32-offline.tar
+          rm -rf /tmp/stage356-romfree-wine64
+          rm -f /tmp/stage356-wine64-version.txt /tmp/stage356-wine64-wineboot.txt /tmp/stage356-wine64-help.txt /tmp/stage356-wine64-config.txt /tmp/stage356-wine64-listxml.xml /tmp/stage356-wine64-stderr.txt /tmp/stage356-wine64-diagnostic.txt
+          rm -rf "$GITHUB_WORKSPACE/qemu-i386-helper" "$GITHUB_WORKSPACE/wine32-offline" "$GITHUB_WORKSPACE/wine32-offline-transfer"
