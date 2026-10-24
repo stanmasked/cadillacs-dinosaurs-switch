@@ -182,17 +182,56 @@ def _write_receipt(path: Path, receipt: dict[str, object]) -> None:
         raise ReceiptError('receipt_already_exists') from exc
 
 
+def _snapshot_private_capsule(archive: Path, snapshot: Path) -> None:
+    """Copy into a unique private staging file, pinning the bytes actually read.
+
+    A source file replaced after the earlier preflight must not be executed.
+    The source file itself is never modified or published.
+    """
+    guard_private()
+    require_private_file(archive, 55 * 1024 * 1024)
+    digest = hashlib.sha256()
+    total = 0
+    with archive.open('rb') as source, snapshot.open('xb') as target:
+        while True:
+            block = source.read(1024 * 1024)
+            if not block:
+                break
+            total += len(block)
+            if total > 55 * 1024 * 1024:
+                raise ReceiptError('private_snapshot_oversized')
+            digest.update(block)
+            target.write(block)
+        target.flush()
+        os.fsync(target.fileno())
+    if total == 0 or digest.hexdigest() != STAGE369_SHA256:
+        raise ReceiptError('private_snapshot_digest_mismatch')
+    # Read back the staged copy; do not trust a just-computed stream digest
+    # as proof that the destination persisted exactly the same bytes.
+    recorded_sha, recorded_bytes = hashfile(snapshot)
+    if recorded_bytes != total or recorded_sha != STAGE369_SHA256:
+        raise ReceiptError('private_snapshot_readback_mismatch')
+
+
 def _stage_and_execute(archive: Path) -> dict[str, object]:
-    # Called only on a private Windows host after validating full ZIP/sha.
-    with tempfile.TemporaryDirectory(prefix='cadillacs-stage371-private-') as tmp:
+    # Owner-private execution. Bind a fresh copy to the actual tested digest,
+    # then unpack ONLY that copy. Never unzip an unchecked mutable source.
+    guard_private()
+    with tempfile.TemporaryDirectory(prefix='cadillacs-stage377-private-') as tmp:
         root = Path(tmp)
-        with zipfile.ZipFile(archive) as z:
+        snapshot = root / 'validated-stage369-source.zip'
+        _snapshot_private_capsule(archive, snapshot)
+        _validate_stage369_capsule(snapshot)
+        with zipfile.ZipFile(snapshot) as z:
             for member in FIXED_FILES:
                 path = root / member
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with z.open(member) as src, path.open('xb') as dest:
                     while chunk := src.read(1024*1024):
                         dest.write(chunk)
+        # Detect changes to the immutable staging ZIP even during extraction.
+        if hashfile(snapshot)[0] != STAGE369_SHA256:
+            raise ReceiptError('private_snapshot_changed_during_extraction')
         try:
             process = subprocess.run(
                 ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive',
