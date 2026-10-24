@@ -1,6 +1,8 @@
 """Stage380 handoff ZIP tests use synthetic files and safe public sources only."""
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -122,11 +124,45 @@ class SyntheticRomfreeHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(p.HandoffError, "invalid_helper_manifest"):
             p.verify(self.archive)
 
+    def test_stage381_bundled_verifier_validates_original_zip(self):
+        # Build a genuinely usable ROM-free handoff, extract into an isolated
+        # workspace, then invoke only its own included verification code.
+        source_root = Path(__file__).resolve().parents[1]
+        self.assertEqual(p.build(source_root, self.archive, self.revision)["members"], 11)
+        target = self.root / "unpacked-public-only"
+        target.mkdir()
+        with zipfile.ZipFile(self.archive) as z:
+            self.assertEqual(set(z.namelist()), set(p.MODULES) | {
+                p.MANIFEST, p.INSTRUCTIONS})
+            z.extractall(target)
+        proc = subprocess.run(
+            [sys.executable, "-m", "tools.mame0106_private_helper_handoff",
+             "--verify", str(self.archive), "--expected-revision", self.revision],
+            cwd=target, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False, timeout=15)
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8", "replace"))
+        self.assertIn(b"status=romfree_helper_source_only", proc.stdout)
+        self.assertIn(b"members=11", proc.stdout)
+        wrong = subprocess.run(
+            [sys.executable, "-m", "tools.mame0106_private_helper_handoff",
+             "--verify", str(self.archive), "--expected-revision", "b"*40],
+            cwd=target, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False, timeout=15)
+        self.assertEqual(wrong.returncode, 2)
+        self.assertIn(b"status=helper_archive_refused", wrong.stdout)
+
+    def test_stage381_tampered_embedded_verifier_is_rejected(self):
+        self._build()
+        name = "tools/mame0106_private_helper_handoff.py"
+        self._rewrite(lambda files: files.__setitem__(name, b"# fake verifier\n"))
+        with self.assertRaisesRegex(p.HandoffError, "helper_member_digest_mismatch"):
+            p.verify(self.archive)
+
     def test_pack_actual_public_sources_only(self):
-        # This test intentionally reads only eight named public .py files.
+        # This test intentionally reads only nine named public .py files.
         source_root = Path(__file__).resolve().parents[1]
         result = p.build(source_root, self.archive, self.revision)
-        self.assertEqual(result["members"], 10)
+        self.assertEqual(result["members"], 11)
         with zipfile.ZipFile(self.archive) as z:
             self.assertTrue(all(i.file_size <= p.MAX_SOURCE_BYTES
                                 for i in z.infolist()))
