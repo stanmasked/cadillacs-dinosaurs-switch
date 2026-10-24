@@ -9,6 +9,8 @@ on:
       - '.github/workflows/mame0106-windows-romfree-preflight.yml'
       - 'tools/mame0106_romfree_native_windows_probe.py'
       - 'tests/test_mame0106_romfree_native_windows_probe.py'
+      - 'tools/mame0106_romfree_artifact_locator.py'
+      - 'tests/test_mame0106_romfree_artifact_locator.py'
   workflow_dispatch:
 
 permissions:
@@ -35,17 +37,26 @@ jobs:
       - name: Run source-only native probe synthetic tests
         shell: pwsh
         run: python -m unittest discover -s tests -p 'test_mame0106_romfree_native_windows_probe.py' -q
+      - name: Test SHA-pinned ROM-free artifact selector
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_mame0106_romfree_artifact_locator.py' -q
       - name: Assert no original game data in public checkout
         shell: pwsh
         run: |
           foreach ($relative in @('roms/dino.zip', 'dino.inp', 'dino.wlf', 'mame0106.exe')) {
             if (Test-Path -LiteralPath $relative) { throw 'Private input forbidden in public checkout' }
           }
-      - name: Download pinned ROM-free MAME build
+      - name: Locate non-expired exact-SHA ROM-free historical build
+        id: pinned_artifact
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/mame0106_romfree_artifact_locator.py --output "$env:GITHUB_OUTPUT"
+      - name: Download verified ROM-free MAME build
         uses: actions/download-artifact@v4
         with:
           name: historical-mame0106-runtime-rom-free
-          run-id: 39859311511
+          run-id: ${{ steps.pinned_artifact.outputs.run_id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/mame0106-romfree
       - name: Native Windows command-line preflight
