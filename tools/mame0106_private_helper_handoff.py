@@ -25,6 +25,7 @@ MODULES = (
     "tools/mame0106_private_evidence_gate.py",
     "tools/mame0106_private_execution_session.py",
     "tools/mame0106_private_session_audit.py",
+    "tools/mame0106_private_helper_handoff.py",
 )
 INSTRUCTIONS = "STAGE380-PRIVATE-WINDOWS-RUNBOOK.txt"
 MANIFEST = "STAGE380-SHA256-MANIFEST.json"
@@ -42,9 +43,15 @@ OWNER-ONLY Google Drive archive. Do not use a public GitHub-hosted runner.
 
 1. Verify this ZIP SHA-256 against the archived owner's handoff manifest.
 2. Extract this source-only ZIP into its own clean private helper directory.
-3. Verify all eight tools/*.py against STAGE380-SHA256-MANIFEST.json.
-4. In PowerShell, change to the extracted helper directory.
-5. Run the genuine owner-private verification (example only):
+3. In PowerShell, change to the extracted helper directory.
+4. Independently verify the original *unextracted* ZIP using the bundled
+   source-only verifier. Replace <ZIP-PATH> with the real local path:
+
+python -m tools.mame0106_private_helper_handoff --verify "<ZIP-PATH>"
+
+   Require status=romfree_helper_source_only, members=11 and exit code 0.
+   If verification refuses or fails, do not execute the private runner.
+5. Run genuine owner-private ROM verification (example only):
 
 python -m tools.mame0106_private_execution_session --capsule "C:\\Private\\Stage369_MAME0106_Private_Windows_Verify_Capsule.zip" --session-dir "C:\\Private\\Stage380-first-session"
 
@@ -203,11 +210,14 @@ def main(argv: list[str] | None = None) -> int:
     actions.add_argument("--verify", type=Path)
     parser.add_argument("--source-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--source-revision", default="0"*40)
+    parser.add_argument("--expected-revision")
     args = parser.parse_args(argv)
     try:
+        if args.output is not None and args.expected_revision is not None:
+            raise HandoffError("expected_revision_for_verify_only")
         result = (build(args.source_root, args.output, args.source_revision)
                   if args.output is not None
-                  else verify(args.verify))
+                  else verify(args.verify, expected_revision=args.expected_revision))
         for key, value in result.items():
             print(f"{key}={value}")
         return 0
