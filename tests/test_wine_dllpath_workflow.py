@@ -62,7 +62,7 @@ class WineDllPathWorkflowTests(unittest.TestCase):
         start = source.index("      - name: Stage333 ROM-free Wine32 launcher audit")
         end = source.index("      - name: Stage356 native Wine64 fallback audit", start)
         block = source[start:end]
-        dllpath = "export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine"
+        dllpath = "export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine"
         self.assertIn(dllpath, block)
         self.assertLess(block.index(dllpath), block.index("wineboot -u"))
         self.assertLess(block.index(dllpath), block.index("wolfmame0106_private_wine_launcher.sh -help"))
@@ -73,8 +73,21 @@ class WineDllPathWorkflowTests(unittest.TestCase):
         end = source.index("      - name: Upload ROM-free Stage348 listxml diagnostic summary", start)
         block = source[start:end]
         self.assertIn(
-            "export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine",
+            "export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine",
             block,
+        )
+
+    def test_unix_library_directories_precede_parent_fallbacks(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        expected = (
+            "export WINEDLLPATH=/usr/lib/i386-linux-gnu/wine/i386-unix:"
+            "/usr/lib/x86_64-linux-gnu/wine/x86_64-unix:"
+            "/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine"
+        )
+        self.assertEqual(source.count(expected), 2)
+        self.assertLess(
+            source.index("/usr/lib/i386-linux-gnu/wine/i386-unix"),
+            source.index("/usr/lib/i386-linux-gnu/wine:/usr/lib/x86_64-linux-gnu/wine"),
         )
 
 
