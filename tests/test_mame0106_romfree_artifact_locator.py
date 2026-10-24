@@ -28,6 +28,30 @@ class RomfreeArtifactLocatorTests(unittest.TestCase):
         self.assertEqual(answer["archive_sha256"], p.ARCHIVE_SHA256)
         self.assertIs(answer["original_game_data_included"], False)
 
+    def test_stage383_renewed_90day_zip_is_preapproved(self):
+        renewed = dict(self.fixture,
+                       id=12551316232,
+                       digest="sha256:" + p.RENEWED_ARCHIVE_SHA256,
+                       created_at="2026-10-24T09:00:00Z",
+                       expires_at="2027-01-22T06:29:55Z",
+                       workflow_run={"id": 40070433630})
+        selected = self.select(self.fixture, renewed, now=self.now.replace(hour=10))
+        self.assertEqual(selected["run_id"], 40070433630)
+        self.assertEqual(selected["artifact_id"], 12551316232)
+        self.assertEqual(selected["archive_sha256"], p.RENEWED_ARCHIVE_SHA256)
+        self.assertFalse(selected["original_game_data_included"])
+
+    def test_stage383_newly_compiled_executable_not_an_approved_zip(self):
+        # A successful source compile is NOT equivalent to the frozen EXE.
+        for other in (
+                "9f6a1acec78c103013bbe516109b6636863703176d7ba5d0414e0097877e9bea",
+                "f12ba8b5702c19b5b43a69379ba371f9bcb5f71fb67d9c128629e17f5b73dcd0",
+        ):
+            with self.subTest(digest=other):
+                candidate = dict(self.fixture, digest="sha256:" + other)
+                with self.assertRaisesRegex(p.ArtifactSelectionError, "no_live_exact"):
+                    self.select(candidate)
+
     def test_newest_matching_run_selected(self):
         next_one = dict(self.fixture, id=999,
                         created_at="2026-10-24T08:00:00Z",
