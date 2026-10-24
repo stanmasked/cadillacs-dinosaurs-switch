@@ -47,6 +47,8 @@ class SyntheticRomfreeHandoffTests(unittest.TestCase):
         self.assertEqual(result["sha256"], hashlib.sha256(self.archive.read_bytes()).hexdigest())
         with zipfile.ZipFile(self.archive) as z:
             manifest = json.loads(z.read(p.MANIFEST))
+            self.assertEqual(manifest["schema"], "cadillacs-stage381-owner-private-python-helper-romfree-v2")
+            self.assertEqual(manifest["stage"], "Stage381")
             self.assertFalse(manifest["game_private_inputs_included"])
             self.assertFalse(manifest["mame_executable_included"])
             self.assertFalse(manifest["historical_inp_playback_executed"])
