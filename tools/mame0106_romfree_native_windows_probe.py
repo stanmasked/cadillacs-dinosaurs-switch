@@ -22,6 +22,26 @@ REQUIRED = (b"playback", b"frames_to_run", b"mngwrite", b"mngstartframe",
             b"mngframes", b"mngcounttrace", b"throttle")
 
 
+# Independent owner-verified SHA-256 pins from immutable ROM-free artifact
+# 12461451785 (run 39859311511), ZIP SHA256:
+# 5a495bdcbe832dbe1261fc935ef0f8db2f36c7eb21ad3c0be19385d87da5781a
+# This is public technical source and executable data, not a game ROM.
+FROZEN_COMPONENT_SHA256 = {
+    "dino-driver.xml": "b6a89430b5e982ad533ea96faa53084506b4ca62f0f63ea6cdedd74324dda4c8",
+    "MAME-0106-LICENSE.txt": "1af19840b4175b49f3b84fe019afd8f5120afe57426e68eb0ffdc72c338230c5",
+    "mame0106-build-compat.patch": "eb407faa838fa18043ef04f427c2e4a2b5f8383391b2d4bfc265832d102e4666",
+    "mame0106-help.txt": "aa2ddb031f0bdf9980881259ed6c9ceb477806609a7213e7e45c890b64f49cc6",
+    "mame0106-inprocess-count-trace-combined.patch": "bc48717ff1290ab64f233bff8ac1af800d0ffcda4a23e3b7a006e4fbc518cdff",
+    "mame0106-showconfig.txt": "3ac48b4ecf0a34e309837998e1dadb7070388383c48d11f312983fb29360feda",
+    "mame0106-source.zip": "ec0811d8f3e651d1004909127416886e1a0ac7609094c14eea1de0b9d7383f94",
+    "mame0106-windowed-mng-capture.patch": "4c8ad3ee01c8970780bbc8645ad038b849f1f8998d330c58f4307997b6e8f34e",
+    "mame0106.exe": "a3b0526056c2ecd10415a5757f0085aa6977992feddbb232ca60c7c446f81d44",
+    "runtime-status.txt": "90db48f6ba82218e41590f6d5bf8cbbcb1afcdf42a8176c45f64071aa130616f",
+    "SHA256SUMS.txt": "80c09b332634075210c93fddb852f84de80eeda793571950a7b9fc6d81e1bc70",
+    "source-pin.txt": "dff258c5191b2d0052df3b45f9c602da068e720799748d7002e84afc0fb8010f",
+}
+
+
 class ProbeError(Exception):
     pass
 
@@ -65,6 +85,32 @@ def verify_bundle(root: Path, expected_exe_sha: str = EXE_SHA) -> int:
     return len(manifest)
 
 
+def verify_frozen_components(root: Path, expected_hashes=None) -> int:
+    """Check every byte of the exact ROM-free technical artifact, not just
+    self-consistent SHA256SUMS.txt. Public fixtures may supply synthetic pins.
+    """
+    expected = FROZEN_COMPONENT_SHA256 if expected_hashes is None else expected_hashes
+    if not expected or any(not re.fullmatch(r"[a-f0-9]{64}", digest)
+                           for digest in expected.values()):
+        raise ProbeError("invalid_frozen_pins")
+    if any("/" in name or "\\" in name or name in (".", "..")
+           for name in expected):
+        raise ProbeError("invalid_frozen_inventory")
+    try:
+        contents = list(root.iterdir())
+    except OSError as exc:
+        raise ProbeError("artifact_directory_unavailable") from exc
+    if {item.name for item in contents} != set(expected):
+        raise ProbeError("frozen_inventory_mismatch")
+    for name, expected_sha in expected.items():
+        file = root / name
+        if not file.is_file() or file.is_symlink():
+            raise ProbeError("frozen_member_type")
+        if sha256_file(file) != expected_sha:
+            raise ProbeError("frozen_component_mismatch")
+    return len(expected)
+
+
 def contains(path: Path, marker: bytes) -> bool:
     tail = b""
     with path.open("rb") as inp:
@@ -102,6 +148,7 @@ def main(argv=None) -> int:
     try:
         root = args.artifact_dir.resolve(strict=True)
         report.append(f"technical_hashes_verified={verify_bundle(root)}")
+        report.append(f"frozen_components_verified={verify_frozen_components(root)}")
         exe = root / "mame0106.exe"
         with tempfile.TemporaryDirectory(prefix="mame0106-native-romfree-") as temp:
             scratch = Path(temp)
