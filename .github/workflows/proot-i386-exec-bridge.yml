@@ -37,20 +37,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s\n' 'deb https://deb.debian.org/debian bookworm main' \
-            > /etc/apt/sources.list.d/bookworm-qemu-helper.list
           apt-get update
           mkdir -p "$RUNNER_TEMP/qemu-deb" "$RUNNER_TEMP/qemu-root"
           cd "$RUNNER_TEMP/qemu-deb"
-          apt-get download 'qemu-user-static=1:7.2+dfsg-7+deb12u18+b3'
-          deb=$(find . -maxdepth 1 -type f -name 'qemu-user-static_*.deb' -print -quit)
+          apt-get download 'qemu-user=1:10.0.13+ds-0+deb13u1'
+          deb=$(find . -maxdepth 1 -type f -name 'qemu-user_*.deb' -print -quit)
           test -n "$deb"
-          test "$(dpkg-deb -f "$deb" Package)" = qemu-user-static
-          test "$(dpkg-deb -f "$deb" Version)" = '1:7.2+dfsg-7+deb12u18+b3'
+          test "$(dpkg-deb -f "$deb" Package)" = qemu-user
+          test "$(dpkg-deb -f "$deb" Version)" = '1:10.0.13+ds-0+deb13u1'
           test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          sha256sum "$deb" | awk '{print $1}' > "$RUNNER_TEMP/qemu-package-sha256.txt"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/qemu-root"
-          install -m 0755 "$RUNNER_TEMP/qemu-root/usr/bin/qemu-i386-static" \
+          install -m 0755 "$RUNNER_TEMP/qemu-root/usr/bin/qemu-i386" \
             "$RUNNER_TEMP/qemu-i386-static"
+          file "$RUNNER_TEMP/qemu-i386-static" | grep -F 'statically linked'
           "$RUNNER_TEMP/qemu-i386-static" --version > "$RUNNER_TEMP/qemu-version.txt"
       - name: Build pinned PRoot with i386 forced through QEMU on x86-64
         shell: bash
@@ -196,6 +196,7 @@ jobs:
           install -m 0644 "$RUNNER_TEMP/qemu-wrapper.c" "$out/qemu-wrapper.c"
           install -m 0644 "$RUNNER_TEMP/proot-nested-exec-report.txt" "$out/synthetic-test-report.txt"
           install -m 0644 "$RUNNER_TEMP/qemu-version.txt" "$out/qemu-version.txt"
+          install -m 0644 "$RUNNER_TEMP/qemu-package-sha256.txt" "$out/qemu-package-sha256.txt"
           install -m 0644 "$RUNNER_TEMP/proot-version.txt" "$out/proot-version.txt"
           install -m 0644 "$RUNNER_TEMP/proot-source.tar.gz" "$out/proot-source.tar.gz"
           install -m 0644 "$RUNNER_TEMP/proot-force-i386-qemu.patch.txt" "$out/proot-force-i386-qemu.patch.txt"
@@ -240,8 +241,10 @@ jobs:
               "proot_repository=https://github.com/proot-me/proot\n"
               "proot_commit=25dc6a3134891f98a79f57ce1c2c1b23ff15cad1\n"
               "patch=proot-force-i386-qemu.patch.txt\n"
-              "qemu_package=qemu-user-static\n"
-              "qemu_version=1:7.2+dfsg-7+deb12u18+b3\n"
+              "qemu_package=qemu-user\n"
+              "qemu_package_version=1:10.0.13+ds-0+deb13u1\n"
+              "qemu_binary=/usr/bin/qemu-i386\n"
+              "qemu_package_sha256_file=qemu-package-sha256.txt\n"
               "original_game_data_included=no\n",
               encoding="utf-8")
           PY
@@ -249,7 +252,7 @@ jobs:
           (
             cd "$out"
             sha256sum proot qemu-i386-static run-qemu-i386 run-proot.sh qemu-wrapper.c lib/* test-fixtures/* \
-              synthetic-test-report.txt qemu-version.txt proot-version.txt proot-source.tar.gz \
+              synthetic-test-report.txt qemu-version.txt qemu-package-sha256.txt proot-version.txt proot-source.tar.gz \
               proot-force-i386-qemu.patch.txt COPYING README.txt source-pin.txt > SHA256SUMS.txt
             sha256sum -c SHA256SUMS.txt
           )
